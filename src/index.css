@@ -1,0 +1,28 @@
+body,
+html {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #060606;
+  color: #ccc;
+  font-family: 'PT Sans', 'Open Sans', 'Roboto', sans-serif;
+  font-display: swap;
+}
+
+* {
+  scrollbar-color: rgb(27, 27, 27);
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgb(27, 27, 27);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #424242;
+  outline: 1px solid #333;
+}
