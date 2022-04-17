@@ -56,9 +56,14 @@ export class AtlasViz {
       .enter()
       .append('circle')
       .attr('class', 'mal-user-point-background')
+      .attr('filter', 'url(#blur)')
+      .attr('fill', 'url(#red-transparent-gradient)')
       .attr('cx', (d) => this.scaleX(d.vector[0]))
       .attr('cy', (d) => this.scaleY(d.vector[1]))
-      .attr('r', (d) => AtlasViz.getNodeRadius(d.metadata.rating_count) * 5);
+      .attr('r', (d) => {
+        return 1200 + AtlasViz.getNodeRadius(d.metadata.rating_count) * 2.2;
+        // return 1400;
+      });
     console.log(malData, insertedPointBackgrounds);
 
     // TODO: Compute connections
