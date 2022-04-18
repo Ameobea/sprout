@@ -8,3 +8,6 @@ build:
 
 preview:
   yarn preview --port 3080 --host 0.0.0.0
+
+docker-build:
+  docker build -t anime-atlas:latest .

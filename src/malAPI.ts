@@ -55,7 +55,7 @@ interface ListStatus {
 // Cache for 24 hours
 const UserAnimeListCache = new TimedCache({ defaultTtl: 60 * 60 * 24 * 1000 });
 
-export const getUserAnimeList = async (username: string) => {
+export const getUserAnimeList = async (username: string): Promise<MALUserAnimeListItem[]> => {
   const cached = UserAnimeListCache.get(username);
   if (cached) {
     console.log('Found cached user anime list for ' + username);
@@ -65,11 +65,11 @@ export const getUserAnimeList = async (username: string) => {
   const data: MALUserAnimeListItem[] = [];
 
   let i = 0;
-  const pageSize = 100;
+  const pageSize = 1000;
   for (;;) {
     const url = `${MAL_API_BASE_URL}/users/${username}/animelist?offset=${
       i * pageSize
-    }&limit=100&fields=list_status`;
+    }&limit=${pageSize}&fields=list_status`;
     i += 1;
     console.log(`Fetching page ${i}...`, url);
 

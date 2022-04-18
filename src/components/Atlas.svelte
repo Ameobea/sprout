@@ -40,12 +40,11 @@
           <feMergeNode in="SourceGraphic" />
         </feMerge>
       </filter>
-      <filter id="blur">
-        <feGaussianBlur stdDeviation="50" />
-      </filter>
       <radialGradient id="red-transparent-gradient">
-        <stop offset="10%" stop-color="#ff000022" />
-        <stop offset="95%" stop-color="#ff000001" />
+        <stop offset="1%" stop-color="#ff000024" />
+        <stop offset="25%" stop-color="#ff000015" />
+        <stop offset="65%" stop-color="#ff000006" />
+        <stop offset="95%" stop-color="#ff000000" />
       </radialGradient>
     </defs>
     <g id="root-container">
@@ -95,7 +94,6 @@
   }
 
   :global(circle.mal-user-point-background) {
-    /* fill: #ff000022; */
-    /* z-index: -1; */
+    pointer-events: none;
   }
 </style>

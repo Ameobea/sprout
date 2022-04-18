@@ -1,6 +1,8 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import fs from 'fs';
 
+import { DATA_DIR } from '../conf';
+
 interface RawEmbedding {
   points: { [index: string]: { x: number; y: number } };
   neighbors: { [index: string]: number[] };
@@ -29,7 +31,7 @@ const loadEmbedding = async (): Promise<Embedding> => {
   }
 
   const metadata: Metadatum[] = await new Promise((resolve) => {
-    fs.readFile('/home/casey/mal-graph/data/metadata.json', 'utf8', (err, data) => {
+    fs.readFile(`${DATA_DIR}/metadata.json`, 'utf8', (err, data) => {
       if (err) {
         throw err;
       }
@@ -45,7 +47,7 @@ const loadEmbedding = async (): Promise<Embedding> => {
   });
 
   await new Promise((resolve) =>
-    fs.readFile('/home/casey/mal-graph/data/projected_embedding.json', (err, data) => {
+    fs.readFile(`${DATA_DIR}/projected_embedding.json`, (err, data) => {
       if (err) {
         throw err;
       }
