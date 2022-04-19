@@ -1,16 +1,8 @@
-import mysql from 'mysql';
 import type { RequestHandler } from '@sveltejs/kit';
 
-import { ADMIN_API_TOKEN, MYSQL_DATABASE, MYSQL_HOST, MYSQL_PASSWORD, MYSQL_USER } from '../conf';
-import { getUserAnimeList } from 'src/malAPI';
-
-const conn = mysql.createConnection({
-  host: MYSQL_HOST,
-  user: MYSQL_USER,
-  password: MYSQL_PASSWORD,
-  database: MYSQL_DATABASE,
-});
-conn.connect();
+import { ADMIN_API_TOKEN } from '../conf';
+import { getUserAnimeList, MALAPIError } from '../malAPI';
+import { getConn } from '../dbUtil';
 
 export const get: RequestHandler = async ({ url }) => {
   const token = url.searchParams.get('token');
@@ -23,6 +15,8 @@ export const get: RequestHandler = async ({ url }) => {
   }
 
   try {
+    const conn = getConn();
+
     const username: string | null = await new Promise((resolve, reject) =>
       conn.query(
         'SELECT username FROM `usernames-to-collect` WHERE collected = 0 ORDER BY RAND() LIMIT 1',
@@ -50,7 +44,7 @@ export const get: RequestHandler = async ({ url }) => {
 
       await new Promise((resolve, reject) => {
         conn.query(
-          'INSERT INTO `mal-user-animelists` (username, animelist_json) VALUES (?, ?)',
+          'INSERT INTO `mal-user-animelists` (username, animelist_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE animelist_json = VALUES(animelist_json)',
           [username, JSON.stringify(animeList)],
           (err) => {
             if (err) {
@@ -64,7 +58,7 @@ export const get: RequestHandler = async ({ url }) => {
 
       await new Promise((resolve, reject) => {
         conn.query(
-          'UPDATE `usernames-to-collect` SET collected = 1 WHERE username = ?',
+          'UPDATE `usernames-to-collect` SET collected = 200 WHERE username = ?',
           [username],
           (err) => {
             if (err) {
@@ -76,13 +70,17 @@ export const get: RequestHandler = async ({ url }) => {
         );
       });
 
-      return { body: 'OK', status: 204 };
+      const body = `Successfully collected profile for ${username}`;
+      console.log(body);
+      return { body, status: 200 };
     } catch (err) {
       console.error(`Error fetching anime list for ${username}: `, err);
+      const status = err instanceof MALAPIError ? err.statusCode : 500;
+
       await new Promise((resolve, reject) => {
         conn.query(
-          'UPDATE `usernames-to-collect` SET collected = 2 WHERE username = ?',
-          [username],
+          'UPDATE `usernames-to-collect` SET collected = ? WHERE username = ?',
+          [status, username],
           (err) => {
             if (err) {
               reject(err);
@@ -92,10 +90,10 @@ export const get: RequestHandler = async ({ url }) => {
           }
         );
       });
-      return { status: 500, body: 'Unable to fetch anime list' };
+      return { status: 500, body: `Unable to fetch anime list for ${username}` };
     }
   } catch (err) {
     console.error('Error getting animelist for username', err);
-    return { status: 500, body: 'Error getting username' };
+    return { status: 500, body: 'Error getting username; DB error likely' };
   }
 };

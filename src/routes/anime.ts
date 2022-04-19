@@ -14,6 +14,7 @@ export const get: RequestHandler = async ({ url }) => {
     const anime = await getAnimeByID(+id);
     return { body: anime };
   } catch (err) {
+    console.error('Error getting anime: ', err);
     return { status: 500, body: 'Unable to fetch anime due to internal error' };
   }
 };

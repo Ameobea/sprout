@@ -16,7 +16,7 @@
       selectedAnimeID = newSelectedAnimeID;
     });
     // TODO: Remove
-    fetch('/mal-profile?username=Expochant')
+    fetch('/mal-profile?username=Aproudweeb')
       .then((res) => res.json())
       .then((profile) => {
         viz.displayMALUser(profile);
@@ -51,8 +51,8 @@
       <g id="decorations-container" />
       <g id="points-container" />
       <g id="labels-container" />
-    </g></svg
-  >
+    </g>
+  </svg>
 </div>
 {#if viz}
   <Search {embedding} onSubmit={(id) => viz.flyTo(id)} />

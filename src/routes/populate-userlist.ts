@@ -1,16 +1,8 @@
-import mysql from 'mysql';
 import fs from 'fs';
 import type { RequestHandler } from '@sveltejs/kit';
 
-import { ADMIN_API_TOKEN, MYSQL_DATABASE, MYSQL_HOST, MYSQL_PASSWORD, MYSQL_USER } from '../conf';
-
-const conn = mysql.createConnection({
-  host: MYSQL_HOST,
-  user: MYSQL_USER,
-  password: MYSQL_PASSWORD,
-  database: MYSQL_DATABASE,
-});
-conn.connect();
+import { ADMIN_API_TOKEN } from '../conf';
+import { getConn } from '../dbUtil';
 
 // fetch('http://localhost:3080/add-usernames?token=asdf', {method: 'POST', body: JSON.stringify([...document.querySelector('#content > table > tbody > tr > td:nth-child(1) > table > tbody').children].flatMap(tr => [...tr.children]).map(td => td.children[0].innerText))}).then(res=>res.text()).then(console.log)
 
@@ -25,6 +17,8 @@ export const get: RequestHandler = async ({ url }) => {
   }
 
   try {
+    const conn = getConn();
+
     const usernamesJSON = fs.readFileSync('/home/casey/mal-graph/data/all_usernames.json', {
       encoding: 'utf-8',
     });
