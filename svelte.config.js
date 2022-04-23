@@ -19,6 +19,9 @@ const config = {
           src: resolve('./src'),
         },
       },
+      build: {
+        sourcemap: true,
+      },
     },
   },
 };

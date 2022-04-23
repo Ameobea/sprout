@@ -36,6 +36,8 @@
     "fuse.js": "^6.5.3",
     "jsdom": "^19.0.0",
     "mysql": "^2.18.1",
+    "pixi-viewport": "^4.34.4",
+    "pixi.js": "^6.3.0",
     "timed-cache": "^1.1.5"
   }
 }

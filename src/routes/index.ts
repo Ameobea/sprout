@@ -91,7 +91,7 @@ const loadEmbedding = async (): Promise<Embedding> => {
         }
 
         return {
-          vector: [point.x * 0.7, point.y * 0.7],
+          vector: [point.x * 1.2, point.y * 1.2],
           metadata: metadatum,
         };
       });

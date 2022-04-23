@@ -1,12 +1,14 @@
-import type { D3ZoomEvent } from 'd3';
 import * as d3 from 'd3';
+import type * as PIXI from 'pixi.js';
+import type { Viewport } from 'pixi-viewport';
 
 import type { MALUserAnimeListItem } from '../malAPI';
 import type { EmbeddedPoint, Embedding } from '../routes/index';
 import ColorLegend from './ColorLegend';
 
-const width = 1200;
-const height = 1200;
+const WORLD_SIZE = 1;
+const BASE_LABEL_FONT_SIZE = 42;
+const BASE_RADIUS = 50;
 
 enum ColorBy {
   AiredFromYear = 'aired_from_year',
@@ -16,59 +18,32 @@ enum ColorBy {
 export class AtlasViz {
   private embedding: Embedding;
   private embeddingByID: Map<number, EmbeddedPoint>;
-  private colorBy = ColorBy.AverageRating;
-  private svg: d3.Selection<SVGSVGElement, unknown, HTMLElement, any>;
-  private rootContainer: d3.Selection<d3.BaseType, unknown, HTMLElement, any>;
-  private pointsContainer: d3.Selection<d3.BaseType, unknown, HTMLElement, any>;
-  private decorationsContainer: d3.Selection<d3.BaseType, unknown, HTMLElement, any>;
-  private labelsContainer: d3.Selection<d3.BaseType, unknown, HTMLElement, any>;
+  private colorBy = ColorBy.AiredFromYear;
   private colorScaler: d3.ScaleSequential<string, never>;
-  private renderedHoverLabel: number | null = null;
-  private scaleX: d3.ScaleLinear<number, number>;
-  private scaleY: d3.ScaleLinear<number, number>;
-  private currentTransform: d3.ZoomTransform = d3.zoomIdentity
-    .translate(window.innerWidth / 2, window.innerHeight / 2)
-    .scale(0.02);
-  private zoom: d3.ZoomBehavior<Element, unknown>;
-  private hoverLabelCounter = 1;
+  private renderedHoverLabel: PIXI.Graphics | null = null;
   private setSelectedAnimeID: (id: number | null) => void;
+
+  private PIXI: typeof import('pixi.js');
+  private app: PIXI.Application;
+  private container: Viewport;
+  private pointsContainer: PIXI.Container;
+  private labelsContainer: PIXI.Container;
+  private textMeasurerCtx = (() => {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = '42px PT Sans';
+    return ctx;
+  })();
 
   public displayMALUser(allMALData: MALUserAnimeListItem[]) {
     const malData = allMALData.filter((d) => d.list_status.status !== 'plan_to_watch');
-    // Clear all previously marked points
-    document
-      .querySelectorAll('.mal-user-point')
-      .forEach((circle) => circle.classList.remove('mal-user-point'));
-    document.querySelectorAll('.mal-user-point-background').forEach((circle) => circle.remove());
 
-    malData.forEach((datum) => {
-      const animeID = datum.node.id;
-      const circle = document.querySelector(`circle[data-anime-id="${animeID}"]`);
-      if (!circle) {
-        return;
-      }
+    // TODO: Clear styles on previously marked points
 
-      circle.classList.add('mal-user-point');
-    });
-    const insertedPointBackgrounds = this.decorationsContainer
-      .selectAll()
-      .data(malData.map((d) => this.embeddingByID.get(+d.node.id)).filter((x) => !!x))
-      .enter()
-      .append('circle')
-      .attr('class', 'mal-user-point-background')
-      .attr('fill', 'url(#red-transparent-gradient)')
-      .attr('cx', (d) => this.scaleX(d.vector[0]))
-      .attr('cy', (d) => this.scaleY(d.vector[1]))
-      .attr('r', (d) => {
-        return 1600 + AtlasViz.getNodeRadius(d.metadata.rating_count) * 2.8;
-        // return 1400;
-      });
+    // TODO: Update styles on user-owned points
+
+    // TODO: Render backgrounds
 
     // TODO: Compute connections
-  }
-
-  private getHoverLabelID() {
-    return this.hoverLabelCounter++;
   }
 
   private getColorByTitle() {
@@ -83,101 +58,253 @@ export class AtlasViz {
   private static createColorScaler = (scaleBy: ColorBy) => {
     switch (scaleBy) {
       case ColorBy.AiredFromYear:
-        return d3.scaleSequential(d3.interpolatePlasma).domain([1980, 2020]);
+        return d3.scaleSequential(d3.interpolatePlasma).domain([1990, 2022]);
       case ColorBy.AverageRating: {
         return d3.scaleSequential(d3.interpolateViridis).domain([3, 7.5]);
       }
     }
   };
 
-  private static getNodeRadius = (ratingCount: number) => Math.pow(ratingCount, 0.75) / 28.5 + 48;
-
-  private getTextSize = () => {
-    const baseFontSize = (1 / this.currentTransform.k) * 13 + 4;
-    const fontSize =
-      Math.round(baseFontSize - (baseFontSize % (this.currentTransform.k > 0.5 ? 1 : 5))) + 10;
-    return `${fontSize}px`;
-  };
+  private static getNodeRadius = (ratingCount: number) =>
+    Math.pow(ratingCount, 0.83) / 8000 + 0.1825;
 
   constructor(
+    pixi: { PIXI: typeof import('pixi.js'); Viewport: typeof import('pixi-viewport').Viewport },
     containerID: string,
     embedding: Embedding,
-    setSelectedAnimeID: (id: number | null) => void,
-    onPointerDown: (evt: MouseEvent) => void
+    setSelectedAnimeID: (id: number | null) => void
   ) {
     this.embedding = embedding;
     this.embeddingByID = new Map(embedding.map((p) => [+p.metadata.id, p]));
     this.setSelectedAnimeID = setSelectedAnimeID;
-    this.svg = d3.select(`#${containerID}`);
-    this.rootContainer = d3.select('g#root-container');
-    this.labelsContainer = this.rootContainer.select('g#labels-container');
-    this.pointsContainer = this.rootContainer.select('g#points-container');
-    this.decorationsContainer = this.rootContainer.select('g#decorations-container');
+    this.PIXI = pixi.PIXI;
 
-    this.scaleX = d3.scaleLinear().domain([-1, 1]).range([0, width]);
-    this.scaleY = d3.scaleLinear().domain([-1, 1]).range([0, height]);
+    // Performance optimization to avoid having to set transforms on every point
+    const cachedNodeRadii = new Float32Array(embedding.length);
+    for (let i = 0; i < embedding.length; i++) {
+      const p = embedding[i];
+      const radius = AtlasViz.getNodeRadius(p.metadata.rating_count);
+      cachedNodeRadii[i] = radius;
+    }
+    this.PIXI.ParticleRenderer.prototype.uploadVertices = (
+      children: PIXI.Sprite[],
+      startIndex: number,
+      amount: number,
+      array: Float32Array | number[],
+      stride: number,
+      offset: number
+    ) => {
+      const adjustment = this.getNodeRadiusAdjustment(this.container.scale.x);
+
+      const texture = children[0].texture;
+      const orig = texture.orig;
+
+      const w0 = orig.width; // * (1 - sprite.anchor.x);
+      // const w1 = (orig.width); // * -sprite.anchor.x;
+      const h0 = orig.height; // * (1 - sprite.anchor.y);
+      // const h1 = orig.height; // * -sprite.anchor.y;
+
+      for (let i = 0; i < amount; ++i) {
+        const radius = cachedNodeRadii[i];
+        const scale = (radius / BASE_RADIUS) * adjustment;
+
+        // array[offset] = w1 * sx;
+        // array[offset + 1] = h1 * sy;
+        array[offset + stride] = w0 * scale;
+        // array[offset + stride + 1] = h1 * sy;
+        array[offset + stride * 2] = w0 * scale;
+        array[offset + stride * 2 + 1] = h0 * scale;
+        // array[offset + (stride * 3)] = w1 * scale;
+        array[offset + stride * 3 + 1] = h0 * scale;
+        offset += stride * 4;
+      }
+    };
+
+    const canvas = document.getElementById(containerID)! as HTMLCanvasElement;
+    this.app = new this.PIXI.Application({
+      antialias: true,
+      resolution: window.devicePixelRatio,
+      autoDensity: true,
+      view: canvas,
+      height: window.innerHeight,
+      width: window.innerWidth,
+      backgroundColor: 0,
+    });
+
+    this.container = new pixi.Viewport({
+      screenWidth: window.innerWidth,
+      screenHeight: window.innerHeight,
+      worldHeight: WORLD_SIZE,
+      worldWidth: WORLD_SIZE,
+      interaction: this.app.renderer.plugins.interaction,
+    });
+    this.container.drag().pinch().wheel();
+    // TODO: The initial transform probably needs to be relative to screen size
+    this.container.setTransform(1000.5, 400.5, 16, 16);
+
+    window.addEventListener('resize', () => {
+      this.app.renderer.resize(window.innerWidth, window.innerHeight);
+    });
+    this.container.resize(window.innerWidth, window.innerHeight);
+
+    this.pointsContainer = new this.PIXI.ParticleContainer(embedding.length, {
+      vertices: true,
+      position: false,
+      rotation: false,
+      uvs: false,
+      tint: false,
+    });
+
+    this.pointsContainer.interactive = false;
+    this.pointsContainer.interactiveChildren = false;
+    this.container.addChild(this.pointsContainer);
+    this.labelsContainer = new this.PIXI.Container();
+    this.labelsContainer.interactive = false;
+    this.labelsContainer.interactiveChildren = false;
+    this.container.addChild(this.labelsContainer);
+
+    // When zooming in and out, scale the circles in the opposite direction a bit to open up some space when
+    // zooming in to dense areas and keeping structure when zooming out far.
+    let lastScale = this.container.scale.x;
+
+    this.app.ticker.add(() => {
+      const newScale = this.container.scale.x;
+      if (newScale === lastScale) {
+        return;
+      }
+      lastScale = newScale;
+
+      // const adjustment = this.getNodeRadiusAdjustment(newScale);
+      // this.pointsContainer.children.forEach((c, i) => {
+      //   const radius = cachedNodeRadii[i];
+      //   c.transform.scale.set((radius / BASE_RADIUS) * adjustment);
+      // });
+
+      this.labelsContainer.children.forEach((g) => {
+        const d = (g as any).datum;
+        this.setTextNodeScale(g as PIXI.Graphics, d);
+      });
+    });
+
+    this.app.stage.addChild(this.container);
+
+    // Somewhat annoyingly, we have to do manual hit testing in order to get decent rendering performance
+    // for the circles.
+    let hoveredDatum: EmbeddedPoint | null = null;
+
+    canvas.addEventListener('pointermove', (evt) => {
+      if (this.container.zooming) {
+        return;
+      }
+
+      const worldPoint = this.container.toWorld(evt.offsetX, evt.offsetY);
+
+      const newScale = this.container.scale.x;
+      const adjustment = this.getNodeRadiusAdjustment(newScale);
+      let datum: EmbeddedPoint | undefined;
+      for (let i = this.embedding.length - 1; i >= 0; i--) {
+        const p = this.embedding[i];
+        const radius = cachedNodeRadii[i] * adjustment;
+        const centerX = p.vector[0] + radius;
+        const centerY = p.vector[1] + radius;
+        const hitTest =
+          Math.abs(worldPoint.x - centerX) < radius && Math.abs(worldPoint.y - centerY) < radius;
+
+        if (hitTest) {
+          datum = p;
+          break;
+        }
+      }
+
+      if (datum && hoveredDatum !== datum) {
+        this.handlePointerOut();
+        hoveredDatum = datum;
+        this.handlePointerOver(hoveredDatum);
+      } else if (!datum && hoveredDatum) {
+        this.handlePointerOut();
+        hoveredDatum = null;
+      } else {
+        hoveredDatum = datum;
+      }
+
+      this.container.cursor = hoveredDatum ? 'pointer' : 'grab';
+    });
+
+    let containerPointerDownPos: PIXI.Point | null = null;
+    this.container
+      .on('pointerdown', (evt: PIXI.InteractionEvent) => {
+        this.container.cursor = 'grabbing';
+        containerPointerDownPos = evt.data.getLocalPosition(this.app.stage);
+
+        if (hoveredDatum) {
+          this.handlePointerDown(hoveredDatum);
+        }
+      })
+      .on('pointerup', (evt: PIXI.InteractionEvent) => {
+        this.container.cursor = 'grab';
+        const newPos = evt.data.getLocalPosition(this.app.stage);
+        if (
+          hoveredDatum ||
+          newPos.x !== containerPointerDownPos?.x ||
+          newPos.y !== containerPointerDownPos?.y
+        ) {
+          containerPointerDownPos = null;
+          return;
+        }
+        containerPointerDownPos = null;
+
+        setSelectedAnimeID(null);
+      });
 
     this.setColorBy(this.colorBy);
 
-    // Render the data in chunks to avoid locking up the browser
-    const chunkSize = 1000;
-    for (let i = 0; i < embedding.length; i += chunkSize) {
-      const chunk = embedding.slice(i, i + chunkSize);
-      this.pointsContainer
-        .selectAll()
-        .data(chunk)
-        .enter()
-        .append('circle')
-        .attr('data-anime-id', (d) => d.metadata.id)
-        .attr('cx', (d) => this.scaleX(d.vector[0]))
-        .attr('cy', (d) => this.scaleY(d.vector[1]))
-        .attr('r', (d) => AtlasViz.getNodeRadius(d.metadata.rating_count))
-        .style('fill', (d) => this.colorScaler(d.metadata[this.colorBy]))
-        .on('mouseenter', (_evt, d) => this.renderLabel(d))
-        .on('mouseleave', () => this.maybeRemoveLabel())
-        .on('pointerdown', (evt, d) => {
-          this.setSelectedAnimeID(d.metadata.id);
-          onPointerDown(evt);
-        });
-    }
-
-    this.installZoomHandler();
+    this.renderPoints();
 
     this.renderLegend();
   }
 
-  private installZoomHandler = () => {
-    const handleZoom = ({ transform }: D3ZoomEvent<any, any>) => {
-      const transformString = `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`;
-      [this.pointsContainer, this.labelsContainer, this.decorationsContainer].forEach(
-        (container) => {
-          // Setting the `transform` style attribute seems faster than setting the SVG `transform` attribute
-          const node = container.node() as SVGGElement;
-          // node.setAttribute(
-          //   'style',
-          //   `transform: translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`
-          // );
-          node.style.transform = transformString;
-        }
-      );
-
-      const oldTextSize = this.getTextSize();
-      this.currentTransform = transform;
-      const newTextSize = this.getTextSize();
-      if (oldTextSize !== newTextSize) {
-        this.labelsContainer.selectAll('text').style('font-size', newTextSize);
-      }
-    };
-
-    // Need to do some dirty things to get D3 to stop butchering out performance
-    const svgNode = this.svg.node() as SVGSVGElement;
-    svgNode.createSVGPoint = null;
-    svgNode.getBoundingClientRect = () => ({ top: 0, left: 0 });
-    console.log(svgNode);
-
-    this.zoom = d3.zoom().on('zoom', handleZoom);
-    this.svg.call(this.zoom).call(this.zoom.transform, this.currentTransform);
+  private getNodeRadiusAdjustment = (newZoomScale: number) => {
+    let adjustment = (1 / (newZoomScale / 16)) * 1;
+    adjustment = (adjustment + adjustment + adjustment + 1 + 1) / 5;
+    adjustment = Math.min(adjustment, 1.5);
+    return adjustment;
   };
+
+  private handlePointerOver = (datum: EmbeddedPoint) => this.renderHoverLabel(datum);
+  private handlePointerOut = () => this.maybeRemoveLabel();
+  private handlePointerDown = (datum: EmbeddedPoint) => this.setSelectedAnimeID(datum.metadata.id);
+
+  private renderPoints() {
+    const { PIXI } = this;
+
+    const nodeGraphics = new PIXI.Graphics();
+    nodeGraphics.lineStyle(10, 0xffffff, 1);
+    nodeGraphics.beginFill(0xffffff);
+    nodeGraphics.drawCircle(0, 0, BASE_RADIUS);
+    nodeGraphics.endFill();
+    const texture = this.app.renderer.generateTexture(nodeGraphics, {
+      resolution: 5,
+      scaleMode: PIXI.SCALE_MODES.LINEAR,
+      multisample: PIXI.MSAA_QUALITY.MEDIUM,
+    });
+
+    this.embedding.forEach((p) => {
+      const { metadata, vector } = p;
+      const [x, y] = vector;
+      const radius = AtlasViz.getNodeRadius(metadata.rating_count);
+      const nodeSprite = new PIXI.Sprite(texture);
+      nodeSprite.interactive = false;
+      nodeSprite.pivot.set(BASE_RADIUS, BASE_RADIUS);
+      const colorString = this.colorScaler(metadata[this.colorBy]);
+      const color = parseInt(colorString.slice(1), 16);
+      nodeSprite.tint = color;
+      nodeSprite.position.set(x, y);
+      nodeSprite.scale.set(radius / BASE_RADIUS);
+      (nodeSprite as any).radius = radius;
+      (nodeSprite as any).datum = p;
+      this.pointsContainer.addChild(nodeSprite);
+    });
+  }
 
   public setColorBy(colorBy: ColorBy) {
     this.colorBy = colorBy;
@@ -187,46 +314,76 @@ export class AtlasViz {
 
   public flyTo(id: number) {
     const [x, y] = this.embedding.find((p) => p.metadata.id === id)!.vector;
-    const newTransform = d3.zoomIdentity
-      .translate(window.innerWidth / 2, window.innerHeight / 2)
-      .scale(0.1)
-      .translate(-this.scaleX(x), -this.scaleY(y));
-    this.svg.transition().duration(400).call(this.zoom.transform, newTransform);
-    this.setSelectedAnimeID(id);
+    this.container.animate({
+      time: 500,
+      position: { x, y },
+      scale: 30,
+      ease: (curTime: number, minVal: number, maxVal: number, maxTime: number): number => {
+        // cubic ease in out
+        const t = curTime / maxTime;
+        const p = t * t * t;
+        return minVal + (maxVal - minVal) * p;
+      },
+    });
   }
 
-  private renderLabel = (d: EmbeddedPoint) => {
-    this.maybeRemoveLabel();
-    this.renderedHoverLabel = this.getHoverLabelID();
+  private getTextScale = () => {
+    const currentScale = this.container.scale.x;
+    const textSize = (1 / currentScale) * 11 + 0.153;
+    return textSize / BASE_LABEL_FONT_SIZE;
+  };
 
-    this.labelsContainer
-      .append('text')
-      .attr('filter', 'url(#solid)')
-      .attr('x', this.scaleX(d.vector[0]))
-      .attr('y', this.scaleY(d.vector[1]) - AtlasViz.getNodeRadius(d.metadata.rating_count) - 10)
-      .attr('id', `atlas-viz-hover-label-${this.renderedHoverLabel}`)
-      .attr('class', 'hover-label')
-      .attr('text-anchor', 'middle')
-      .attr('text-baseline', 'bottom')
-      .style('font-size', this.getTextSize())
-      .text(d.metadata.title);
+  private setTextNodeScale = (g: PIXI.Graphics, d: EmbeddedPoint) => {
+    g.transform.scale.set(this.getTextScale());
+    g.position.set(d.vector[0], d.vector[1]);
+    const circleRadius = AtlasViz.getNodeRadius(d.metadata.rating_count);
+    g.position.y -=
+      12 * (1 / this.container.scale.x) + circleRadius * 0.0028 * this.container.scale.x;
+  };
+
+  private renderHoverLabel = (d: EmbeddedPoint) => {
+    this.maybeRemoveLabel();
+
+    const text = d.metadata.title;
+    const textWidth = this.textMeasurerCtx.measureText(text).width;
+
+    const g = new this.PIXI.Graphics();
+    g.lineStyle({ width: 0 });
+    g.beginFill(0x222222, 0.5);
+    g.drawRoundedRect(0, 0, textWidth + 10, 50, 5);
+    g.endFill();
+    g.interactive = false;
+    g.interactiveChildren = false;
+
+    (g as any).datum = d;
+    this.setTextNodeScale(g, d);
+    // set origin to center of text
+    g.pivot.set(textWidth / 2, 25);
+
+    const textSprite = new this.PIXI.Text(text, {
+      fontFamily: 'PT Sans',
+      fontSize: BASE_LABEL_FONT_SIZE,
+      fill: 0xcccccc,
+      align: 'center',
+    });
+    textSprite.anchor.set(0.5, 0.5);
+    textSprite.position.set(5 + textWidth / 2, 25);
+    textSprite.interactive = false;
+
+    g.addChild(textSprite);
+    this.labelsContainer.addChild(g);
+    this.renderedHoverLabel = g;
   };
 
   private maybeRemoveLabel = () => {
-    if (this.renderedHoverLabel === null) {
+    const label = this.renderedHoverLabel;
+    if (!label) {
       return;
     }
 
-    const label = document.getElementById(`atlas-viz-hover-label-${this.renderedHoverLabel}`);
-    if (label) {
-      d3.select(label)
-        .transition()
-        .ease(d3.easeCubicIn)
-        // Speed up the transition when zoomed in since there is less context to absorb
-        .duration(1000 - Math.min(this.currentTransform.k * 6200, 800))
-        .style('opacity', 0)
-        .remove();
-    }
+    label.parent?.removeChild(this.renderedHoverLabel);
+    label.destroy({ children: true });
+    this.renderedHoverLabel = null;
   };
 
   private renderLegend() {
@@ -237,5 +394,9 @@ export class AtlasViz {
     const legendContainer = document.getElementById('atlas-viz-legend')!;
     legendContainer.innerHTML = '';
     legendContainer.appendChild(legend);
+  }
+
+  public dispose() {
+    this.app.ticker.stop();
   }
 }
