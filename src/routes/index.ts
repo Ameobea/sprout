@@ -1,11 +1,13 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import fs from 'fs';
+import { parse } from 'csv-parse';
 
 import { DATA_DIR } from '../conf';
 
 interface RawEmbedding {
   points: { [index: string]: { x: number; y: number } };
   neighbors: { [index: string]: number[] };
+  ids: number[];
 }
 
 interface Metadatum {
@@ -25,43 +27,71 @@ export type Embedding = EmbeddedPoint[];
 
 let cachedEmbedding: Embedding | null = null;
 
+// HEADERS: 'id', 'title', 'title_english', 'related_anime', 'recommendations', 'aired_from_year', 'rating_count', 'average_rating'
+const METADATA_FILE_NAME = `${DATA_DIR}/processed-metadata.csv`;
+
+const loadMetadata = async () => {
+  const metadata = new Map<number, Metadatum>();
+  await new Promise((resolve) =>
+    fs
+      .createReadStream(METADATA_FILE_NAME)
+      .pipe(parse({ delimiter: ',' }))
+      .on('data', (row) => {
+        // Skip header row
+        const id = +row[0];
+        if (Number.isNaN(id)) {
+          if (metadata.size === 0) {
+            return;
+          } else {
+            console.error('Missing id for row ' + metadata.size);
+          }
+        }
+        metadata.set(id, {
+          id,
+          title: row[1],
+          title_english: row[2],
+          rating_count: +row[6],
+          average_rating: +row[7],
+          aired_from_year: +row[5],
+        });
+      })
+      .on('end', () => {
+        resolve(metadata);
+      })
+  );
+  return metadata;
+};
+
 const loadEmbedding = async (): Promise<Embedding> => {
   if (cachedEmbedding) {
     return cachedEmbedding;
   }
 
-  const metadata: Metadatum[] = await new Promise((resolve) => {
-    fs.readFile(`${DATA_DIR}/metadata.json`, 'utf8', (err, data) => {
-      if (err) {
-        throw err;
-      }
+  const metadata = await loadMetadata();
 
-      const metadata: Metadatum[] = JSON.parse(data);
-      resolve(
-        metadata.map((metadatum) => ({
-          ...metadatum,
-          average_rating: +metadatum.average_rating.toFixed(3),
-        }))
-      );
-    });
-  });
-
+  const embeddingFilename = 'projected_embedding.json';
+  // const embeddingFilename = 'ggvec_projected_embedding.json';
   await new Promise((resolve) =>
-    fs.readFile(`${DATA_DIR}/projected_embedding.json`, (err, data) => {
+    fs.readFile(`${DATA_DIR}/${embeddingFilename}`, (err, data) => {
       if (err) {
         throw err;
       }
 
       const raw: RawEmbedding = JSON.parse(data.toString());
-      cachedEmbedding = Object.entries(raw.points).map(([index, point]) => {
+      const entries = Object.entries(raw.points);
+      if (raw.ids.length !== entries.length) {
+        throw new Error(`Have ${entries.length} embedding entries, but ${raw.ids.length} ids`);
+      }
+      cachedEmbedding = entries.map(([index, point]) => {
         const i = +index;
-        const metadatum = metadata[i];
+        const id = +raw.ids[i];
+        const metadatum = metadata.get(id);
         if (!metadatum) {
-          throw new Error('Missing metadata for point ' + i);
+          throw new Error('Missing metadata for id ' + id);
         }
 
         return {
-          vector: [point.x, point.y],
+          vector: [point.x * 0.7, point.y * 0.7],
           metadata: metadatum,
         };
       });

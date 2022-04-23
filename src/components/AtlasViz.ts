@@ -16,7 +16,7 @@ enum ColorBy {
 export class AtlasViz {
   private embedding: Embedding;
   private embeddingByID: Map<number, EmbeddedPoint>;
-  private colorBy = ColorBy.AiredFromYear;
+  private colorBy = ColorBy.AverageRating;
   private svg: d3.Selection<SVGSVGElement, unknown, HTMLElement, any>;
   private rootContainer: d3.Selection<d3.BaseType, unknown, HTMLElement, any>;
   private pointsContainer: d3.Selection<d3.BaseType, unknown, HTMLElement, any>;
@@ -63,7 +63,6 @@ export class AtlasViz {
         return 1600 + AtlasViz.getNodeRadius(d.metadata.rating_count) * 2.8;
         // return 1400;
       });
-    console.log(malData, insertedPointBackgrounds);
 
     // TODO: Compute connections
   }
@@ -103,7 +102,8 @@ export class AtlasViz {
   constructor(
     containerID: string,
     embedding: Embedding,
-    setSelectedAnimeID: (id: number | null) => void
+    setSelectedAnimeID: (id: number | null) => void,
+    onPointerDown: (evt: MouseEvent) => void
   ) {
     this.embedding = embedding;
     this.embeddingByID = new Map(embedding.map((p) => [+p.metadata.id, p]));
@@ -135,7 +135,10 @@ export class AtlasViz {
         .style('fill', (d) => this.colorScaler(d.metadata[this.colorBy]))
         .on('mouseenter', (_evt, d) => this.renderLabel(d))
         .on('mouseleave', () => this.maybeRemoveLabel())
-        .on('click', (_evt, d) => this.setSelectedAnimeID(d.metadata.id));
+        .on('pointerdown', (evt, d) => {
+          this.setSelectedAnimeID(d.metadata.id);
+          onPointerDown(evt);
+        });
     }
 
     this.installZoomHandler();
@@ -145,9 +148,18 @@ export class AtlasViz {
 
   private installZoomHandler = () => {
     const handleZoom = ({ transform }: D3ZoomEvent<any, any>) => {
-      this.pointsContainer.attr('transform', transform as any);
-      this.labelsContainer.attr('transform', transform as any);
-      this.decorationsContainer.attr('transform', transform as any);
+      const transformString = `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`;
+      [this.pointsContainer, this.labelsContainer, this.decorationsContainer].forEach(
+        (container) => {
+          // Setting the `transform` style attribute seems faster than setting the SVG `transform` attribute
+          const node = container.node() as SVGGElement;
+          // node.setAttribute(
+          //   'style',
+          //   `transform: translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`
+          // );
+          node.style.transform = transformString;
+        }
+      );
 
       const oldTextSize = this.getTextSize();
       this.currentTransform = transform;
@@ -156,6 +168,12 @@ export class AtlasViz {
         this.labelsContainer.selectAll('text').style('font-size', newTextSize);
       }
     };
+
+    // Need to do some dirty things to get D3 to stop butchering out performance
+    const svgNode = this.svg.node() as SVGSVGElement;
+    svgNode.createSVGPoint = null;
+    svgNode.getBoundingClientRect = () => ({ top: 0, left: 0 });
+    console.log(svgNode);
 
     this.zoom = d3.zoom().on('zoom', handleZoom);
     this.svg.call(this.zoom).call(this.zoom.transform, this.currentTransform);

@@ -85,6 +85,7 @@
     height: 213px;
     width: 153px;
     display: inline;
+    object-fit: scale-down;
   }
 
   p {
