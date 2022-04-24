@@ -73,6 +73,11 @@
     "@nodelib/fs.scandir" "2.1.5"
     fastq "^1.6.0"
 
+"@pixi-essentials/gradients@^0.0.5":
+  version "0.0.5"
+  resolved "https://registry.yarnpkg.com/@pixi-essentials/gradients/-/gradients-0.0.5.tgz#1917f7b18c65a263eef3bd4f4fed2025f71355bf"
+  integrity sha512-auO2XoQOTeNB46YTy+KbhLpQ/ekVccUGFyzV6m6snTwe2kDCEHJ3uuqbHH0911FZTHyXgInOhI+3RaTkahiy9w==
+
 "@pixi/accessibility@6.3.0":
   version "6.3.0"
   resolved "https://registry.yarnpkg.com/@pixi/accessibility/-/accessibility-6.3.0.tgz#fe843d6080fa263d01dcb3c1adad00fc42cafb75"

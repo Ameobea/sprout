@@ -14,6 +14,7 @@
   onMount(() => {
     const username = new URLSearchParams(window.location.search).get('username') ?? 'Expochant';
     const userProfilePromise = fetch(`/mal-profile?username=${username}`).then((res) => res.json());
+    const neighborsPromise: Promise<{ neighbors: number[][] }> = fetch('/neighbors').then((res) => res.json());
 
     import('../pixi').then((mod) => {
       viz = new AtlasViz(mod, 'viz', embedding, (newSelectedAnimeID: number | null) => {
@@ -22,6 +23,10 @@
 
       userProfilePromise.then((profile) => {
         viz.displayMALUser(profile);
+      });
+
+      neighborsPromise.then(({ neighbors }) => {
+        viz.setNeighbors(neighbors);
       });
     });
   });
@@ -59,11 +64,4 @@
     z-index: 1;
     background-color: #11111188;
   }
-
-  /* :global(text.hover-label) {
-    font-weight: bold;
-    fill: #ccc;
-    pointer-events: none;
-    background-color: #11111188;
-  } */
 </style>
