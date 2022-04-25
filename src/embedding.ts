@@ -61,8 +61,12 @@ const loadMetadata = async () => {
 const embeddingFilename = 'projected_embedding.json';
 // const embeddingFilename = 'ggvec_projected_embedding.json';
 
-const loadRawEmbedding = (): Promise<RawEmbedding> =>
-  new Promise((resolve) =>
+const loadRawEmbedding = async (): Promise<RawEmbedding> => {
+  if (CachedRawEmbedding) {
+    return CachedRawEmbedding;
+  }
+
+  return new Promise((resolve) =>
     fs.readFile(`${DATA_DIR}/${embeddingFilename}`, (err, data) => {
       if (err) {
         throw err;
@@ -77,6 +81,7 @@ const loadRawEmbedding = (): Promise<RawEmbedding> =>
       resolve(CachedRawEmbedding);
     })
   );
+};
 
 export const loadEmbedding = async (): Promise<Embedding> => {
   if (CachedEmbedding) {
@@ -101,7 +106,12 @@ export const loadEmbedding = async (): Promise<Embedding> => {
       metadata: metadatum,
     };
   });
-  CachedEmbedding.sort((a, b) => b.metadata.rating_count - a.metadata.rating_count);
+  CachedEmbedding.sort((a, b) => {
+    if (b.metadata.rating_count !== a.metadata.rating_count) {
+      return b.metadata.rating_count - a.metadata.rating_count;
+    }
+    return b.metadata.id - a.metadata.id;
+  });
 
   return CachedEmbedding!;
 };
@@ -112,9 +122,26 @@ export const loadNeighbors = async (): Promise<number[][]> => {
   }
 
   const rawEmbedding = await loadRawEmbedding();
-  console.log(rawEmbedding.neighbors);
-  CachedNeighbors = Object.keys(rawEmbedding.points).map(
-    (i) => rawEmbedding.neighbors.neighbors[+i].map((ix) => +rawEmbedding.ids[+ix]) ?? []
-  );
-  return CachedNeighbors!;
+  const embedding = await loadEmbedding();
+
+  const idByOriginalIndex = rawEmbedding.ids;
+  const originalIndexByID = new Map<number, number>();
+  for (let i = 0; i < idByOriginalIndex.length; i++) {
+    originalIndexByID.set(+idByOriginalIndex[i], i);
+  }
+
+  CachedNeighbors = embedding.map(({ metadata: { id } }) => {
+    const originalIndex = originalIndexByID.get(+id);
+    if (!originalIndex) {
+      console.error('Missing original index for id ' + id);
+      return [];
+    }
+    const neighbors = rawEmbedding.neighbors.neighbors[originalIndex];
+    if (!neighbors) {
+      throw new Error('Missing neighbors for original index ' + originalIndex);
+    }
+
+    return neighbors.map((neighborIndex) => +idByOriginalIndex[neighborIndex]);
+  });
+  return CachedNeighbors;
 };

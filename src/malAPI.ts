@@ -65,8 +65,8 @@ interface ListStatus {
   updated_at: string;
 }
 
-// Cache for 24 hours
-const UserAnimeListCache = new TimedCache({ defaultTtl: 60 * 60 * 24 * 1000 });
+// Cache for 5 minutes
+const UserAnimeListCache = new TimedCache({ defaultTtl: 5 * 60 * 1000 });
 
 export const getUserAnimeList = async (username: string): Promise<MALUserAnimeListItem[]> => {
   const cached = UserAnimeListCache.get(username);

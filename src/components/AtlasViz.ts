@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import * as PIXI from 'pixi.js';
+import type * as PIXI from 'pixi.js';
 import type { Viewport } from 'pixi-viewport';
 
 import type { MALUserAnimeListItem } from '../malAPI';
@@ -32,7 +32,7 @@ export class AtlasViz {
   private colorBy = ColorBy.AiredFromYear;
   private colorScaler: d3.ScaleSequential<string, never>;
   private renderedHoverObjects: { label: PIXI.Graphics; neighborLines: PIXI.Graphics | null } | null = null;
-  private neighbors: number[][] | null = null;
+  private neighbors: number[][] = null;
   private setSelectedAnimeID: (id: number | null) => void;
 
   private PIXI: typeof import('pixi.js');
@@ -40,6 +40,7 @@ export class AtlasViz {
   private app: PIXI.Application;
   private container: Viewport;
   private pointsContainer: PIXI.Container;
+  private selectedNodeContainer: PIXI.Container;
   private decorationsContainer: PIXI.Container;
   private labelsContainer: PIXI.Container;
   private textMeasurerCtx = (() => {
@@ -50,7 +51,12 @@ export class AtlasViz {
   private malPointBackgrounds: PIXI.ParticleContainer | null = null;
   private cachedMALBackgroundTexture: PIXI.Texture | null = null;
   private renderedMALNodeIDs: Set<number> = new Set();
-  private selectedNode: { id: number; node: PIXI.Sprite; background: PIXI.Sprite } | null = null;
+  private selectedNode: {
+    id: number;
+    node: PIXI.Sprite;
+    background: PIXI.Sprite;
+    connections: PIXI.Graphics | null;
+  } | null = null;
   private cachedNodeTexture: PIXI.Texture | null = null;
 
   private buildNeighborLines(datum: EmbeddedPointWithIndex): PIXI.Graphics | null {
@@ -58,13 +64,19 @@ export class AtlasViz {
       return null;
     }
 
-    const g = new PIXI.Graphics();
-    g.lineStyle(0.2, NEIGHBOR_LINE_COLOR, NEIGHBOR_LINE_OPACITY);
-    const neighbors: number[] = this.neighbors[datum.index];
+    const neighbors: number[] = this.neighbors[datum.index] ?? [];
+    if (neighbors.length === 0) {
+      console.warn(`No neighbors found for node index=${datum.index} id=${datum.metadata.id}`);
+      return null;
+    }
+
+    const g = new this.PIXI.Graphics();
+    g.lineStyle(2, NEIGHBOR_LINE_COLOR, NEIGHBOR_LINE_OPACITY, 0.5, true);
+
     neighbors.forEach((neighborID) => {
       const neighbor = this.embeddedPointByID.get(neighborID);
       if (!neighbor) {
-        console.warn(`Could not find neighbor id=${neighborID} for node ${datum.index}`);
+        console.warn(`Could not find neighbor id=${neighborID} for node index=${datum.index}`);
         return;
       }
       g.moveTo(datum.vector[0], datum.vector[1]);
@@ -245,7 +257,7 @@ export class AtlasViz {
       setSelectedAnimeID(newSelectedAnimeID);
 
       if (this.selectedNode?.id !== newSelectedAnimeID) {
-        const sprites = this.renderSelectedNode(newSelectedAnimeID);
+        const sprites = this.renderSelectedNodeObjects(newSelectedAnimeID);
         this.selectedNode = sprites ? { id: newSelectedAnimeID, ...sprites } : null;
       }
     };
@@ -284,8 +296,8 @@ export class AtlasViz {
 
     window.addEventListener('resize', () => {
       this.app.renderer.resize(window.innerWidth, window.innerHeight);
+      this.container.resize(window.innerWidth, window.innerHeight);
     });
-    this.container.resize(window.innerWidth, window.innerHeight);
 
     // Need to do some hacky subclassing to enable big performance improvement
     class NodesParticleRenderer extends this.PIXI.ParticleRenderer {}
@@ -304,6 +316,11 @@ export class AtlasViz {
       }
     }
 
+    this.decorationsContainer = new this.PIXI.Container();
+    this.decorationsContainer.interactive = false;
+    this.decorationsContainer.interactiveChildren = false;
+    this.container.addChild(this.decorationsContainer);
+
     this.pointsContainer = new NodesParticleContainer(embedding.length, {
       vertices: true,
       position: false,
@@ -311,14 +328,15 @@ export class AtlasViz {
       uvs: false,
       tint: false,
     });
-
-    this.decorationsContainer = new this.PIXI.Container();
-    this.decorationsContainer.interactive = false;
-    this.decorationsContainer.interactiveChildren = false;
-    this.container.addChild(this.decorationsContainer);
     this.pointsContainer.interactive = false;
     this.pointsContainer.interactiveChildren = false;
     this.container.addChild(this.pointsContainer);
+
+    this.selectedNodeContainer = new this.PIXI.Container();
+    this.selectedNodeContainer.interactive = false;
+    this.selectedNodeContainer.interactiveChildren = false;
+    this.container.addChild(this.selectedNodeContainer);
+
     this.labelsContainer = new this.PIXI.Container();
     this.labelsContainer.interactive = false;
     this.labelsContainer.interactiveChildren = false;
@@ -362,6 +380,7 @@ export class AtlasViz {
     // Somewhat annoyingly, we have to do manual hit testing in order to get decent rendering performance
     // for the circles.
     let hoveredDatum: EmbeddedPointWithIndex | null = null;
+    let containerPointerDownPos: PIXI.Point | null = null;
 
     canvas.addEventListener('pointermove', (evt) => {
       if (this.container.zooming) {
@@ -397,10 +416,9 @@ export class AtlasViz {
         hoveredDatum = datum;
       }
 
-      this.container.cursor = hoveredDatum ? 'pointer' : 'default';
+      this.container.cursor = hoveredDatum ? 'pointer' : containerPointerDownPos ? 'grabbing' : 'default';
     });
 
-    let containerPointerDownPos: PIXI.Point | null = null;
     this.container
       .on('pointerdown', (evt: PIXI.InteractionEvent) => {
         this.container.cursor = 'grabbing';
@@ -494,11 +512,14 @@ export class AtlasViz {
     });
   }
 
-  private renderSelectedNode(selectedAnimeID: number | null) {
+  private renderSelectedNodeObjects(selectedAnimeID: number | null) {
     if (this.selectedNode) {
       this.selectedNode.node.destroy({ texture: null });
-      this.container.removeChild(this.selectedNode.node);
+      this.selectedNodeContainer.removeChild(this.selectedNode.node);
       this.decorationsContainer.removeChild(this.selectedNode.background);
+      if (this.selectedNode.connections) {
+        this.decorationsContainer.removeChild(this.selectedNode.connections);
+      }
     }
 
     if (selectedAnimeID == null) {
@@ -509,7 +530,7 @@ export class AtlasViz {
     const texture = this.getNodeTexture();
     const nodeSprite = this.buildNodeSprite(texture, point);
     nodeSprite.tint = SELECTED_NODE_COLOR;
-    this.container.addChild(nodeSprite);
+    this.selectedNodeContainer.addChild(nodeSprite);
 
     const nodeBackgroundTexture = this.getNodeBackgroundTexture();
     const backgroundSprite = this.buildNodeBackgroundSprite(nodeBackgroundTexture, point, SELECTED_NODE_COLOR);
@@ -517,7 +538,12 @@ export class AtlasViz {
     backgroundSprite.scale.y *= 1.5;
     this.decorationsContainer.addChild(backgroundSprite);
 
-    return { node: nodeSprite, background: backgroundSprite };
+    const connections = this.buildNeighborLines(point);
+    if (connections) {
+      this.decorationsContainer.addChild(connections);
+    }
+
+    return { node: nodeSprite, background: backgroundSprite, connections };
   }
 
   public setColorBy(colorBy: ColorBy) {
