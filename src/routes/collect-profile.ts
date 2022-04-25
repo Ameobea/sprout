@@ -41,7 +41,9 @@ export const get: RequestHandler = async ({ url }) => {
 
     const username: string | null = await new Promise((resolve, reject) =>
       conn.query(
-        `SELECT username FROM \`usernames-to-collect\` WHERE ${collectedStatusColumnName} = 0 ORDER BY RAND() LIMIT 1`,
+        `SELECT username FROM \`usernames-to-collect\` as t1
+          JOIN (SELECT id FROM \`usernames-to-collect\` WHERE ${collectedStatusColumnName} = 0 ORDER BY RAND() LIMIT 1) as t2
+          ON t1.id=t2.id`,
         (err, results) => {
           if (err) {
             reject(err);
