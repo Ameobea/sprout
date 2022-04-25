@@ -30,6 +30,14 @@ const makeMALRequest = async (url: string, retryCount?: number) => {
   return res.json();
 };
 
+export enum AnimeListStatusCode {
+  Watching = 'watching',
+  Completed = 'completed',
+  OnHold = 'on_hold',
+  Dropped = 'dropped',
+  PlanToWatch = 'plan_to_watch',
+}
+
 interface AnimeBasicDetails {
   id: number;
   title: string;
@@ -39,9 +47,17 @@ interface AnimeBasicDetails {
   };
 }
 
+interface AnimeListStatus {
+  status: AnimeListStatusCode;
+  score: number;
+  num_episodes_watched: number;
+  is_rewatching: boolean;
+  updated_at: string;
+}
+
 export interface MALUserAnimeListItem {
   node: AnimeBasicDetails;
-  list_status: ListStatus;
+  list_status: AnimeListStatus;
 }
 
 export interface MALUserAnimeListResponse {
@@ -49,24 +65,38 @@ export interface MALUserAnimeListResponse {
   paging: { next?: string | null };
 }
 
-export enum ListStatusCode {
-  Watching = 'watching',
+export enum MangaListStatusCode {
+  Reading = 'reading',
   Completed = 'completed',
   OnHold = 'on_hold',
   Dropped = 'dropped',
-  PlanToWatch = 'plan_to_watch',
+  PlanToRead = 'plan_to_read',
 }
 
-interface ListStatus {
-  status: ListStatusCode;
+interface MangaListStatus {
+  status: MangaListStatusCode;
   score: number;
-  num_episodes_watched: number;
-  is_rewatching: boolean;
+  num_volumes_read: number;
+  num_chapters_read: number;
+  is_rereading: boolean;
+  start_date?: string | null;
+  finish_date?: string | null;
   updated_at: string;
+}
+
+export interface MALUserMangaListItem {
+  node: AnimeBasicDetails;
+  list_status: MangaListStatus;
+}
+
+export interface MALUserMangaListResponse {
+  data: MALUserMangaListItem[];
+  paging: { next?: string | null };
 }
 
 // Cache for 5 minutes
 const UserAnimeListCache = new TimedCache({ defaultTtl: 5 * 60 * 1000 });
+const UserMangaListCache = new TimedCache({ defaultTtl: 5 * 60 * 1000 });
 
 export const getUserAnimeList = async (username: string): Promise<MALUserAnimeListItem[]> => {
   const cached = UserAnimeListCache.get(username);
@@ -93,6 +123,35 @@ export const getUserAnimeList = async (username: string): Promise<MALUserAnimeLi
     }
   }
   UserAnimeListCache.put(username, data);
+
+  return data;
+};
+
+export const getUserMangaList = async (username: string): Promise<MALUserMangaListItem[]> => {
+  const cached = UserMangaListCache.get(username);
+  if (cached) {
+    console.log('Found cached user manga list for ' + username);
+    return cached;
+  }
+
+  const data: MALUserMangaListItem[] = [];
+
+  let i = 0;
+  const pageSize = 1000;
+  for (;;) {
+    const url = `${MAL_API_BASE_URL}/users/${username}/mangalist?offset=${
+      i * pageSize
+    }&limit=${pageSize}&fields=list_status`;
+    i += 1;
+    console.log(`Fetching page ${i}...`, url);
+
+    const res: MALUserMangaListResponse = await makeMALRequest(url);
+    data.push(...res.data);
+    if (!res.paging.next) {
+      break;
+    }
+  }
+  UserMangaListCache.put(username, data);
 
   return data;
 };
