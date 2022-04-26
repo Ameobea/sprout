@@ -9,7 +9,7 @@ import ColorLegend from './ColorLegend';
 const WORLD_SIZE = 1;
 const BASE_LABEL_FONT_SIZE = 42;
 const BASE_RADIUS = 50;
-const MAL_POINT_COLOR = 0x2bcaff;
+const MAL_NODE_COLOR = 0x2bcaff;
 const SELECTED_NODE_COLOR = 0xdb18ce;
 const NEIGHBOR_LINE_COLOR = 0xefefef;
 const NEIGHBOR_LINE_OPACITY = 0.4;
@@ -158,7 +158,7 @@ export class AtlasViz {
     const texture = this.getNodeBackgroundTexture();
     malData.forEach((item) => {
       // TODO: Dynamic color based on rating?
-      const color = 0x34e1eb;
+      const color = MAL_NODE_COLOR;
       const datum = this.embeddedPointByID.get(+item.node.id);
       if (!datum) {
         console.warn(`Could not find embedded point for MAL data point ${item.node.id} (${item.node.title})`);
@@ -197,7 +197,7 @@ export class AtlasViz {
   private getNodeColor = (datum: EmbeddedPoint) => {
     const animeID = datum.metadata.id;
     if (this.renderedMALNodeIDs.has(animeID)) {
-      return MAL_POINT_COLOR;
+      return MAL_NODE_COLOR;
     }
 
     const colorString = this.colorScaler(datum.metadata[this.colorBy]);
@@ -365,6 +365,14 @@ export class AtlasViz {
         return;
       }
 
+      if (newScale !== lastScale) {
+        const adjustment = this.getNodeRadiusAdjustment(newScale * 0.7);
+        this.labelsContainer.children.forEach((g) => {
+          const d = (g as any).datum;
+          this.setLabelScale(g as PIXI.Graphics, d, adjustment);
+        });
+      }
+
       lastCenter = this.container.center;
       this.updateLabels();
 
@@ -389,13 +397,9 @@ export class AtlasViz {
         this.selectedNode.node.transform.scale.set((radius / BASE_RADIUS) * adjustment);
       }
 
-      this.labelsContainer.children.forEach((g) => {
-        const d = (g as any).datum;
-        this.setLabelScale(g as PIXI.Graphics, d, newScale * 0.7);
-      });
       this.hoverLabelsContainer.children.forEach((g) => {
         const d = (g as any).datum;
-        this.setLabelScale(g as PIXI.Graphics, d, newScale);
+        this.setLabelScale(g as PIXI.Graphics, d, adjustment);
       });
     });
 
@@ -467,6 +471,8 @@ export class AtlasViz {
     this.setColorBy(this.colorBy);
 
     this.renderNodes();
+
+    this.updateLabels();
 
     this.renderLegend();
   }
@@ -597,9 +603,9 @@ export class AtlasViz {
     return textSize / BASE_LABEL_FONT_SIZE;
   };
 
-  private setLabelScale = (g: PIXI.Graphics | PIXI.Text, datum: EmbeddedPointWithIndex, zoomScale: number) => {
+  private setLabelScale = (g: PIXI.Graphics | PIXI.Text, datum: EmbeddedPointWithIndex, adjustment: number) => {
     g.transform.scale.set(this.getTextScale());
-    const radius = this.cachedNodeRadii[datum.index] * this.getNodeRadiusAdjustment(zoomScale);
+    const radius = this.cachedNodeRadii[datum.index] * adjustment;
     g.position.set(datum.vector[0], datum.vector[1] - radius);
     const circleRadius = AtlasViz.getNodeRadius(datum.metadata.rating_count);
     g.position.y -= 12 * (1 / this.container.scale.x) + circleRadius * 0.0023 * this.container.scale.x;
@@ -617,7 +623,7 @@ export class AtlasViz {
     g.interactiveChildren = false;
 
     (g as any).datum = datum;
-    this.setLabelScale(g, datum, this.container.scale.x);
+    this.setLabelScale(g, datum, this.getNodeRadiusAdjustment(this.container.scale.x));
     // set origin to center of text
     g.pivot.set(textWidth / 2, 25);
 
@@ -679,23 +685,42 @@ export class AtlasViz {
     );
   };
 
-  private computeLabelsToDisplay = (): EmbeddedPointWithIndex[] => {
+  private computeLabelsToDisplay = (): PIXI.Text[] => {
     const visibleNodes = this.getVisibleNodes();
-    const labelsToRender = [];
+    const labelsToRender: { label: PIXI.Text; transformedBounds: PIXI.Rectangle }[] = [];
+    const labelSizeAdjustment = this.getNodeRadiusAdjustment(this.container.scale.x);
 
+    let score = 0;
     for (const node of visibleNodes) {
-      // TODO: Compute + accumulate score
-      // TODO: Avoid rendering labels on top of each other?
-      labelsToRender.push(node);
+      const label = this.buildLabel(node, labelSizeAdjustment);
+      // Avoid rendering labels on top of each other
+      const bounds = label.getBounds();
+      // Grow bounds slightly to enfoce a bit of space between the labels
+      bounds.x -= bounds.width * 0.25;
+      bounds.width *= 1.5;
+      bounds.y -= bounds.height * 1.25;
+      bounds.height *= 2.5;
+
+      if (labelsToRender.some(({ transformedBounds }) => transformedBounds.intersects(bounds))) {
+        continue;
+      }
+
+      labelsToRender.push({ label, transformedBounds: bounds });
+      score += 1;
+      if (score > 50) {
+        break;
+      }
     }
 
-    return labelsToRender;
+    return labelsToRender.map(({ label }) => label);
   };
 
-  private buildLabel = (datum: EmbeddedPointWithIndex) => {
+  private buildLabel = (datum: EmbeddedPointWithIndex, labelSizeAdjustment: number) => {
     const text = datum.metadata.title;
-    if (this.cachedLabels.has(text)) {
-      return this.cachedLabels.get(text)!;
+    const cachedTextSprite = this.cachedLabels.get(text);
+    if (cachedTextSprite) {
+      this.setLabelScale(cachedTextSprite, datum, labelSizeAdjustment);
+      return cachedTextSprite;
     }
 
     const textWidth = this.textMeasurerCtx.measureText(text).width;
@@ -711,7 +736,7 @@ export class AtlasViz {
     textSprite.interactive = false;
 
     (textSprite as any).datum = datum;
-    this.setLabelScale(textSprite, datum, this.container.scale.x);
+    this.setLabelScale(textSprite, datum, labelSizeAdjustment);
     this.cachedLabels.set(text, textSprite);
 
     return textSprite;
@@ -723,8 +748,7 @@ export class AtlasViz {
     this.labelsContainer.removeChildren();
     // Do not destroy the removed labels since we cache them
 
-    for (const node of labelsToRender.slice(0, 20)) {
-      const label = this.buildLabel(node);
+    for (const label of labelsToRender) {
       this.labelsContainer.addChild(label);
     }
   };
