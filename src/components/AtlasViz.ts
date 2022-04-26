@@ -43,6 +43,7 @@ export class AtlasViz {
   private selectedNodeContainer: PIXI.Container;
   private decorationsContainer: PIXI.Container;
   private labelsContainer: PIXI.Container;
+  private hoverLabelsContainer: PIXI.Container;
   private textMeasurerCtx = (() => {
     const ctx = document.createElement('canvas').getContext('2d');
     ctx.font = '42px PT Sans';
@@ -58,6 +59,7 @@ export class AtlasViz {
     connections: PIXI.Graphics | null;
   } | null = null;
   private cachedNodeTexture: PIXI.Texture | null = null;
+  private cachedLabels: Map<string, PIXI.Text> = new Map();
 
   private buildNeighborLines(datum: EmbeddedPointWithIndex): PIXI.Graphics | null {
     if (!this.neighbors) {
@@ -342,12 +344,30 @@ export class AtlasViz {
     this.labelsContainer.interactiveChildren = false;
     this.container.addChild(this.labelsContainer);
 
+    this.hoverLabelsContainer = new this.PIXI.Container();
+    this.hoverLabelsContainer.interactive = false;
+    this.hoverLabelsContainer.interactiveChildren = false;
+    this.container.addChild(this.hoverLabelsContainer);
+
     // When zooming in and out, scale the circles in the opposite direction a bit to open up some space when
     // zooming in to dense areas and keeping structure when zooming out far.
+    let lastCenter = this.container.center;
     let lastScale = this.container.scale.x;
 
     this.app.ticker.add(() => {
       const newScale = this.container.scale.x;
+
+      if (
+        lastCenter.x === this.container.center.x &&
+        lastCenter.y === this.container.center.y &&
+        newScale === lastScale
+      ) {
+        return;
+      }
+
+      lastCenter = this.container.center;
+      this.updateLabels();
+
       if (newScale === lastScale) {
         return;
       }
@@ -370,6 +390,10 @@ export class AtlasViz {
       }
 
       this.labelsContainer.children.forEach((g) => {
+        const d = (g as any).datum;
+        this.setLabelScale(g as PIXI.Graphics, d, newScale * 0.7);
+      });
+      this.hoverLabelsContainer.children.forEach((g) => {
         const d = (g as any).datum;
         this.setLabelScale(g as PIXI.Graphics, d, newScale);
       });
@@ -457,7 +481,7 @@ export class AtlasViz {
   private handlePointerOver = (datum: EmbeddedPointWithIndex) => {
     this.maybeRemoveHoverObjects();
     const label = this.buildHoverLabel(datum);
-    this.labelsContainer.addChild(label);
+    this.hoverLabelsContainer.addChild(label);
 
     const neighborLines = this.buildNeighborLines(datum);
     if (neighborLines) {
@@ -573,7 +597,7 @@ export class AtlasViz {
     return textSize / BASE_LABEL_FONT_SIZE;
   };
 
-  private setLabelScale = (g: PIXI.Graphics, datum: EmbeddedPointWithIndex, zoomScale: number) => {
+  private setLabelScale = (g: PIXI.Graphics | PIXI.Text, datum: EmbeddedPointWithIndex, zoomScale: number) => {
     g.transform.scale.set(this.getTextScale());
     const radius = this.cachedNodeRadii[datum.index] * this.getNodeRadiusAdjustment(zoomScale);
     g.position.set(datum.vector[0], datum.vector[1] - radius);
@@ -642,6 +666,68 @@ export class AtlasViz {
   public setNeighbors(neighbors: number[][]) {
     this.neighbors = neighbors;
   }
+
+  private getVisibleNodes = () => {
+    const viewport = this.container.getVisibleBounds();
+    // TODO: This is actually somewhat expensive; need to do some basic partitioning to speed it up
+    return this.embedding.filter(
+      (entry) =>
+        entry.vector[0] > viewport.x &&
+        entry.vector[0] < viewport.x + viewport.width &&
+        entry.vector[1] > viewport.y &&
+        entry.vector[1] < viewport.y + viewport.height
+    );
+  };
+
+  private computeLabelsToDisplay = (): EmbeddedPointWithIndex[] => {
+    const visibleNodes = this.getVisibleNodes();
+    const labelsToRender = [];
+
+    for (const node of visibleNodes) {
+      // TODO: Compute + accumulate score
+      // TODO: Avoid rendering labels on top of each other?
+      labelsToRender.push(node);
+    }
+
+    return labelsToRender;
+  };
+
+  private buildLabel = (datum: EmbeddedPointWithIndex) => {
+    const text = datum.metadata.title;
+    if (this.cachedLabels.has(text)) {
+      return this.cachedLabels.get(text)!;
+    }
+
+    const textWidth = this.textMeasurerCtx.measureText(text).width;
+
+    const textSprite = new this.PIXI.Text(text, {
+      fontFamily: 'PT Sans',
+      fontSize: BASE_LABEL_FONT_SIZE,
+      fill: 0xcccccc,
+      align: 'center',
+    });
+    textSprite.anchor.set(0.5, 0.5);
+    textSprite.position.set(5 + textWidth / 2, 25);
+    textSprite.interactive = false;
+
+    (textSprite as any).datum = datum;
+    this.setLabelScale(textSprite, datum, this.container.scale.x);
+    this.cachedLabels.set(text, textSprite);
+
+    return textSprite;
+  };
+
+  private updateLabels = () => {
+    const labelsToRender = this.computeLabelsToDisplay();
+    // TODO: Diff rendered labels and avoid changing if we don't need to
+    this.labelsContainer.removeChildren();
+    // Do not destroy the removed labels since we cache them
+
+    for (const node of labelsToRender.slice(0, 20)) {
+      const label = this.buildLabel(node);
+      this.labelsContainer.addChild(label);
+    }
+  };
 
   public dispose() {
     this.app.ticker.stop();
