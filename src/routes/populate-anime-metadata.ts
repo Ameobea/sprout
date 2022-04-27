@@ -1,30 +1,23 @@
 import fs from 'fs';
 import type { RequestHandler } from '@sveltejs/kit';
 
-import { getConn } from '../dbUtil';
+import { DbPool } from '../dbUtil';
 import { ADMIN_API_TOKEN } from '../conf';
 import { getAnimeByID } from '../malAPI';
 
 const fillFromScratch = async () => {
   const allAnimeIDs: number[] = await new Promise((resolve) =>
-    fs.readFile('/home/casey/mal-graph/data/all-anime-ids.json', 'utf8', (err, data) =>
-      resolve(JSON.parse(data))
-    )
+    fs.readFile('/home/casey/mal-graph/data/all-anime-ids.json', 'utf8', (err, data) => resolve(JSON.parse(data)))
   );
 
-  const conn = getConn();
   await new Promise((resolve, reject) => {
-    conn.query(
-      'INSERT IGNORE INTO `anime-metadata` (id) VALUES ?',
-      [allAnimeIDs.map((id) => [id])],
-      (err) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(undefined);
-        }
+    DbPool.query('INSERT IGNORE INTO `anime-metadata` (id) VALUES ?', [allAnimeIDs.map((id) => [id])], (err) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(undefined);
       }
-    );
+    });
   });
 };
 
@@ -45,22 +38,18 @@ export const post: RequestHandler = async ({ url }) => {
   }
 
   try {
-    const conn = getConn();
     const idToFetch = await new Promise<number | null>((resolve, reject) =>
-      conn.query(
-        'SELECT id FROM `anime-metadata` WHERE metadata IS NULL LIMIT 1',
-        (err, results) => {
-          if (err) {
-            reject(err);
+      DbPool.query('SELECT id FROM `anime-metadata` WHERE metadata IS NULL LIMIT 1', (err, results) => {
+        if (err) {
+          reject(err);
+        } else {
+          if (results.length === 0) {
+            resolve(null);
           } else {
-            if (results.length === 0) {
-              resolve(null);
-            } else {
-              resolve(results[0].id);
-            }
+            resolve(results[0].id);
           }
         }
-      )
+      })
     );
 
     if (idToFetch === null) {

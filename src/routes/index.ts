@@ -3,7 +3,7 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { loadEmbedding, type Metadatum } from '../embedding';
 
 export interface EmbeddedPoint {
-  vector: number[];
+  vector: { x: number; y: number };
   metadata: Metadatum;
 }
 export type Embedding = EmbeddedPoint[];

@@ -13,6 +13,15 @@ const MAL_NODE_COLOR = 0x2bcaff;
 const SELECTED_NODE_COLOR = 0xdb18ce;
 const NEIGHBOR_LINE_COLOR = 0xefefef;
 const NEIGHBOR_LINE_OPACITY = 0.4;
+/**
+ * Time to force a label to stay rendered after first rendering it to avoid labels flickering in and out
+ * rapidly due to the way the labeling algorithm works.
+ */
+const LABEL_PIN_TIME_MS = 750;
+const LABEL_BG_COLOR = 0x080808;
+const LABEL_BG_OPACITY = 0.82;
+const LABEL_HEIGHT = 50;
+const LABEL_SCALE_MULTIPLIER = 0.9;
 
 enum ColorBy {
   AiredFromYear = 'aired_from_year',
@@ -25,9 +34,48 @@ interface EmbeddedPointWithIndex extends EmbeddedPoint {
 
 type EmbeddingWithIndices = EmbeddedPointWithIndex[];
 
+const buildNodeLabelClass = (PixiModule: typeof PIXI) => {
+  class NodeLabel extends PixiModule.Graphics {
+    constructor(text: string, style: Partial<PIXI.ITextStyle>, textWidth: number) {
+      super();
+      this.beginFill(LABEL_BG_COLOR, LABEL_BG_OPACITY);
+      const paddingHorizontal = 4;
+      const paddingVertical = 2;
+      this.drawRoundedRect(
+        -textWidth / 2 - paddingHorizontal / 2,
+        -LABEL_HEIGHT / 2 - paddingVertical / 2,
+        textWidth + paddingHorizontal,
+        LABEL_HEIGHT + paddingVertical,
+        5
+      );
+      this.textNode = new PixiModule.Text(text, style);
+      this.textNode.position.set(-textWidth / 2, -LABEL_HEIGHT / 2);
+      this.addChild(this.textNode);
+    }
+
+    private textNode: PIXI.Text;
+    public renderTimeMs: number;
+    public nodeIx: number;
+    public datum: EmbeddedPointWithIndex;
+    public textWidth: number;
+  }
+
+  return NodeLabel;
+};
+
+type InstanceTypeOf<T> = T extends new (...args: any[]) => infer R ? R : never;
+
+type NodeLabelClass = ReturnType<typeof buildNodeLabelClass>;
+// Instance type
+type NodeLabel = InstanceTypeOf<NodeLabelClass>;
+
 export class AtlasViz {
   private embedding: EmbeddingWithIndices;
   private embeddedPointByID: Map<number, EmbeddedPointWithIndex>;
+  /**
+   * Node positions from embedding kept here for faster lookup
+   */
+  private embeddingPositions: Float32Array;
   private cachedNodeRadii: Float32Array;
   private colorBy = ColorBy.AiredFromYear;
   private colorScaler: d3.ScaleSequential<string, never>;
@@ -59,7 +107,12 @@ export class AtlasViz {
     connections: PIXI.Graphics | null;
   } | null = null;
   private cachedNodeTexture: PIXI.Texture | null = null;
-  private cachedLabels: Map<string, PIXI.Text> = new Map();
+  private cachedLabels: Map<string, NodeLabel> = new Map();
+  private visibleNodesScratch: Uint32Array;
+  private visibleNodesQuadIndices: Uint32Array;
+  // innerWidth * innerHeight
+  private screenSpacePx: number;
+  private NodeLabel: NodeLabelClass;
 
   private buildNeighborLines(datum: EmbeddedPointWithIndex): PIXI.Graphics | null {
     if (!this.neighbors) {
@@ -81,8 +134,8 @@ export class AtlasViz {
         console.warn(`Could not find neighbor id=${neighborID} for node index=${datum.index}`);
         return;
       }
-      g.moveTo(datum.vector[0], datum.vector[1]);
-      g.lineTo(neighbor.vector[0], neighbor.vector[1]);
+      g.moveTo(datum.vector.x, datum.vector.y);
+      g.lineTo(neighbor.vector.x, neighbor.vector.y);
     });
     return g;
   }
@@ -127,7 +180,7 @@ export class AtlasViz {
     sprite.blendMode = this.PIXI.BLEND_MODES.COLOR;
     sprite.interactive = false;
     sprite.tint = color;
-    sprite.position.set(datum.vector[0], datum.vector[1]);
+    sprite.position.set(datum.vector.x, datum.vector.y);
     sprite.anchor.set(0.5, 0.5);
     sprite.scale.set(radius / BASE_RADIUS);
     return sprite;
@@ -254,6 +307,13 @@ export class AtlasViz {
     setSelectedAnimeID: (id: number | null) => void
   ) {
     this.embedding = embedding.map((datum, i) => ({ ...datum, index: i }));
+    this.embeddingPositions = new Float32Array(embedding.length * 2);
+    for (let i = 0; i < embedding.length; i++) {
+      this.embeddingPositions[i * 2] = embedding[i].vector.x;
+      this.embeddingPositions[i * 2 + 1] = embedding[i].vector.y;
+    }
+    this.visibleNodesScratch = new Uint32Array(embedding.length);
+    this.visibleNodesQuadIndices = new Uint32Array(embedding.length);
     this.embeddedPointByID = new Map(this.embedding.map((p) => [+p.metadata.id, p]));
     this.setSelectedAnimeID = (newSelectedAnimeID: number | null) => {
       setSelectedAnimeID(newSelectedAnimeID);
@@ -265,6 +325,7 @@ export class AtlasViz {
     };
     this.PIXI = pixi.PIXI;
     this.gradients = pixi.gradients;
+    this.NodeLabel = buildNodeLabelClass(this.PIXI);
 
     // Performance optimization to avoid having to set transforms on every point
     this.cachedNodeRadii = new Float32Array(embedding.length);
@@ -292,13 +353,15 @@ export class AtlasViz {
       worldWidth: WORLD_SIZE,
       interaction: this.app.renderer.plugins.interaction,
     });
-    this.container.drag().pinch().wheel();
+    this.container.drag({ mouseButtons: 'middle-left' }).pinch().wheel();
     // TODO: The initial transform probably needs to be relative to screen size
     this.container.setTransform(1000.5, 400.5, 8, 8);
 
+    this.screenSpacePx = window.innerWidth * window.innerHeight;
     window.addEventListener('resize', () => {
       this.app.renderer.resize(window.innerWidth, window.innerHeight);
       this.container.resize(window.innerWidth, window.innerHeight);
+      this.screenSpacePx = window.innerWidth * window.innerHeight;
     });
 
     // Need to do some hacky subclassing to enable big performance improvement
@@ -366,15 +429,16 @@ export class AtlasViz {
       }
 
       if (newScale !== lastScale) {
-        const adjustment = this.getNodeRadiusAdjustment(newScale * 0.7);
-        this.labelsContainer.children.forEach((g) => {
-          const d = (g as any).datum;
-          this.setLabelScale(g as PIXI.Graphics, d, adjustment);
-        });
+        const adjustment = this.getNodeRadiusAdjustment(newScale);
+        this.labelsContainer.children.forEach((label: NodeLabel) =>
+          this.setLabelScale(label, label.datum, adjustment, LABEL_SCALE_MULTIPLIER)
+        );
       }
 
       lastCenter = this.container.center;
-      this.updateLabels();
+      // If we are only zooming, clearing pins helps looks better
+      const clearPins = lastCenter.x === this.container.center.x && lastCenter.y === this.container.center.y;
+      this.updateLabels(clearPins);
 
       if (newScale === lastScale) {
         return;
@@ -423,8 +487,8 @@ export class AtlasViz {
       for (let i = this.embedding.length - 1; i >= 0; i--) {
         const p = this.embedding[i];
         const radius = this.cachedNodeRadii[i] * adjustment;
-        const centerX = p.vector[0];
-        const centerY = p.vector[1];
+        const centerX = this.embeddingPositions[i * 2];
+        const centerY = this.embeddingPositions[i * 2 + 1];
         const hitTest = Math.abs(worldPoint.x - centerX) < radius && Math.abs(worldPoint.y - centerY) < radius;
 
         if (hitTest) {
@@ -449,6 +513,11 @@ export class AtlasViz {
 
     this.container
       .on('pointerdown', (evt: PIXI.InteractionEvent) => {
+        // Ignore right clicks
+        if ((evt.data.originalEvent as PointerEvent).button === 2) {
+          return;
+        }
+
         this.container.cursor = 'grabbing';
         containerPointerDownPos = evt.data.getLocalPosition(this.app.stage);
 
@@ -525,7 +594,7 @@ export class AtlasViz {
     nodeSprite.interactive = false;
     const color = this.getNodeColor(point);
     nodeSprite.tint = color;
-    nodeSprite.position.set(point.vector[0], point.vector[1]);
+    nodeSprite.position.set(point.vector.x, point.vector.y);
     nodeSprite.scale.set((radius / BASE_RADIUS) * this.getNodeRadiusAdjustment(this.container.scale.x));
     return nodeSprite;
   };
@@ -583,7 +652,7 @@ export class AtlasViz {
 
   public flyTo(id: number) {
     this.setSelectedAnimeID(id);
-    const [x, y] = this.embedding.find((p) => p.metadata.id === id)!.vector;
+    const { x, y } = this.embedding.find((p) => p.metadata.id === id)!.vector;
     this.container.animate({
       time: 500,
       position: { x, y },
@@ -594,6 +663,7 @@ export class AtlasViz {
         const p = t * t * t;
         return minVal + (maxVal - minVal) * p;
       },
+      callbackOnComplete: () => this.updateLabels(true),
     });
   }
 
@@ -603,10 +673,15 @@ export class AtlasViz {
     return textSize / BASE_LABEL_FONT_SIZE;
   };
 
-  private setLabelScale = (g: PIXI.Graphics | PIXI.Text, datum: EmbeddedPointWithIndex, adjustment: number) => {
-    g.transform.scale.set(this.getTextScale());
+  private setLabelScale = (
+    g: PIXI.DisplayObject,
+    datum: EmbeddedPointWithIndex,
+    adjustment: number,
+    multiplier = 1
+  ) => {
+    g.transform.scale.set(this.getTextScale() * multiplier);
     const radius = this.cachedNodeRadii[datum.index] * adjustment;
-    g.position.set(datum.vector[0], datum.vector[1] - radius);
+    g.position.set(datum.vector.x, datum.vector.y - radius);
     const circleRadius = AtlasViz.getNodeRadius(datum.metadata.rating_count);
     g.position.y -= 12 * (1 / this.container.scale.x) + circleRadius * 0.0023 * this.container.scale.x;
   };
@@ -673,41 +748,103 @@ export class AtlasViz {
     this.neighbors = neighbors;
   }
 
-  private getVisibleNodes = () => {
-    const viewport = this.container.getVisibleBounds();
-    // TODO: This is actually somewhat expensive; need to do some basic partitioning to speed it up
-    return this.embedding.filter(
-      (entry) =>
-        entry.vector[0] > viewport.x &&
-        entry.vector[0] < viewport.x + viewport.width &&
-        entry.vector[1] > viewport.y &&
-        entry.vector[1] < viewport.y + viewport.height
-    );
+  private computeVisibleNodeIndices = () => {
+    const bounds = this.container.getVisibleBounds();
+    let count = 0;
+
+    const boundsMidpointX = bounds.x + bounds.width / 2;
+    const boundsMidpointY = bounds.y + bounds.height / 2;
+
+    for (let nodeIx = 0; nodeIx < this.embedding.length; nodeIx++) {
+      const x = this.embeddingPositions[nodeIx * 2];
+      const y = this.embeddingPositions[nodeIx * 2 + 1];
+
+      const isInView = x > bounds.x && x < bounds.x + bounds.width && y > bounds.y && y < bounds.y + bounds.height;
+      if (!isInView) {
+        continue;
+      }
+
+      // Figure out which corner of the viewport the node is in
+      // 0: top left, 1: top right, 2: bottom left, 3: bottom right
+      this.visibleNodesScratch[count] = nodeIx;
+      const corner = +(x > boundsMidpointX) + +(y > boundsMidpointY) * 2;
+      this.visibleNodesQuadIndices[count] = corner;
+
+      count += 1;
+    }
+
+    return count;
   };
 
-  private computeLabelsToDisplay = (): PIXI.Text[] => {
-    const visibleNodes = this.getVisibleNodes();
-    const labelsToRender: { label: PIXI.Text; transformedBounds: PIXI.Rectangle }[] = [];
-    const labelSizeAdjustment = this.getNodeRadiusAdjustment(this.container.scale.x);
+  private computeLabelsToDisplay = (retainedLabels: NodeLabel[]): NodeLabel[] => {
+    const now = Date.now();
 
-    let score = 0;
-    for (const node of visibleNodes) {
-      const label = this.buildLabel(node, labelSizeAdjustment);
+    const computeLabelTransformedBounds = (label: NodeLabel): PIXI.Rectangle => {
       // Avoid rendering labels on top of each other
-      const bounds = label.getBounds();
-      // Grow bounds slightly to enfoce a bit of space between the labels
+      const transformedWidth = label.textWidth * label.transform.scale.x;
+      const transformedHeight = LABEL_HEIGHT * label.transform.scale.y;
+
+      // The origin of the label as at its center, so adjust x and y to put it in the top left corner
+      const bounds = new this.PIXI.Rectangle(
+        label.x - transformedWidth / 2,
+        label.y - transformedHeight / 2,
+        transformedWidth,
+        transformedHeight
+      );
+      // Grow bounds slightly to enforce a bit of space between the labels
       bounds.x -= bounds.width * 0.25;
       bounds.width *= 1.5;
-      bounds.y -= bounds.height * 1.25;
-      bounds.height *= 2.5;
+      bounds.y -= bounds.height * 0.5;
+      bounds.height *= 2;
 
+      return bounds;
+    };
+
+    const visibleNodeCount = this.computeVisibleNodeIndices();
+    const labelsToRender: { label: NodeLabel; transformedBounds: PIXI.Rectangle }[] = retainedLabels.map((label) => ({
+      label,
+      transformedBounds: computeLabelTransformedBounds(label),
+    }));
+    const labelSizeAdjustment = this.getNodeRadiusAdjustment(this.container.scale.x);
+
+    const bounds = this.container.getVisibleBounds();
+    const boundsMidpointX = bounds.x + bounds.width / 2;
+    const boundsMidpointY = bounds.y + bounds.height / 2;
+
+    let totalScore = labelsToRender.length;
+    const maxScore = this.screenSpacePx / 110_000 + 4;
+    const maxScorePerQuad = (maxScore / 4) * 1.15 + 1;
+    const scoresByCorner = [0, 0, 0, 0];
+
+    for (const label of labelsToRender) {
+      const x = this.embeddingPositions[label.label.datum.index * 2];
+      const y = this.embeddingPositions[label.label.datum.index * 2 + 1];
+      const corner = +(x > boundsMidpointX) + +(y > boundsMidpointY) * 2;
+      scoresByCorner[corner] += 1;
+    }
+
+    for (let i = 0; i < visibleNodeCount; i++) {
+      const nodeIx = this.visibleNodesScratch[i];
+      const cornerIx = this.visibleNodesQuadIndices[i];
+
+      if (scoresByCorner[cornerIx] > maxScorePerQuad) {
+        continue;
+      }
+
+      const node = this.embedding[nodeIx];
+      const label = this.buildLabel(node, labelSizeAdjustment);
+      label.renderTimeMs = now;
+
+      const bounds = computeLabelTransformedBounds(label);
       if (labelsToRender.some(({ transformedBounds }) => transformedBounds.intersects(bounds))) {
         continue;
       }
 
       labelsToRender.push({ label, transformedBounds: bounds });
-      score += 1;
-      if (score > 50) {
+      totalScore += 1;
+      scoresByCorner[cornerIx] += 1;
+
+      if (totalScore > maxScore) {
         break;
       }
     }
@@ -719,34 +856,59 @@ export class AtlasViz {
     const text = datum.metadata.title;
     const cachedTextSprite = this.cachedLabels.get(text);
     if (cachedTextSprite) {
-      this.setLabelScale(cachedTextSprite, datum, labelSizeAdjustment);
+      this.setLabelScale(cachedTextSprite, datum, labelSizeAdjustment, LABEL_SCALE_MULTIPLIER);
       return cachedTextSprite;
     }
 
     const textWidth = this.textMeasurerCtx.measureText(text).width;
 
-    const textSprite = new this.PIXI.Text(text, {
-      fontFamily: 'PT Sans',
-      fontSize: BASE_LABEL_FONT_SIZE,
-      fill: 0xcccccc,
-      align: 'center',
-    });
-    textSprite.anchor.set(0.5, 0.5);
-    textSprite.position.set(5 + textWidth / 2, 25);
-    textSprite.interactive = false;
+    const label = new this.NodeLabel(
+      text,
+      {
+        fontFamily: 'PT Sans',
+        fontSize: BASE_LABEL_FONT_SIZE,
+        fill: 0xcccccc,
+        align: 'center',
+      },
+      textWidth
+    );
+    label.position.set(5 + textWidth / 2, 25);
+    label.interactive = false;
 
-    (textSprite as any).datum = datum;
-    this.setLabelScale(textSprite, datum, labelSizeAdjustment);
-    this.cachedLabels.set(text, textSprite);
+    label.datum = datum;
+    label.textWidth = textWidth;
+    this.setLabelScale(label, datum, labelSizeAdjustment, LABEL_SCALE_MULTIPLIER);
+    this.cachedLabels.set(text, label);
 
-    return textSprite;
+    return label;
   };
 
-  private updateLabels = () => {
-    const labelsToRender = this.computeLabelsToDisplay();
-    // TODO: Diff rendered labels and avoid changing if we don't need to
-    this.labelsContainer.removeChildren();
+  private updateLabels = (clearPins = false) => {
+    const oldLabels = this.labelsContainer.removeChildren() as NodeLabel[];
     // Do not destroy the removed labels since we cache them
+
+    const now = Date.now();
+    const bounds = this.container.getVisibleBounds();
+    const retainedLabels = clearPins
+      ? []
+      : oldLabels.filter((label) => {
+          const renderTimeMs = label.renderTimeMs;
+          if (now - renderTimeMs > LABEL_PIN_TIME_MS) {
+            return false;
+          }
+
+          // Remove if node for this label is no longer visible
+          const x = this.embeddingPositions[label.datum.index * 2];
+          const y = this.embeddingPositions[label.datum.index * 2 + 1];
+          const isInView = x > bounds.x && x < bounds.x + bounds.width && y > bounds.y && y < bounds.y + bounds.height;
+          if (!isInView) {
+            return false;
+          }
+
+          return true;
+        });
+
+    const labelsToRender = this.computeLabelsToDisplay(retainedLabels);
 
     for (const label of labelsToRender) {
       this.labelsContainer.addChild(label);

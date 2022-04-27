@@ -1,8 +1,8 @@
 import type { RequestHandler } from '@sveltejs/kit';
 
+import { DbPool } from '../dbUtil';
 import { ADMIN_API_TOKEN } from '../conf';
 import { getUserAnimeList, getUserMangaList, MALAPIError } from '../malAPI';
-import { getConn } from '../dbUtil';
 
 enum CollectionType {
   Anime = 'anime',
@@ -37,10 +37,8 @@ export const get: RequestHandler = async ({ url }) => {
   const { listsTableName, collectedStatusColumnName } = getTableNames(collectionType);
 
   try {
-    const conn = getConn();
-
     const username: string | null = await new Promise((resolve, reject) =>
-      conn.query(
+      DbPool.query(
         `SELECT username FROM \`usernames-to-collect\` as t1
           JOIN (SELECT id FROM \`usernames-to-collect\` WHERE ${collectedStatusColumnName} = 0 ORDER BY RAND() LIMIT 1) as t2
           ON t1.id=t2.id`,
@@ -68,7 +66,7 @@ export const get: RequestHandler = async ({ url }) => {
       const animeList = await fetcherFn(username);
 
       await new Promise((resolve, reject) => {
-        conn.query(
+        DbPool.query(
           `INSERT INTO ${listsTableName} (username, animelist_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE animelist_json = VALUES(animelist_json)`,
           [username, JSON.stringify(animeList)],
           (err) => {
@@ -82,7 +80,7 @@ export const get: RequestHandler = async ({ url }) => {
       });
 
       await new Promise((resolve, reject) => {
-        conn.query(
+        DbPool.query(
           `UPDATE \`usernames-to-collect\` SET ${collectedStatusColumnName} = 200 WHERE username = ?`,
           [username],
           (err) => {
@@ -103,7 +101,7 @@ export const get: RequestHandler = async ({ url }) => {
       const status = err instanceof MALAPIError ? err.statusCode : 500;
 
       await new Promise((resolve, reject) => {
-        conn.query(
+        DbPool.query(
           `UPDATE \`usernames-to-collect\` SET ${collectedStatusColumnName} = ? WHERE username = ?`,
           [status, username],
           (err) => {

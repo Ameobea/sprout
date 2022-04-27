@@ -1,7 +1,7 @@
 import { MAL_API_BASE_URL, MAL_CLIENT_ID } from './conf';
 import { delay } from './util';
 import TimedCache from 'timed-cache';
-import { getConn } from './dbUtil';
+import { DbPool } from './dbUtil';
 
 export class MALAPIError extends Error {
   public statusCode: number;
@@ -209,9 +209,8 @@ export const getAnimeByID = async (id: number, includeRecommendationsAndRelated 
   const details = (await makeMALRequest(url)) as AnimeDetails;
   AnimeDetailsCache.set(id, details);
 
-  const conn = getConn();
   await new Promise((resolve) =>
-    conn.query(
+    DbPool.query(
       'INSERT INTO `anime-metadata` (id, metadata) VALUES (?, ?) ON DUPLICATE KEY UPDATE metadata = VALUES(metadata)',
       [id, JSON.stringify(details)],
       (err) => {
