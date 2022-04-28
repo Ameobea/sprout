@@ -110,6 +110,7 @@ export class AtlasViz {
   private cachedLabels: Map<string, NodeLabel> = new Map();
   private visibleNodesScratch: Uint32Array;
   private visibleNodesQuadIndices: Uint32Array;
+  private labelUnrenderTimes: Float64Array;
   // innerWidth * innerHeight
   private screenSpacePx: number;
   private NodeLabel: NodeLabelClass;
@@ -314,6 +315,7 @@ export class AtlasViz {
     }
     this.visibleNodesScratch = new Uint32Array(embedding.length);
     this.visibleNodesQuadIndices = new Uint32Array(embedding.length);
+    this.labelUnrenderTimes = new Float64Array(embedding.length);
     this.embeddedPointByID = new Map(this.embedding.map((p) => [+p.metadata.id, p]));
     this.setSelectedAnimeID = (newSelectedAnimeID: number | null) => {
       setSelectedAnimeID(newSelectedAnimeID);
@@ -435,9 +437,9 @@ export class AtlasViz {
         );
       }
 
-      lastCenter = this.container.center;
       // If we are only zooming, clearing pins helps looks better
-      const clearPins = lastCenter.x === this.container.center.x && lastCenter.y === this.container.center.y;
+      const clearPins = newScale !== lastScale;
+      lastCenter = this.container.center;
       this.updateLabels(clearPins);
 
       if (newScale === lastScale) {
@@ -776,7 +778,7 @@ export class AtlasViz {
     return count;
   };
 
-  private computeLabelsToDisplay = (retainedLabels: NodeLabel[]): NodeLabel[] => {
+  private computeLabelsToDisplay = (retainedLabels: NodeLabel[], ignoreUnrenderTimes = false): NodeLabel[] => {
     const now = Date.now();
 
     const computeLabelTransformedBounds = (label: NodeLabel): PIXI.Rectangle => {
@@ -825,6 +827,11 @@ export class AtlasViz {
 
     for (let i = 0; i < visibleNodeCount; i++) {
       const nodeIx = this.visibleNodesScratch[i];
+
+      if (!ignoreUnrenderTimes && now - this.labelUnrenderTimes[nodeIx] < LABEL_PIN_TIME_MS) {
+        continue;
+      }
+
       const cornerIx = this.visibleNodesQuadIndices[i];
 
       if (scoresByCorner[cornerIx] > maxScorePerQuad) {
@@ -887,13 +894,16 @@ export class AtlasViz {
     const oldLabels = this.labelsContainer.removeChildren() as NodeLabel[];
     // Do not destroy the removed labels since we cache them
 
+    const expiredLabelIndices = new Set<number>();
+
     const now = Date.now();
     const bounds = this.container.getVisibleBounds();
     const retainedLabels = clearPins
       ? []
       : oldLabels.filter((label) => {
-          const renderTimeMs = label.renderTimeMs;
-          if (now - renderTimeMs > LABEL_PIN_TIME_MS) {
+          if (now - label.renderTimeMs > LABEL_PIN_TIME_MS) {
+            const index = label.datum.index;
+            expiredLabelIndices.add(index);
             return false;
           }
 
@@ -902,16 +912,27 @@ export class AtlasViz {
           const y = this.embeddingPositions[label.datum.index * 2 + 1];
           const isInView = x > bounds.x && x < bounds.x + bounds.width && y > bounds.y && y < bounds.y + bounds.height;
           if (!isInView) {
+            const index = label.datum.index;
+            // Set to 0 so that the label can be considered for re-display as soon as it comes back into view
+            this.labelUnrenderTimes[index] = 0;
             return false;
           }
 
           return true;
         });
 
-    const labelsToRender = this.computeLabelsToDisplay(retainedLabels);
+    const labelsToRender = this.computeLabelsToDisplay(retainedLabels, clearPins);
 
     for (const label of labelsToRender) {
+      // If the unpinned label was re-rendered anyway, no need to expire it
+      expiredLabelIndices.delete(label.datum.index);
       this.labelsContainer.addChild(label);
+    }
+
+    // For unpinned labels that didn't score high enough, we expire them for a while to avoid them
+    // popping back in again very soon after
+    for (const index of expiredLabelIndices) {
+      this.labelUnrenderTimes[index] = now;
     }
   };
 
