@@ -13,15 +13,12 @@ const MAL_NODE_COLOR = 0x2bcaff;
 const SELECTED_NODE_COLOR = 0xdb18ce;
 const NEIGHBOR_LINE_COLOR = 0xefefef;
 const NEIGHBOR_LINE_OPACITY = 0.4;
-/**
- * Time to force a label to stay rendered after first rendering it to avoid labels flickering in and out
- * rapidly due to the way the labeling algorithm works.
- */
-const LABEL_PIN_TIME_MS = 750;
 const LABEL_BG_COLOR = 0x080808;
 const LABEL_BG_OPACITY = 0.82;
 const LABEL_HEIGHT = 50;
-const LABEL_SCALE_MULTIPLIER = 0.9;
+const MAX_LABELS_PER_GRID_SQUARE = 3;
+const MIN_GRID_SQUARE_SIZE = 2;
+const MAX_GRID_SQUARE_SIZE = 64;
 
 enum ColorBy {
   AiredFromYear = 'aired_from_year',
@@ -71,6 +68,7 @@ type NodeLabel = InstanceTypeOf<NodeLabelClass>;
 
 export class AtlasViz {
   private embedding: EmbeddingWithIndices;
+  private dataExtents: { mins: { x: number; y: number }; maxs: { x: number; y: number } };
   private embeddedPointByID: Map<number, EmbeddedPointWithIndex>;
   /**
    * Node positions from embedding kept here for faster lookup
@@ -108,12 +106,23 @@ export class AtlasViz {
   } | null = null;
   private cachedNodeTexture: PIXI.Texture | null = null;
   private cachedLabels: Map<string, NodeLabel> = new Map();
-  private visibleNodesScratch: Uint32Array;
-  private visibleNodesQuadIndices: Uint32Array;
-  private labelUnrenderTimes: Float64Array;
-  // innerWidth * innerHeight
-  private screenSpacePx: number;
+  private visibleNodesIndicesScratch: Uint32Array;
   private NodeLabel: NodeLabelClass;
+  private cachedGlobalLabelsByGridSize: Map<
+    number,
+    { datum: EmbeddedPointWithIndex; transformedBounds: PIXI.Rectangle }[]
+  > = new Map();
+  private textWidthCache: Map<string, number> = new Map();
+
+  private measureText = (text: string): number => {
+    const cached = this.textWidthCache.get(text);
+    if (cached) {
+      return cached;
+    }
+    const width = this.textMeasurerCtx.measureText(text).width;
+    this.textWidthCache.set(text, width);
+    return width;
+  };
 
   private buildNeighborLines(datum: EmbeddedPointWithIndex): PIXI.Graphics | null {
     if (!this.neighbors) {
@@ -307,15 +316,24 @@ export class AtlasViz {
     embedding: Embedding,
     setSelectedAnimeID: (id: number | null) => void
   ) {
-    this.embedding = embedding.map((datum, i) => ({ ...datum, index: i }));
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    this.embedding = embedding.map((datum, i) => {
+      minX = Math.min(minX, datum.vector.x);
+      maxX = Math.max(maxX, datum.vector.x);
+      minY = Math.min(minY, datum.vector.y);
+      maxY = Math.max(maxY, datum.vector.y);
+      return { ...datum, index: i };
+    });
+    this.dataExtents = { mins: { x: minX, y: minY }, maxs: { x: maxX, y: maxY } };
     this.embeddingPositions = new Float32Array(embedding.length * 2);
     for (let i = 0; i < embedding.length; i++) {
       this.embeddingPositions[i * 2] = embedding[i].vector.x;
       this.embeddingPositions[i * 2 + 1] = embedding[i].vector.y;
     }
-    this.visibleNodesScratch = new Uint32Array(embedding.length);
-    this.visibleNodesQuadIndices = new Uint32Array(embedding.length);
-    this.labelUnrenderTimes = new Float64Array(embedding.length);
+    this.visibleNodesIndicesScratch = new Uint32Array(embedding.length);
     this.embeddedPointByID = new Map(this.embedding.map((p) => [+p.metadata.id, p]));
     this.setSelectedAnimeID = (newSelectedAnimeID: number | null) => {
       setSelectedAnimeID(newSelectedAnimeID);
@@ -359,11 +377,9 @@ export class AtlasViz {
     // TODO: The initial transform probably needs to be relative to screen size
     this.container.setTransform(1000.5, 400.5, 8, 8);
 
-    this.screenSpacePx = window.innerWidth * window.innerHeight;
     window.addEventListener('resize', () => {
       this.app.renderer.resize(window.innerWidth, window.innerHeight);
       this.container.resize(window.innerWidth, window.innerHeight);
-      this.screenSpacePx = window.innerWidth * window.innerHeight;
     });
 
     // Need to do some hacky subclassing to enable big performance improvement
@@ -430,17 +446,8 @@ export class AtlasViz {
         return;
       }
 
-      if (newScale !== lastScale) {
-        const adjustment = this.getNodeRadiusAdjustment(newScale);
-        this.labelsContainer.children.forEach((label: NodeLabel) =>
-          this.setLabelScale(label, label.datum, adjustment, LABEL_SCALE_MULTIPLIER)
-        );
-      }
-
-      // If we are only zooming, clearing pins helps looks better
-      const clearPins = newScale !== lastScale;
       lastCenter = this.container.center;
-      this.updateLabels(clearPins);
+      this.updateLabels();
 
       if (newScale === lastScale) {
         return;
@@ -665,7 +672,7 @@ export class AtlasViz {
         const p = t * t * t;
         return minVal + (maxVal - minVal) * p;
       },
-      callbackOnComplete: () => this.updateLabels(true),
+      callbackOnComplete: () => this.updateLabels(),
     });
   }
 
@@ -679,9 +686,9 @@ export class AtlasViz {
     g: PIXI.DisplayObject,
     datum: EmbeddedPointWithIndex,
     adjustment: number,
-    multiplier = 1
+    scaleOverride?: number
   ) => {
-    g.transform.scale.set(this.getTextScale() * multiplier);
+    g.transform.scale.set(scaleOverride ?? this.getTextScale());
     const radius = this.cachedNodeRadii[datum.index] * adjustment;
     g.position.set(datum.vector.x, datum.vector.y - radius);
     const circleRadius = AtlasViz.getNodeRadius(datum.metadata.rating_count);
@@ -690,7 +697,7 @@ export class AtlasViz {
 
   private buildHoverLabel = (datum: EmbeddedPointWithIndex): PIXI.Graphics => {
     const text = datum.metadata.title;
-    const textWidth = this.textMeasurerCtx.measureText(text).width;
+    const textWidth = this.measureText(text);
 
     const g = new this.PIXI.Graphics();
     g.beginFill(0x111111, 0.9);
@@ -750,12 +757,8 @@ export class AtlasViz {
     this.neighbors = neighbors;
   }
 
-  private computeVisibleNodeIndices = () => {
-    const bounds = this.container.getVisibleBounds();
+  private computeVisibleNodeIndices = (bounds: PIXI.Rectangle) => {
     let count = 0;
-
-    const boundsMidpointX = bounds.x + bounds.width / 2;
-    const boundsMidpointY = bounds.y + bounds.height / 2;
 
     for (let nodeIx = 0; nodeIx < this.embedding.length; nodeIx++) {
       const x = this.embeddingPositions[nodeIx * 2];
@@ -766,30 +769,41 @@ export class AtlasViz {
         continue;
       }
 
-      // Figure out which corner of the viewport the node is in
-      // 0: top left, 1: top right, 2: bottom left, 3: bottom right
-      this.visibleNodesScratch[count] = nodeIx;
-      const corner = +(x > boundsMidpointX) + +(y > boundsMidpointY) * 2;
-      this.visibleNodesQuadIndices[count] = corner;
-
+      this.visibleNodesIndicesScratch[count] = nodeIx;
       count += 1;
     }
 
     return count;
   };
 
-  private computeLabelsToDisplay = (retainedLabels: NodeLabel[], ignoreUnrenderTimes = false): NodeLabel[] => {
-    const now = Date.now();
+  private getBaseLabelScale = (gridSquareSize: number) => {
+    return (gridSquareSize / 32) * 0.03;
+  };
 
-    const computeLabelTransformedBounds = (label: NodeLabel): PIXI.Rectangle => {
+  private computeGlobalLabelsPositions = (
+    gridSquareSize: number
+  ): { datum: EmbeddedPointWithIndex; transformedBounds: PIXI.Rectangle }[] => {
+    // Base case for recursion
+    if (gridSquareSize > MAX_GRID_SQUARE_SIZE) {
+      return [];
+    }
+
+    const cached = this.cachedGlobalLabelsByGridSize.get(gridSquareSize);
+    if (cached) {
+      return cached;
+    }
+
+    const labelScale = this.getBaseLabelScale(gridSquareSize);
+
+    const computeLabelTransformedBounds = (textWidth: number, x: number, y: number): PIXI.Rectangle => {
       // Avoid rendering labels on top of each other
-      const transformedWidth = label.textWidth * label.transform.scale.x;
-      const transformedHeight = LABEL_HEIGHT * label.transform.scale.y;
+      const transformedWidth = textWidth * labelScale;
+      const transformedHeight = LABEL_HEIGHT * labelScale;
 
       // The origin of the label as at its center, so adjust x and y to put it in the top left corner
       const bounds = new this.PIXI.Rectangle(
-        label.x - transformedWidth / 2,
-        label.y - transformedHeight / 2,
+        x - transformedWidth / 2,
+        y - transformedHeight / 2,
         transformedWidth,
         transformedHeight
       );
@@ -802,72 +816,69 @@ export class AtlasViz {
       return bounds;
     };
 
-    const visibleNodeCount = this.computeVisibleNodeIndices();
-    const labelsToRender: { label: NodeLabel; transformedBounds: PIXI.Rectangle }[] = retainedLabels.map((label) => ({
-      label,
-      transformedBounds: computeLabelTransformedBounds(label),
+    // Zooming in retains all labels from the previous zoom level and then adds more.  So, we use all labels
+    // from the previous zoom level as a base.
+    const retainedLabels = this.computeGlobalLabelsPositions(gridSquareSize * 2);
+    // Need to re-compute transformed bounds for the current zoom level
+    const labelsToRender = retainedLabels.map(({ datum }) => ({
+      datum,
+      transformedBounds: computeLabelTransformedBounds(
+        this.measureText(datum.metadata.title),
+        datum.vector.x,
+        datum.vector.y
+      ),
     }));
-    const labelSizeAdjustment = this.getNodeRadiusAdjustment(this.container.scale.x);
 
-    const bounds = this.container.getVisibleBounds();
-    const boundsMidpointX = bounds.x + bounds.width / 2;
-    const boundsMidpointY = bounds.y + bounds.height / 2;
+    const dataWidth = this.dataExtents.maxs.x - this.dataExtents.mins.x;
+    const dataHeight = this.dataExtents.maxs.y - this.dataExtents.mins.y;
+    const gridSquareCountX = Math.ceil(dataWidth / gridSquareSize);
+    const gridSquareCountY = Math.ceil(dataHeight / gridSquareSize);
 
-    let totalScore = labelsToRender.length;
-    const maxScore = this.screenSpacePx / 110_000 + 4;
-    const maxScorePerQuad = (maxScore / 4) * 1.15 + 1;
-    const scoresByCorner = [0, 0, 0, 0];
+    const gridSquareArea = new this.PIXI.Rectangle();
+    console.log({ gridSquareSize });
+    gridSquareArea.width = gridSquareSize;
+    gridSquareArea.height = gridSquareSize;
 
-    for (const label of labelsToRender) {
-      const x = this.embeddingPositions[label.label.datum.index * 2];
-      const y = this.embeddingPositions[label.label.datum.index * 2 + 1];
-      const corner = +(x > boundsMidpointX) + +(y > boundsMidpointY) * 2;
-      scoresByCorner[corner] += 1;
-    }
+    for (let y = 0; y < gridSquareCountY; y++) {
+      for (let x = 0; x < gridSquareCountX; x++) {
+        gridSquareArea.x = this.dataExtents.mins.x + x * gridSquareSize;
+        gridSquareArea.y = this.dataExtents.mins.y + y * gridSquareSize;
+        const visibleNodeCount = this.computeVisibleNodeIndices(gridSquareArea);
 
-    for (let i = 0; i < visibleNodeCount; i++) {
-      const nodeIx = this.visibleNodesScratch[i];
+        let score = 0;
+        for (let i = 0; i < visibleNodeCount; i++) {
+          const nodeIx = this.visibleNodesIndicesScratch[i];
 
-      if (!ignoreUnrenderTimes && now - this.labelUnrenderTimes[nodeIx] < LABEL_PIN_TIME_MS) {
-        continue;
-      }
+          const datum = this.embedding[nodeIx];
+          const textWidth = this.measureText(datum.metadata.title);
+          const bounds = computeLabelTransformedBounds(textWidth, datum.vector.x, datum.vector.y);
+          if (labelsToRender.some(({ transformedBounds }) => transformedBounds.intersects(bounds))) {
+            continue;
+          }
 
-      const cornerIx = this.visibleNodesQuadIndices[i];
+          labelsToRender.push({ datum, transformedBounds: bounds });
 
-      if (scoresByCorner[cornerIx] > maxScorePerQuad) {
-        continue;
-      }
-
-      const node = this.embedding[nodeIx];
-      const label = this.buildLabel(node, labelSizeAdjustment);
-      label.renderTimeMs = now;
-
-      const bounds = computeLabelTransformedBounds(label);
-      if (labelsToRender.some(({ transformedBounds }) => transformedBounds.intersects(bounds))) {
-        continue;
-      }
-
-      labelsToRender.push({ label, transformedBounds: bounds });
-      totalScore += 1;
-      scoresByCorner[cornerIx] += 1;
-
-      if (totalScore > maxScore) {
-        break;
+          score += 1;
+          if (score >= MAX_LABELS_PER_GRID_SQUARE) {
+            break;
+          }
+        }
       }
     }
 
-    return labelsToRender.map(({ label }) => label);
+    this.cachedGlobalLabelsByGridSize.set(gridSquareSize, labelsToRender);
+    return labelsToRender;
   };
 
-  private buildLabel = (datum: EmbeddedPointWithIndex, labelSizeAdjustment: number) => {
+  private buildLabel = (datum: EmbeddedPointWithIndex, labelScale: number) => {
     const text = datum.metadata.title;
     const cachedTextSprite = this.cachedLabels.get(text);
     if (cachedTextSprite) {
-      this.setLabelScale(cachedTextSprite, datum, labelSizeAdjustment, LABEL_SCALE_MULTIPLIER);
+      this.setLabelScale(cachedTextSprite, datum, 1, labelScale);
       return cachedTextSprite;
     }
 
-    const textWidth = this.textMeasurerCtx.measureText(text).width;
+    const textWidth = this.measureText(text);
 
     const label = new this.NodeLabel(
       text,
@@ -884,55 +895,44 @@ export class AtlasViz {
 
     label.datum = datum;
     label.textWidth = textWidth;
-    this.setLabelScale(label, datum, labelSizeAdjustment, LABEL_SCALE_MULTIPLIER);
+    this.setLabelScale(label, datum, 1, labelScale);
     this.cachedLabels.set(text, label);
 
     return label;
   };
 
-  private updateLabels = (clearPins = false) => {
-    const oldLabels = this.labelsContainer.removeChildren() as NodeLabel[];
-    // Do not destroy the removed labels since we cache them
+  private getGridSquareSize = () => {
+    const curZoomScale = this.container.scale.x;
+    const rawGridSquareSize = (1 / curZoomScale) * 512;
+    console.log({ rawGridSquareSize });
+    // Round to nearest power of 2
+    const gridSquareSize = Math.pow(2, Math.round(Math.log2(rawGridSquareSize)));
+    if (gridSquareSize > MAX_GRID_SQUARE_SIZE) {
+      return MAX_GRID_SQUARE_SIZE;
+    }
+    if (gridSquareSize < MIN_GRID_SQUARE_SIZE) {
+      return MIN_GRID_SQUARE_SIZE;
+    }
+    return gridSquareSize;
+  };
 
-    const expiredLabelIndices = new Set<number>();
+  private updateLabels = () => {
+    const gridSquareSize = this.getGridSquareSize();
 
-    const now = Date.now();
-    const bounds = this.container.getVisibleBounds();
-    const retainedLabels = clearPins
-      ? []
-      : oldLabels.filter((label) => {
-          if (now - label.renderTimeMs > LABEL_PIN_TIME_MS) {
-            const index = label.datum.index;
-            expiredLabelIndices.add(index);
-            return false;
-          }
+    // Remove but do not destroy the removed labels since we cache them
+    this.labelsContainer.removeChildren() as NodeLabel[];
 
-          // Remove if node for this label is no longer visible
-          const x = this.embeddingPositions[label.datum.index * 2];
-          const y = this.embeddingPositions[label.datum.index * 2 + 1];
-          const isInView = x > bounds.x && x < bounds.x + bounds.width && y > bounds.y && y < bounds.y + bounds.height;
-          if (!isInView) {
-            const index = label.datum.index;
-            // Set to 0 so that the label can be considered for re-display as soon as it comes back into view
-            this.labelUnrenderTimes[index] = 0;
-            return false;
-          }
+    const globalLabelPositionsForZoomLevel = this.computeGlobalLabelsPositions(gridSquareSize);
 
-          return true;
-        });
-
-    const labelsToRender = this.computeLabelsToDisplay(retainedLabels, clearPins);
+    const visibleNodeCount = this.computeVisibleNodeIndices(this.container.getVisibleBounds());
+    const visibleNodeIndices = new Set(this.visibleNodesIndicesScratch.slice(0, visibleNodeCount));
+    const labelScale = this.getBaseLabelScale(gridSquareSize);
+    const labelsToRender = globalLabelPositionsForZoomLevel
+      .filter(({ datum }) => visibleNodeIndices.has(datum.index))
+      .map(({ datum }) => this.buildLabel(datum, labelScale));
 
     for (const label of labelsToRender) {
-      // If the unpinned label was re-rendered anyway, no need to expire it
-      expiredLabelIndices.delete(label.datum.index);
       this.labelsContainer.addChild(label);
-    }
-
-    // For unpinned labels that didn't score high enough, we expire them for a while to avoid them
-    // popping back in again very soon after
-    for (const index of expiredLabelIndices) {
-      this.labelUnrenderTimes[index] = now;
     }
   };
 
