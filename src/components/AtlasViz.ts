@@ -66,6 +66,50 @@ type NodeLabelClass = ReturnType<typeof buildNodeLabelClass>;
 // Instance type
 type NodeLabel = InstanceTypeOf<NodeLabelClass>;
 
+interface Rectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function fastQuadtreeVisit<T>(
+  tree: d3.Quadtree<T>,
+  callback: (
+    d: d3.QuadtreeInternalNode<T> | d3.QuadtreeLeaf<T>,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number
+  ) => boolean | void
+) {
+  let q,
+    node = (tree as any)._root,
+    child,
+    x0,
+    y0,
+    x1,
+    y1;
+  const quads = [];
+
+  if (node) {
+    quads.push({ node, x0: (tree as any)._x0, y0: (tree as any)._y0, x1: (tree as any)._x1, y1: (tree as any)._y1 });
+  }
+
+  while ((q = quads.pop())) {
+    const stopTraversing = callback((node = q.node), (x0 = q.x0), (y0 = q.y0), (x1 = q.x1), (y1 = q.y1));
+
+    if (!stopTraversing && Array.isArray(node)) {
+      const xm = (x0 + x1) / 2,
+        ym = (y0 + y1) / 2;
+      if ((child = node[3])) quads.push({ node: child, x0: xm, y0: ym, x1: x1, y1: y1 });
+      if ((child = node[2])) quads.push({ node: child, x0: x0, y0: ym, x1: xm, y1: y1 });
+      if ((child = node[1])) quads.push({ node: child, x0: xm, y0: y0, x1: x1, y1: ym });
+      if ((child = node[0])) quads.push({ node: child, x0: x0, y0: y0, x1: xm, y1: ym });
+    }
+  }
+}
+
 export class AtlasViz {
   private embedding: EmbeddingWithIndices;
   private dataExtents: { mins: { x: number; y: number }; maxs: { x: number; y: number } };
@@ -74,6 +118,8 @@ export class AtlasViz {
    * Node positions from embedding kept here for faster lookup
    */
   private embeddingPositions: Float32Array;
+  /** Holds indices of nodes.  Positions can be looked up via `embeddingPositions` */
+  private embeddingQuadTree: d3.Quadtree<number>;
   private cachedNodeRadii: Float32Array;
   private colorBy = ColorBy.AiredFromYear;
   private colorScaler: d3.ScaleSequential<string, never>;
@@ -108,10 +154,8 @@ export class AtlasViz {
   private cachedLabels: Map<string, NodeLabel> = new Map();
   private visibleNodesIndicesScratch: Uint32Array;
   private NodeLabel: NodeLabelClass;
-  private cachedGlobalLabelsByGridSize: Map<
-    number,
-    { datum: EmbeddedPointWithIndex; transformedBounds: PIXI.Rectangle }[]
-  > = new Map();
+  private cachedGlobalLabelsByGridSize: Map<number, { datum: EmbeddedPointWithIndex; transformedBounds: Rectangle }[]> =
+    new Map();
   private textWidthCache: Map<string, number> = new Map();
 
   private measureText = (text: string): number => {
@@ -333,6 +377,16 @@ export class AtlasViz {
       this.embeddingPositions[i * 2] = embedding[i].vector.x;
       this.embeddingPositions[i * 2 + 1] = embedding[i].vector.y;
     }
+    this.embeddingQuadTree = d3
+      .quadtree<number>()
+      .extent([
+        [minX, minY],
+        [maxX, maxY],
+      ])
+      .x((ix) => this.embeddingPositions[ix * 2])
+      .y((ix) => this.embeddingPositions[ix * 2 + 1])
+      .addAll(this.embedding.map((_datum, i) => i));
+
     this.visibleNodesIndicesScratch = new Uint32Array(embedding.length);
     this.embeddedPointByID = new Map(this.embedding.map((p) => [+p.metadata.id, p]));
     this.setSelectedAnimeID = (newSelectedAnimeID: number | null) => {
@@ -375,7 +429,7 @@ export class AtlasViz {
     });
     this.container.drag({ mouseButtons: 'middle-left' }).pinch().wheel();
     // TODO: The initial transform probably needs to be relative to screen size
-    this.container.setTransform(1000.5, 400.5, 8, 8);
+    this.container.setTransform(1000.5, 400.5, 5, 5);
 
     window.addEventListener('resize', () => {
       this.app.renderer.resize(window.innerWidth, window.innerHeight);
@@ -757,23 +811,38 @@ export class AtlasViz {
     this.neighbors = neighbors;
   }
 
-  private computeVisibleNodeIndices = (bounds: PIXI.Rectangle) => {
+  private computeVisibleNodeIndices = (bounds: Rectangle, sort = true) => {
     let count = 0;
 
-    for (let nodeIx = 0; nodeIx < this.embedding.length; nodeIx++) {
-      const x = this.embeddingPositions[nodeIx * 2];
-      const y = this.embeddingPositions[nodeIx * 2 + 1];
+    const xmin = bounds.x;
+    const xmax = bounds.x + bounds.width;
+    const ymin = bounds.y;
+    const ymax = bounds.y + bounds.height;
 
-      const isInView = x > bounds.x && x < bounds.x + bounds.width && y > bounds.y && y < bounds.y + bounds.height;
-      if (!isInView) {
-        continue;
+    // Adapted from https://github.com/d3/d3-quadtree#quadtree_visit
+    fastQuadtreeVisit(this.embeddingQuadTree, (node, x1, y1, x2, y2) => {
+      if (Array.isArray(node)) {
+        return x1 >= xmax || y1 >= ymax || x2 < xmin || y2 < ymin;
       }
 
-      this.visibleNodesIndicesScratch[count] = nodeIx;
-      count += 1;
-    }
+      do {
+        const nodeIx = node.data;
+        const x = this.embeddingPositions[nodeIx * 2];
+        const y = this.embeddingPositions[nodeIx * 2 + 1];
+        if (x >= xmin && x < xmax && y >= ymin && y < ymax) {
+          this.visibleNodesIndicesScratch[count] = nodeIx;
+          count += 1;
+        }
+      } while ((node = node.next));
+    });
 
-    return count;
+    // Put `visibleNodeIndicesScratch` in order of increasing index.  The underlying embedding is sorted with
+    // more popular nodes first, so this matches that with the visible node indices.
+    if (sort) {
+      const sorted = this.visibleNodesIndicesScratch.slice(0, count).sort((a, b) => a - b);
+      return sorted;
+    }
+    return this.visibleNodesIndicesScratch.slice(0, count);
   };
 
   private getBaseLabelScale = (gridSquareSize: number) => {
@@ -782,7 +851,7 @@ export class AtlasViz {
 
   private computeGlobalLabelsPositions = (
     gridSquareSize: number
-  ): { datum: EmbeddedPointWithIndex; transformedBounds: PIXI.Rectangle }[] => {
+  ): { datum: EmbeddedPointWithIndex; transformedBounds: Rectangle }[] => {
     // Base case for recursion
     if (gridSquareSize > MAX_GRID_SQUARE_SIZE) {
       return [];
@@ -795,18 +864,18 @@ export class AtlasViz {
 
     const labelScale = this.getBaseLabelScale(gridSquareSize);
 
-    const computeLabelTransformedBounds = (textWidth: number, x: number, y: number): PIXI.Rectangle => {
+    const computeLabelTransformedBounds = (textWidth: number, x: number, y: number): Rectangle => {
       // Avoid rendering labels on top of each other
       const transformedWidth = textWidth * labelScale;
       const transformedHeight = LABEL_HEIGHT * labelScale;
 
       // The origin of the label as at its center, so adjust x and y to put it in the top left corner
-      const bounds = new this.PIXI.Rectangle(
-        x - transformedWidth / 2,
-        y - transformedHeight / 2,
-        transformedWidth,
-        transformedHeight
-      );
+      const bounds = {
+        x: x - transformedWidth / 2,
+        y: y - transformedHeight / 2,
+        width: transformedWidth,
+        height: transformedHeight,
+      };
       // Grow bounds slightly to enforce a bit of space between the labels
       bounds.x -= bounds.width * 0.25;
       bounds.width *= 1.5;
@@ -823,11 +892,100 @@ export class AtlasViz {
     const labelsToRender = retainedLabels.map(({ datum }) => ({
       datum,
       transformedBounds: computeLabelTransformedBounds(
-        this.measureText(datum.metadata.title),
+        // Measuring text is expensive, so use an estimate max width.  In practice, this doesn't have
+        // that bad of an impact on the generated label positions.
+        // this.measureText(datum.metadata.title),
+        1000,
         datum.vector.x,
         datum.vector.y
       ),
     }));
+
+    const getRectangleVertices = (rect: Rectangle): [number, number][] => [
+      [rect.x, rect.y],
+      [rect.x + rect.width, rect.y],
+      [rect.x, rect.y + rect.height],
+      [rect.x + rect.width, rect.y + rect.height],
+    ];
+
+    // Add all vertices of each label so intersections can be computed faster
+    const labelsToRenderQuadtree = d3
+      .quadtree<readonly [number, number, number]>()
+      .x(([x]) => x)
+      .y(([_x, y]) => y)
+      .addAll(
+        labelsToRender.flatMap(({ transformedBounds }, i) =>
+          getRectangleVertices(transformedBounds).map(([x, y]) => [x, y, i] as const)
+        )
+      );
+
+    let maxDistanceFromMidpointToEdge = 0;
+    labelsToRender.forEach(({ transformedBounds }) => {
+      maxDistanceFromMidpointToEdge = Math.max(
+        maxDistanceFromMidpointToEdge,
+        transformedBounds.width / 2,
+        transformedBounds.height / 2
+      );
+    });
+
+    // Fast-pathed `PIXI.Rectangle.intersects` function
+    const fastRectIntersects = (r0: Rectangle, r1: Rectangle) => {
+      const r0Right = r0.x + r0.width;
+      const r1Right = r1.x + r1.width;
+
+      const x0 = r0.x < r1.x ? r1.x : r0.x;
+      const x1 = r0Right > r1Right ? r1Right : r0Right;
+
+      if (x1 <= x0) {
+        return false;
+      }
+
+      const r0Bottom = r0.y + r0.height;
+      const r1Bottom = r1.y + r1.height;
+
+      const y0 = r0.y < r1.y ? r1.y : r0.y;
+      const y1 = r0Bottom > r1Bottom ? r1Bottom : r0Bottom;
+
+      return y1 > y0;
+    };
+
+    const checkIntersectsExistingLabel = (newLabelBounds: Rectangle): boolean => {
+      const midpointX = newLabelBounds.x + newLabelBounds.width / 2;
+      const midpointY = newLabelBounds.y + newLabelBounds.height / 2;
+      maxDistanceFromMidpointToEdge = Math.max(
+        maxDistanceFromMidpointToEdge,
+        newLabelBounds.width / 2,
+        newLabelBounds.height / 2
+      );
+
+      const searchArea_xmin = midpointX - maxDistanceFromMidpointToEdge;
+      const searchArea_xmax = midpointX + maxDistanceFromMidpointToEdge;
+      const searchArea_ymin = midpointY - maxDistanceFromMidpointToEdge;
+      const searchArea_ymax = midpointY + maxDistanceFromMidpointToEdge;
+
+      // Adapted from https://github.com/d3/d3-quadtree#quadtree_visit
+      let blocked = false;
+      fastQuadtreeVisit(labelsToRenderQuadtree, (node, x1, y1, x2, y2) => {
+        if (blocked) {
+          return true;
+        }
+
+        if (Array.isArray(node)) {
+          return x1 > searchArea_xmax || y1 > searchArea_ymax || x2 < searchArea_xmin || y2 < searchArea_ymin;
+        }
+
+        do {
+          const labelIx = node.data[2];
+          const labelBounds = labelsToRender[labelIx].transformedBounds;
+
+          if (fastRectIntersects(newLabelBounds, labelBounds)) {
+            blocked = true;
+            return true;
+          }
+        } while ((node = node.next));
+      });
+      return blocked;
+    };
 
     const dataWidth = this.dataExtents.maxs.x - this.dataExtents.mins.x;
     const dataHeight = this.dataExtents.maxs.y - this.dataExtents.mins.y;
@@ -835,7 +993,6 @@ export class AtlasViz {
     const gridSquareCountY = Math.ceil(dataHeight / gridSquareSize);
 
     const gridSquareArea = new this.PIXI.Rectangle();
-    console.log({ gridSquareSize });
     gridSquareArea.width = gridSquareSize;
     gridSquareArea.height = gridSquareSize;
 
@@ -843,20 +1000,24 @@ export class AtlasViz {
       for (let x = 0; x < gridSquareCountX; x++) {
         gridSquareArea.x = this.dataExtents.mins.x + x * gridSquareSize;
         gridSquareArea.y = this.dataExtents.mins.y + y * gridSquareSize;
-        const visibleNodeCount = this.computeVisibleNodeIndices(gridSquareArea);
+        const visibleNodeIndices = this.computeVisibleNodeIndices(gridSquareArea);
 
         let score = 0;
-        for (let i = 0; i < visibleNodeCount; i++) {
-          const nodeIx = this.visibleNodesIndicesScratch[i];
-
+        for (const nodeIx of visibleNodeIndices) {
           const datum = this.embedding[nodeIx];
-          const textWidth = this.measureText(datum.metadata.title);
+          // Measuring text is expensive, so use an estimate max width.  In practice, this doesn't have
+          // that bad of an impact on the generated label positions.
+          // const textWidth = this.measureText(datum.metadata.title);
+          const textWidth = 1000;
           const bounds = computeLabelTransformedBounds(textWidth, datum.vector.x, datum.vector.y);
-          if (labelsToRender.some(({ transformedBounds }) => transformedBounds.intersects(bounds))) {
+          if (checkIntersectsExistingLabel(bounds)) {
             continue;
           }
 
           labelsToRender.push({ datum, transformedBounds: bounds });
+          labelsToRenderQuadtree.addAll(
+            getRectangleVertices(bounds).map(([x, y]) => [x, y, labelsToRender.length - 1] as const)
+          );
 
           score += 1;
           if (score >= MAX_LABELS_PER_GRID_SQUARE) {
@@ -903,8 +1064,7 @@ export class AtlasViz {
 
   private getGridSquareSize = () => {
     const curZoomScale = this.container.scale.x;
-    const rawGridSquareSize = (1 / curZoomScale) * 512;
-    console.log({ rawGridSquareSize });
+    const rawGridSquareSize = (1 / curZoomScale) * 400;
     // Round to nearest power of 2
     const gridSquareSize = Math.pow(2, Math.round(Math.log2(rawGridSquareSize)));
     if (gridSquareSize > MAX_GRID_SQUARE_SIZE) {
@@ -924,8 +1084,7 @@ export class AtlasViz {
 
     const globalLabelPositionsForZoomLevel = this.computeGlobalLabelsPositions(gridSquareSize);
 
-    const visibleNodeCount = this.computeVisibleNodeIndices(this.container.getVisibleBounds());
-    const visibleNodeIndices = new Set(this.visibleNodesIndicesScratch.slice(0, visibleNodeCount));
+    const visibleNodeIndices = new Set(this.computeVisibleNodeIndices(this.container.getVisibleBounds(), false));
     const labelScale = this.getBaseLabelScale(gridSquareSize);
     const labelsToRender = globalLabelPositionsForZoomLevel
       .filter(({ datum }) => visibleNodeIndices.has(datum.index))
