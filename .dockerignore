@@ -1,1 +1,4 @@
 node_modules
+data/*
+!data/processed-metadata.csv
+!data/projected_embedding*.json
