@@ -3,7 +3,7 @@ import type { RequestHandler } from '@sveltejs/kit';
 
 import { DbPool } from '../dbUtil';
 import { ADMIN_API_TOKEN } from '../conf';
-import { getAnimeByID } from '../malAPI';
+import { getAnimeByID, MALAPIError } from '../malAPI';
 
 const fillFromScratch = async () => {
   const allAnimeIDs: number[] = await new Promise((resolve) =>
@@ -57,7 +57,28 @@ export const post: RequestHandler = async ({ url }) => {
       return { status: 204 };
     }
 
-    await getAnimeByID(idToFetch);
+    try {
+      await getAnimeByID(idToFetch);
+    } catch (err) {
+      if (err instanceof MALAPIError) {
+        const statusCode = err.statusCode;
+        if (statusCode === 404) {
+          console.warn(`Anime ID ${idToFetch} not found`);
+          await new Promise((resolve, reject) =>
+            DbPool.query('DELETE FROM `anime-metadata` WHERE id = ?', [idToFetch], (err) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(undefined);
+              }
+            })
+          );
+          return { status: 200, body: `Anime ID ${idToFetch} not found; deleting placeholder from table` };
+        }
+        console.error(`Anime ID ${idToFetch} returned status code ${statusCode}: ${err.message}`);
+      }
+      return { status: 500, body: `Anime ID ${idToFetch} failed: ${err.message}` };
+    }
     return { status: 200, body: `Successfully fetched anime id=${idToFetch}` };
   } catch (err) {
     console.error(err);

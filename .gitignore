@@ -9,3 +9,4 @@ node_modules
 node_modules
 data/*
 !data/.gitkeep
+notebooks/.ipynb_checkpoints

@@ -58,8 +58,9 @@ const loadMetadata = async () => {
   return metadata;
 };
 
-const embeddingFilename = 'projected_embedding.json';
+// const embeddingFilename = 'projected_embedding.json';
 // const embeddingFilename = 'ggvec_projected_embedding.json';
+const embeddingFilename = 'projected_embedding_pymde.json';
 
 const loadRawEmbedding = async (): Promise<RawEmbedding> => {
   if (CachedRawEmbedding) {
@@ -102,7 +103,7 @@ export const loadEmbedding = async (): Promise<Embedding> => {
     }
 
     return {
-      vector: { x: point.x * 1.85, y: point.y * 1.85 },
+      vector: { x: point.x * 2.5, y: point.y * 2.5 },
       metadata: metadatum,
     };
   });

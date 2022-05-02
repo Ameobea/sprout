@@ -19,6 +19,7 @@ const LABEL_HEIGHT = 50;
 const MAX_LABELS_PER_GRID_SQUARE = 3;
 const MIN_GRID_SQUARE_SIZE = 2;
 const MAX_GRID_SQUARE_SIZE = 64;
+const ESTIMATED_LABEL_MAX_WIDTH = 800;
 
 enum ColorBy {
   AiredFromYear = 'aired_from_year',
@@ -124,7 +125,7 @@ export class AtlasViz {
   private colorBy = ColorBy.AiredFromYear;
   private colorScaler: d3.ScaleSequential<string, never>;
   private renderedHoverObjects: { label: PIXI.Graphics; neighborLines: PIXI.Graphics | null } | null = null;
-  private neighbors: number[][] = null;
+  private neighbors: number[][] | null = null;
   private setSelectedAnimeID: (id: number | null) => void;
 
   private PIXI: typeof import('pixi.js');
@@ -141,7 +142,8 @@ export class AtlasViz {
     ctx.font = '42px PT Sans';
     return ctx;
   })();
-  private malPointBackgrounds: PIXI.ParticleContainer | null = null;
+  private malProfileEntities: { pointGlowBackgrounds: PIXI.ParticleContainer; connections: PIXI.Graphics } | null =
+    null;
   private cachedMALBackgroundTexture: PIXI.Texture | null = null;
   private renderedMALNodeIDs: Set<number> = new Set();
   private selectedNode: {
@@ -247,12 +249,14 @@ export class AtlasViz {
     malData.forEach((d) => this.renderedMALNodeIDs.add(d.node.id));
     this.renderNodes();
 
-    if (this.malPointBackgrounds) {
-      this.decorationsContainer.removeChild(this.malPointBackgrounds);
-      this.malPointBackgrounds.destroy({ children: true });
-      this.malPointBackgrounds = null;
+    if (this.malProfileEntities) {
+      this.decorationsContainer.removeChild(this.malProfileEntities.connections);
+      this.decorationsContainer.removeChild(this.malProfileEntities.pointGlowBackgrounds);
+      this.malProfileEntities.pointGlowBackgrounds.destroy({ children: true });
+      this.malProfileEntities.connections.destroy({ children: true });
+      this.malProfileEntities = null;
     }
-    this.malPointBackgrounds = new this.PIXI.ParticleContainer(allMALData.length, {
+    const pointGlowBackgrounds = new this.PIXI.ParticleContainer(allMALData.length, {
       vertices: false,
       position: false,
       rotation: false,
@@ -273,11 +277,43 @@ export class AtlasViz {
       }
 
       const sprite = this.buildNodeBackgroundSprite(texture, datum, color);
-      this.malPointBackgrounds.addChild(sprite);
+      pointGlowBackgrounds.addChild(sprite);
     });
-    this.decorationsContainer.addChild(this.malPointBackgrounds);
+    this.decorationsContainer.addChild(pointGlowBackgrounds);
 
-    // TODO: Compute connections
+    const allMALNodeIDs = new Set(malData.map((d) => d.node.id));
+    console.log(malData);
+    const connections = new this.PIXI.Graphics();
+    connections.lineStyle(1, NEIGHBOR_LINE_COLOR, NEIGHBOR_LINE_OPACITY * 0.2, undefined, true);
+    allMALNodeIDs.forEach((id) => {
+      const datum = this.embeddedPointByID.get(+id);
+      const neighbors = this.neighbors?.[datum.index] ?? [];
+      neighbors.forEach((neighborID) => {
+        if (!allMALNodeIDs.has(neighborID)) {
+          return;
+        }
+        const neighbor = this.embeddedPointByID.get(neighborID);
+        if (!neighbor) {
+          console.warn(`Could not find neighbor id=${neighborID} for node index=${datum.index}`);
+          return;
+        }
+        const lineLength = Math.sqrt(
+          Math.pow(neighbor.vector.x - datum.vector.x, 2) + Math.pow(neighbor.vector.y - datum.vector.y, 2)
+        );
+        if (lineLength > 100 && Math.random() < 0.9) {
+          return;
+        }
+
+        connections.moveTo(datum.vector.x, datum.vector.y);
+        connections.lineTo(neighbor.vector.x, neighbor.vector.y);
+      });
+    });
+    this.decorationsContainer.addChild(connections);
+
+    this.malProfileEntities = {
+      pointGlowBackgrounds,
+      connections,
+    };
   }
 
   private getColorByTitle() {
@@ -299,7 +335,7 @@ export class AtlasViz {
     }
   };
 
-  private static getNodeRadius = (ratingCount: number) => Math.pow(ratingCount, 0.78) / 9000 + 0.14;
+  private static getNodeRadius = (ratingCount: number) => Math.pow(ratingCount, 0.72) / 9000 + 0.14;
 
   private getNodeColor = (datum: EmbeddedPoint) => {
     const animeID = datum.metadata.id;
@@ -895,7 +931,7 @@ export class AtlasViz {
         // Measuring text is expensive, so use an estimate max width.  In practice, this doesn't have
         // that bad of an impact on the generated label positions.
         // this.measureText(datum.metadata.title),
-        1000,
+        ESTIMATED_LABEL_MAX_WIDTH,
         datum.vector.x,
         datum.vector.y
       ),
@@ -1008,7 +1044,7 @@ export class AtlasViz {
           // Measuring text is expensive, so use an estimate max width.  In practice, this doesn't have
           // that bad of an impact on the generated label positions.
           // const textWidth = this.measureText(datum.metadata.title);
-          const textWidth = 1000;
+          const textWidth = ESTIMATED_LABEL_MAX_WIDTH;
           const bounds = computeLabelTransformedBounds(textWidth, datum.vector.x, datum.vector.y);
           if (checkIntersectsExistingLabel(bounds)) {
             continue;

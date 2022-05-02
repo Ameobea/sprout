@@ -21,12 +21,11 @@
         selectedAnimeID = newSelectedAnimeID;
       });
 
-      userProfilePromise.then((profile) => {
-        viz.displayMALUser(profile);
-      });
-
       neighborsPromise.then(({ neighbors }) => {
         viz.setNeighbors(neighbors);
+        userProfilePromise.then((profile) => {
+          viz.displayMALUser(profile);
+        });
       });
     });
   });
