@@ -1,7 +1,13 @@
+<script context="module" lang="ts">
+  const buildMALLink = (animeID: number) => `https://myanimelist.net/anime/${animeID}`;
+</script>
+
 <script lang="ts">
   import type { AnimeDetails } from '../malAPI';
+  import type { EmbeddedPointWithIndex } from './AtlasViz';
 
   export let id: number;
+  export let datum: EmbeddedPointWithIndex;
 
   let details: { id: number; details: Promise<AnimeDetails> } = {
     id: -1,
@@ -19,15 +25,19 @@
   {#await details.details}
     <div class="details">
       <div class="placeholder-image" width={225} height={332} />
-      <div><h2>Loading...</h2></div>
+      <div class="info">
+        <h2><a target="_blank" href={buildMALLink(id)}>{datum.metadata.title}</a></h2>
+        <p>Loading...</p>
+      </div>
     </div>
     <p class="synopsis">Loading anime info...</p>
   {:then details}
     <div class="details">
       <img src={details.main_picture.medium} width={225} height={332} alt={details.title} />
       <div class="info">
-        <h2>{details.title}</h2>
+        <h2><a target="_blank" href={buildMALLink(id)}>{datum.metadata.title}</a></h2>
         <p>{details.start_date ?? '-'} - {details.end_date ?? '-'}</p>
+        <p>Average rating: {datum.metadata.average_rating.toFixed(2)}</p>
       </div>
     </div>
     <p class="synopsis">{details.synopsis}</p>
@@ -77,6 +87,14 @@
     font-size: 16px;
     text-align: center;
     line-height: 17px;
+  }
+
+  h2 a {
+    color: #ccc;
+  }
+
+  h2 a:hover {
+    color: #aaf;
   }
 
   img,

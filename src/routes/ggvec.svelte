@@ -4,7 +4,7 @@
   export const prerender = true;
 
   export async function load({ fetch }: LoadInput) {
-    const { embedding } = await fetch('/embedding?embedding=pymde').then(
+    const { embedding } = await fetch('/embedding?embedding=ggvec').then(
       (res) => res.json() as Promise<{ embedding: Embedding }>
     );
     return { props: { embedding } };

@@ -1,7 +1,7 @@
 <script lang="ts">
   import Fuse from 'fuse.js';
 
-  import type { Embedding } from '../routes/index';
+  import type { Embedding } from '../routes/embedding';
 
   export let embedding: Embedding;
   export let onSubmit: (id: number) => void;
@@ -17,6 +17,7 @@
 
 <div class="root">
   <input
+    type="text"
     placeholder="Search"
     bind:value
     on:blur={() => {
@@ -28,12 +29,7 @@
   />
 
   {#each suggestions as suggestion (suggestion.item.metadata.id)}
-    <div
-      role="button"
-      tabindex={0}
-      class="suggestion"
-      on:mousedown={() => onSubmit(suggestion.item.metadata.id)}
-    >
+    <div role="button" tabindex={0} class="suggestion" on:mousedown={() => onSubmit(suggestion.item.metadata.id)}>
       {suggestion.item.metadata.title}
     </div>
   {/each}
@@ -42,12 +38,18 @@
 <style lang="css">
   .root {
     box-sizing: border-box;
-    width: calc(min(30vw, 320px));
+    width: calc(min(100vw, 320px));
     position: absolute;
     top: 0;
     left: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  @media (max-width: 600px) {
+    .root {
+      width: 100vw;
+    }
   }
 
   input {
@@ -56,13 +58,10 @@
     box-sizing: border-box;
     width: 100%;
     height: 30px;
-    border: 1px solid #333;
-    outline: none;
-    background: #121212;
-    color: #ccc;
   }
 
   .suggestion {
+    z-index: 2;
     cursor: pointer;
     box-sizing: border-box;
     background: #121212ee;

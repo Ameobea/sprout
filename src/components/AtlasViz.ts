@@ -3,7 +3,7 @@ import type * as PIXI from 'pixi.js';
 import type { Viewport } from 'pixi-viewport';
 
 import type { MALUserAnimeListItem } from '../malAPI';
-import type { EmbeddedPoint, Embedding } from '../routes/index';
+import type { EmbeddedPoint, Embedding } from '../routes/embedding';
 import ColorLegend from './ColorLegend';
 
 const WORLD_SIZE = 1;
@@ -21,16 +21,19 @@ const MIN_GRID_SQUARE_SIZE = 2;
 const MAX_GRID_SQUARE_SIZE = 64;
 const ESTIMATED_LABEL_MAX_WIDTH = 800;
 
-enum ColorBy {
+export enum ColorBy {
   AiredFromYear = 'aired_from_year',
   AverageRating = 'average_rating',
 }
 
-interface EmbeddedPointWithIndex extends EmbeddedPoint {
+export interface EmbeddedPointWithIndex extends EmbeddedPoint {
   index: number;
 }
 
 type EmbeddingWithIndices = EmbeddedPointWithIndex[];
+
+export const getDefaultColorBy = () =>
+  (new URLSearchParams(window.location.search).get('colorBy') as ColorBy | undefined) ?? ColorBy.AiredFromYear;
 
 const buildNodeLabelClass = (PixiModule: typeof PIXI) => {
   class NodeLabel extends PixiModule.Graphics {
@@ -114,7 +117,7 @@ function fastQuadtreeVisit<T>(
 export class AtlasViz {
   private embedding: EmbeddingWithIndices;
   private dataExtents: { mins: { x: number; y: number }; maxs: { x: number; y: number } };
-  private embeddedPointByID: Map<number, EmbeddedPointWithIndex>;
+  public embeddedPointByID: Map<number, EmbeddedPointWithIndex>;
   /**
    * Node positions from embedding kept here for faster lookup
    */
@@ -122,7 +125,7 @@ export class AtlasViz {
   /** Holds indices of nodes.  Positions can be looked up via `embeddingPositions` */
   private embeddingQuadTree: d3.Quadtree<number>;
   private cachedNodeRadii: Float32Array;
-  private colorBy = ColorBy.AiredFromYear;
+  private colorBy: ColorBy;
   private colorScaler: d3.ScaleSequential<string, never>;
   private renderedHoverObjects: { label: PIXI.Graphics; neighborLines: PIXI.Graphics | null } | null = null;
   private neighbors: number[][] | null = null;
@@ -231,7 +234,7 @@ export class AtlasViz {
     color: number
   ): PIXI.Sprite => {
     const nodeRadius = this.cachedNodeRadii[datum.index];
-    const radius = 5.8 + 0.8 * nodeRadius;
+    const radius = 7.8 + 1.2 * nodeRadius;
     const sprite = new this.PIXI.Sprite(texture);
     sprite.blendMode = this.PIXI.BLEND_MODES.COLOR;
     sprite.interactive = false;
@@ -282,7 +285,6 @@ export class AtlasViz {
     this.decorationsContainer.addChild(pointGlowBackgrounds);
 
     const allMALNodeIDs = new Set(malData.map((d) => d.node.id));
-    console.log(malData);
     const connections = new this.PIXI.Graphics();
     connections.lineStyle(1, NEIGHBOR_LINE_COLOR, NEIGHBOR_LINE_OPACITY * 0.2, undefined, true);
     allMALNodeIDs.forEach((id) => {
@@ -330,12 +332,26 @@ export class AtlasViz {
       case ColorBy.AiredFromYear:
         return d3.scaleSequential(d3.interpolatePlasma).domain([1990, 2022]);
       case ColorBy.AverageRating: {
-        return d3.scaleSequential(d3.interpolateViridis).domain([3, 7.5]);
+        const scaler = d3.scaleSequentialPow(d3.interpolateRdYlGn).domain([3, 8.5]);
+        return (scaler as any).exponent(2) as typeof scaler;
       }
     }
   };
 
   private static getNodeRadius = (ratingCount: number) => Math.pow(ratingCount, 0.72) / 9000 + 0.14;
+
+  private static parseColorString = (colorString: string) => {
+    if (colorString.startsWith('#')) {
+      return parseInt(colorString.slice(1), 16);
+    }
+    // Parse RGB string like `rgb(255, 0, 0)`
+    const match = colorString.match(/rgb\((\d+), (\d+), (\d+)\)/);
+    if (match) {
+      const [, r, g, b] = match;
+      return (+r << 16) + (+g << 8) + +b;
+    }
+    throw new Error(`Could not parse color string ${colorString}`);
+  };
 
   private getNodeColor = (datum: EmbeddedPoint) => {
     const animeID = datum.metadata.id;
@@ -344,7 +360,7 @@ export class AtlasViz {
     }
 
     const colorString = this.colorScaler(datum.metadata[this.colorBy]);
-    const color = parseInt(colorString.slice(1), 16);
+    const color = AtlasViz.parseColorString(colorString);
     return color;
   };
 
@@ -422,6 +438,8 @@ export class AtlasViz {
       .x((ix) => this.embeddingPositions[ix * 2])
       .y((ix) => this.embeddingPositions[ix * 2 + 1])
       .addAll(this.embedding.map((_datum, i) => i));
+
+    this.colorBy = getDefaultColorBy();
 
     this.visibleNodesIndicesScratch = new Uint32Array(embedding.length);
     this.embeddedPointByID = new Map(this.embedding.map((p) => [+p.metadata.id, p]));
@@ -747,6 +765,8 @@ export class AtlasViz {
   public setColorBy(colorBy: ColorBy) {
     this.colorBy = colorBy;
     this.colorScaler = AtlasViz.createColorScaler(colorBy);
+    this.renderNodes();
+    this.renderLegend();
   }
 
   public flyTo(id: number) {

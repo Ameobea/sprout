@@ -2,7 +2,8 @@ import fs from 'fs';
 import { parse } from 'csv-parse';
 
 import { DATA_DIR } from './conf';
-import type { Embedding } from './routes/index';
+import type { Embedding } from './routes/embedding';
+import { EmbeddingName } from './types';
 
 interface RawEmbedding {
   points: { [index: string]: { x: number; y: number } };
@@ -19,9 +20,9 @@ export interface Metadatum {
   aired_from_year: number;
 }
 
-let CachedRawEmbedding: RawEmbedding | null = null;
-let CachedEmbedding: Embedding | null = null;
-let CachedNeighbors: number[][] | null = null;
+const CachedRawEmbeddings: Map<EmbeddingName, RawEmbedding> = new Map();
+const CachedEmbeddings: Map<EmbeddingName, Embedding> = new Map();
+const CachedNeighbors: Map<EmbeddingName, number[][]> = new Map();
 
 // HEADERS: 'id', 'title', 'title_english', 'related_anime', 'recommendations', 'aired_from_year', 'rating_count', 'average_rating'
 const METADATA_FILE_NAME = `${DATA_DIR}/processed-metadata.csv`;
@@ -58,43 +59,54 @@ const loadMetadata = async () => {
   return metadata;
 };
 
-// const embeddingFilename = 'projected_embedding.json';
-// const embeddingFilename = 'ggvec_projected_embedding.json';
-const embeddingFilename = 'projected_embedding_pymde.json';
+const EmbeddingFilenameByName: { [K in EmbeddingName]: string } = {
+  [EmbeddingName.PyMDE]: 'projected_embedding_pymde.json',
+  [EmbeddingName.GGVec]: 'projected_embedding.json',
+};
 
-const loadRawEmbedding = async (): Promise<RawEmbedding> => {
-  if (CachedRawEmbedding) {
-    return CachedRawEmbedding;
+const AllValidEmbeddingNames = new Set(Object.keys(EmbeddingFilenameByName) as EmbeddingName[]);
+
+export const validateEmbeddingName = (name: string): EmbeddingName | null =>
+  AllValidEmbeddingNames.has(name as EmbeddingName) ? (name as EmbeddingName) : null;
+
+const loadRawEmbedding = async (embeddingName: EmbeddingName): Promise<RawEmbedding> => {
+  const cached = CachedRawEmbeddings.get(embeddingName);
+  if (cached) {
+    return cached;
   }
 
+  const embeddingFilename = EmbeddingFilenameByName[embeddingName];
   return new Promise((resolve) =>
     fs.readFile(`${DATA_DIR}/${embeddingFilename}`, (err, data) => {
       if (err) {
         throw err;
       }
 
-      CachedRawEmbedding = JSON.parse(data.toString());
-      const entries = Object.entries(CachedRawEmbedding.points);
-      if (CachedRawEmbedding.ids.length !== entries.length) {
-        throw new Error(`Have ${entries.length} embedding entries, but ${CachedRawEmbedding.ids.length} ids`);
+      const embedding = JSON.parse(data.toString());
+      const entries = Object.entries(embedding.points);
+      if (embedding.ids.length !== entries.length) {
+        throw new Error(`Have ${entries.length} embedding entries, but ${embedding.ids.length} ids`);
       }
 
-      resolve(CachedRawEmbedding);
+      CachedRawEmbeddings.set(embeddingName, embedding);
+
+      resolve(embedding);
     })
   );
 };
 
-export const loadEmbedding = async (): Promise<Embedding> => {
-  if (CachedEmbedding) {
-    return CachedEmbedding;
+export const loadEmbedding = async (embeddingName: EmbeddingName): Promise<Embedding> => {
+  const cached = CachedEmbeddings.get(embeddingName);
+  if (cached) {
+    return cached;
   }
 
   const metadata = await loadMetadata();
 
-  const rawEmbedding = await loadRawEmbedding();
+  const rawEmbedding = await loadRawEmbedding(embeddingName);
   const entries = Object.entries(rawEmbedding.points);
 
-  CachedEmbedding = entries.map(([index, point]) => {
+  const embedding = entries.map(([index, point]) => {
     const i = +index;
     const id = +rawEmbedding.ids[i];
     const metadatum = metadata.get(id);
@@ -107,23 +119,25 @@ export const loadEmbedding = async (): Promise<Embedding> => {
       metadata: metadatum,
     };
   });
-  CachedEmbedding.sort((a, b) => {
+  embedding.sort((a, b) => {
     if (b.metadata.rating_count !== a.metadata.rating_count) {
       return b.metadata.rating_count - a.metadata.rating_count;
     }
     return b.metadata.id - a.metadata.id;
   });
 
-  return CachedEmbedding!;
+  CachedEmbeddings.set(embeddingName, embedding);
+  return embedding;
 };
 
-export const loadNeighbors = async (): Promise<number[][]> => {
-  if (CachedNeighbors) {
-    return CachedNeighbors;
+export const loadNeighbors = async (embeddingName: EmbeddingName): Promise<number[][]> => {
+  const cached = CachedNeighbors.get(embeddingName);
+  if (cached) {
+    return cached;
   }
 
-  const rawEmbedding = await loadRawEmbedding();
-  const embedding = await loadEmbedding();
+  const rawEmbedding = await loadRawEmbedding(embeddingName);
+  const embedding = await loadEmbedding(embeddingName);
 
   const idByOriginalIndex = rawEmbedding.ids;
   const originalIndexByID = new Map<number, number>();
@@ -131,7 +145,7 @@ export const loadNeighbors = async (): Promise<number[][]> => {
     originalIndexByID.set(+idByOriginalIndex[i], i);
   }
 
-  CachedNeighbors = embedding.map(({ metadata: { id } }) => {
+  const neighbors = embedding.map(({ metadata: { id } }) => {
     const originalIndex = originalIndexByID.get(+id);
     if (!originalIndex) {
       console.error('Missing original index for id ' + id);
@@ -144,5 +158,7 @@ export const loadNeighbors = async (): Promise<number[][]> => {
 
     return neighbors.map((neighborIndex) => +idByOriginalIndex[neighborIndex]);
   });
-  return CachedNeighbors;
+
+  CachedNeighbors.set(embeddingName, neighbors);
+  return neighbors;
 };
