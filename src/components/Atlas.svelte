@@ -1,5 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/env';
+  import type { EmbeddingName } from 'src/types';
 
   import { onDestroy, onMount } from 'svelte';
 
@@ -9,6 +10,7 @@
   import Search from './Search.svelte';
   import VizControls from './VizControls.svelte';
 
+  export let embeddingName: EmbeddingName;
   export let embedding: Embedding;
 
   let viz: AtlasViz | null = null;
@@ -36,7 +38,9 @@
   onMount(() => {
     const username = new URLSearchParams(window.location.search).get('username') ?? 'Expochant';
     const userProfilePromise = fetch(`/mal-profile?username=${username}`).then((res) => res.json());
-    const neighborsPromise: Promise<{ neighbors: number[][] }> = fetch('/neighbors').then((res) => res.json());
+    const neighborsPromise: Promise<{ neighbors: number[][] }> = fetch(`/neighbors?embedding=${embeddingName}`).then(
+      (res) => res.json()
+    );
 
     import('../pixi').then((mod) => {
       viz = new AtlasViz(mod, 'viz', embedding, (newSelectedAnimeID: number | null) => {
