@@ -1,14 +1,5 @@
 <script lang="ts" context="module">
-  import type { LoadInput } from '@sveltejs/kit/types/private';
-
   export const prerender = true;
-
-  export async function load({ fetch }: LoadInput) {
-    const { embedding } = await fetch('/embedding?embedding=pymde').then(
-      (res) => res.json() as Promise<{ embedding: Embedding }>
-    );
-    return { props: { embedding } };
-  }
 </script>
 
 <script lang="ts">

@@ -1,10 +1,10 @@
-import * as d3 from 'd3';
-import type * as PIXI from 'pixi.js';
 import type { Viewport } from 'pixi-viewport';
 
 import type { MALUserAnimeListItem } from '../malAPI';
 import type { EmbeddedPoint, Embedding } from '../routes/embedding';
 import ColorLegend from './ColorLegend';
+import * as d3 from '../d3';
+import type * as PIXI from '../pixi';
 
 const WORLD_SIZE = 1;
 const BASE_LABEL_FONT_SIZE = 42;
@@ -50,7 +50,7 @@ const buildNodeLabelClass = (PixiModule: typeof PIXI) => {
         5
       );
       this.textNode = new PixiModule.Text(text, style);
-      this.textNode.position.set(-textWidth / 2, -LABEL_HEIGHT / 2);
+      this.textNode.position.set(-textWidth / 2, -LABEL_HEIGHT / 2 - paddingVertical * 4);
       this.addChild(this.textNode);
     }
 
@@ -94,7 +94,7 @@ function fastQuadtreeVisit<T>(
     y0,
     x1,
     y1;
-  const quads = [];
+  const quads: any[] = [];
 
   if (node) {
     quads.push({ node, x0: (tree as any)._x0, y0: (tree as any)._y0, x1: (tree as any)._x1, y1: (tree as any)._y1 });
@@ -131,8 +131,7 @@ export class AtlasViz {
   private neighbors: number[][] | null = null;
   private setSelectedAnimeID: (id: number | null) => void;
 
-  private PIXI: typeof import('pixi.js');
-  private gradients: typeof import('@pixi-essentials/gradients');
+  private PIXI: typeof import('../pixi');
   private app: PIXI.Application;
   private container: Viewport;
   private pointsContainer: PIXI.Container;
@@ -140,8 +139,13 @@ export class AtlasViz {
   private decorationsContainer: PIXI.Container;
   private labelsContainer: PIXI.Container;
   private hoverLabelsContainer: PIXI.Container;
+  private pointerCbs: {
+    pointerMove: (evt: PointerEvent) => void;
+    pointerDown: (evt: PIXI.InteractionEvent) => void;
+    pointerUp: (evt: PIXI.InteractionEvent) => void;
+  };
   private textMeasurerCtx = (() => {
-    const ctx = document.createElement('canvas').getContext('2d');
+    const ctx = document.createElement('canvas').getContext('2d')!;
     ctx.font = '42px PT Sans';
     return ctx;
   })();
@@ -204,7 +208,7 @@ export class AtlasViz {
       return this.cachedMALBackgroundTexture;
     }
 
-    const gradientRenderTexture = this.gradients.GradientFactory.createRadialGradient(
+    const gradientRenderTexture = this.PIXI.gradients.GradientFactory.createRadialGradient(
       this.app.renderer as PIXI.Renderer,
       this.PIXI.RenderTexture.create({ width: BASE_RADIUS * 2, height: BASE_RADIUS * 2 }),
       {
@@ -288,7 +292,7 @@ export class AtlasViz {
     const connections = new this.PIXI.Graphics();
     connections.lineStyle(1, NEIGHBOR_LINE_COLOR, NEIGHBOR_LINE_OPACITY * 0.2, undefined, true);
     allMALNodeIDs.forEach((id) => {
-      const datum = this.embeddedPointByID.get(+id);
+      const datum = this.embeddedPointByID.get(+id)!;
       const neighbors = this.neighbors?.[datum.index] ?? [];
       neighbors.forEach((neighborID) => {
         if (!allMALNodeIDs.has(neighborID)) {
@@ -403,11 +407,7 @@ export class AtlasViz {
   };
 
   constructor(
-    pixi: {
-      PIXI: typeof import('pixi.js');
-      Viewport: typeof import('pixi-viewport').Viewport;
-      gradients: typeof import('@pixi-essentials/gradients');
-    },
+    pixi: typeof import('../pixi'),
     containerID: string,
     embedding: Embedding,
     setSelectedAnimeID: (id: number | null) => void
@@ -451,9 +451,8 @@ export class AtlasViz {
         this.selectedNode = sprites ? { id: newSelectedAnimeID, ...sprites } : null;
       }
     };
-    this.PIXI = pixi.PIXI;
-    this.gradients = pixi.gradients;
-    this.NodeLabel = buildNodeLabelClass(this.PIXI);
+    this.PIXI = pixi;
+    this.NodeLabel = buildNodeLabelClass(pixi);
 
     // Performance optimization to avoid having to set transforms on every point
     this.cachedNodeRadii = new Float32Array(embedding.length);
@@ -485,10 +484,7 @@ export class AtlasViz {
     // TODO: The initial transform probably needs to be relative to screen size
     this.container.setTransform(1000.5, 400.5, 5, 5);
 
-    window.addEventListener('resize', () => {
-      this.app.renderer.resize(window.innerWidth, window.innerHeight);
-      this.container.resize(window.innerWidth, window.innerHeight);
-    });
+    window.addEventListener('resize', this.handleResize);
 
     // Need to do some hacky subclassing to enable big performance improvement
     class NodesParticleRenderer extends this.PIXI.ParticleRenderer {}
@@ -589,47 +585,46 @@ export class AtlasViz {
     // Somewhat annoyingly, we have to do manual hit testing in order to get decent rendering performance
     // for the circles.
     let hoveredDatum: EmbeddedPointWithIndex | null = null;
-    let containerPointerDownPos: PIXI.Point | null = null;
+    let containerPointerDownPos: PIXI.IPointData | null = null;
 
-    canvas.addEventListener('pointermove', (evt) => {
-      if (this.container.zooming) {
-        return;
-      }
-
-      const worldPoint = this.container.toWorld(evt.offsetX, evt.offsetY);
-
-      const newScale = this.container.scale.x;
-      const adjustment = this.getNodeRadiusAdjustment(newScale);
-      let datum: EmbeddedPointWithIndex | undefined;
-      for (let i = this.embedding.length - 1; i >= 0; i--) {
-        const p = this.embedding[i];
-        const radius = this.cachedNodeRadii[i] * adjustment;
-        const centerX = this.embeddingPositions[i * 2];
-        const centerY = this.embeddingPositions[i * 2 + 1];
-        const hitTest = Math.abs(worldPoint.x - centerX) < radius && Math.abs(worldPoint.y - centerY) < radius;
-
-        if (hitTest) {
-          datum = p;
-          break;
+    this.pointerCbs = {
+      pointerMove: (evt: PointerEvent) => {
+        if (this.container.zooming) {
+          return;
         }
-      }
 
-      if (datum && hoveredDatum !== datum) {
-        this.handlePointerOut();
-        hoveredDatum = datum;
-        this.handlePointerOver(hoveredDatum);
-      } else if (!datum && hoveredDatum) {
-        this.handlePointerOut();
-        hoveredDatum = null;
-      } else {
-        hoveredDatum = datum;
-      }
+        const worldPoint = this.container.toWorld(evt.offsetX, evt.offsetY);
 
-      this.container.cursor = hoveredDatum ? 'pointer' : containerPointerDownPos ? 'grabbing' : 'default';
-    });
+        const newScale = this.container.scale.x;
+        const adjustment = this.getNodeRadiusAdjustment(newScale);
+        let datum: EmbeddedPointWithIndex | undefined;
+        for (let i = this.embedding.length - 1; i >= 0; i--) {
+          const p = this.embedding[i];
+          const radius = this.cachedNodeRadii[i] * adjustment;
+          const centerX = this.embeddingPositions[i * 2];
+          const centerY = this.embeddingPositions[i * 2 + 1];
+          const hitTest = Math.abs(worldPoint.x - centerX) < radius && Math.abs(worldPoint.y - centerY) < radius;
 
-    this.container
-      .on('pointerdown', (evt: PIXI.InteractionEvent) => {
+          if (hitTest) {
+            datum = p;
+            break;
+          }
+        }
+
+        if (datum && hoveredDatum !== datum) {
+          this.handlePointerOut();
+          hoveredDatum = datum;
+          this.handlePointerOver(hoveredDatum);
+        } else if (!datum && hoveredDatum) {
+          this.handlePointerOut();
+          hoveredDatum = null;
+        } else {
+          hoveredDatum = datum;
+        }
+
+        this.container.cursor = hoveredDatum ? 'pointer' : containerPointerDownPos ? 'grabbing' : 'default';
+      },
+      pointerDown: (evt: PIXI.InteractionEvent) => {
         // Ignore right clicks
         if ((evt.data.originalEvent as PointerEvent).button === 2) {
           return;
@@ -641,8 +636,8 @@ export class AtlasViz {
         if (hoveredDatum) {
           this.handlePointerDown(hoveredDatum);
         }
-      })
-      .on('pointerup', (evt: PIXI.InteractionEvent) => {
+      },
+      pointerUp: (evt: PIXI.InteractionEvent) => {
         this.container.cursor = 'default';
         const newPos = evt.data.getLocalPosition(this.app.stage);
         if (hoveredDatum || newPos.x !== containerPointerDownPos?.x || newPos.y !== containerPointerDownPos?.y) {
@@ -652,7 +647,11 @@ export class AtlasViz {
         containerPointerDownPos = null;
 
         this.setSelectedAnimeID(null);
-      });
+      },
+    };
+
+    canvas.addEventListener('pointermove', this.pointerCbs.pointerMove);
+    this.container.on('pointerdown', this.pointerCbs.pointerDown).on('pointerup', this.pointerCbs.pointerUp);
 
     this.setColorBy(this.colorBy);
 
@@ -662,6 +661,11 @@ export class AtlasViz {
 
     this.renderLegend();
   }
+
+  private handleResize = () => {
+    this.app.renderer.resize(window.innerWidth, window.innerHeight);
+    this.container.resize(window.innerWidth, window.innerHeight);
+  };
 
   private getNodeRadiusAdjustment = (newZoomScale: number) => {
     let adjustment = (1 / (newZoomScale / 16)) * 1;
@@ -856,7 +860,6 @@ export class AtlasViz {
   private renderLegend() {
     const legend = ColorLegend(this.colorScaler, {
       title: this.getColorByTitle(),
-      tickFormat: (x) => x,
     });
     const legendContainer = document.getElementById('atlas-viz-legend')!;
     legendContainer.innerHTML = '';
@@ -1152,6 +1155,11 @@ export class AtlasViz {
   };
 
   public dispose() {
+    window.removeEventListener('resize', this.handleResize);
+    this.container.off('pointerdown', this.pointerCbs.pointerUp);
+    this.container.off('pointerup', this.pointerCbs.pointerUp);
+    this.app.renderer.view.removeEventListener('pointermove', this.pointerCbs.pointerMove);
     this.app.ticker.stop();
+    this.app.destroy(false, { children: true, texture: true, baseTexture: true });
   }
 }

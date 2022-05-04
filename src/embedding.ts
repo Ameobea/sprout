@@ -60,8 +60,10 @@ const loadMetadata = async () => {
 };
 
 const EmbeddingFilenameByName: { [K in EmbeddingName]: string } = {
-  [EmbeddingName.PyMDE]: 'projected_embedding_pymde.json',
+  [EmbeddingName.PyMDE]: 'projected_embedding_pymde_3d_40n.json',
   [EmbeddingName.GGVec]: 'projected_embedding.json',
+  [EmbeddingName.PyMDE_4D_40N]: 'projected_embedding_pymde_4d_40n.json',
+  [EmbeddingName.PyMDE_4D_100N]: 'projected_embedding_pymde_4d_100n.json',
 };
 
 const AllValidEmbeddingNames = new Set(Object.keys(EmbeddingFilenameByName) as EmbeddingName[]);

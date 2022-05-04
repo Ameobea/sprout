@@ -18,7 +18,7 @@
 <div class="root">
   <input
     type="text"
-    placeholder="Search"
+    placeholder="Search for Anime"
     bind:value
     on:blur={() => {
       suggestionsVisible = false;

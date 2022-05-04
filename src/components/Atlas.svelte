@@ -13,6 +13,7 @@
 
   let viz: AtlasViz | null = null;
   let selectedAnimeID: number | null = null;
+  $: selectedDatum = selectedAnimeID === null || !viz ? null : viz.embeddedPointByID.get(selectedAnimeID)!;
 
   let colorBy = browser ? getDefaultColorBy() : ColorBy.AiredFromYear;
   const setColorBy = (newColorBy: ColorBy) => {
@@ -28,7 +29,7 @@
     fetch(`/mal-profile?username=${username}`)
       .then((res) => res.json())
       .then((profile) => {
-        viz.displayMALUser(profile);
+        viz?.displayMALUser(profile);
       });
   };
 
@@ -44,18 +45,17 @@
       viz.setColorBy(colorBy);
 
       neighborsPromise.then(({ neighbors }) => {
-        viz.setNeighbors(neighbors);
+        viz?.setNeighbors(neighbors);
         userProfilePromise.then((profile) => {
-          viz.displayMALUser(profile);
+          viz?.displayMALUser(profile);
         });
       });
     });
-  });
 
-  onDestroy(() => {
-    if (viz) {
-      viz.dispose();
-    }
+    return () => {
+      viz?.dispose();
+      viz = null;
+    };
   });
 </script>
 
@@ -63,12 +63,12 @@
   <canvas id="viz" />
 </div>
 {#if viz}
-  <Search {embedding} onSubmit={(id) => viz.flyTo(id)} />
+  <Search {embedding} onSubmit={(id) => viz?.flyTo(id)} />
   <VizControls {colorBy} {setColorBy} {loadMALProfile} />
 {/if}
 <div id="atlas-viz-legend" />
-{#if selectedAnimeID !== null}
-  <AnimeDetails id={selectedAnimeID} datum={viz.embeddedPointByID.get(selectedAnimeID)} />
+{#if selectedDatum !== null && viz}
+  <AnimeDetails id={selectedDatum.metadata.id} datum={selectedDatum} />
 {/if}
 
 <style lang="css">

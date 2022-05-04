@@ -14,7 +14,7 @@
 // OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 // PERFORMANCE OF THIS SOFTWARE.
 
-import * as d3 from 'd3';
+import * as d3 from '../d3';
 
 // Copyright 2021, Observable Inc.
 // Released under the ISC license.
@@ -55,7 +55,6 @@ export default function Legend(
     .style('overflow', 'visible')
     .style('display', 'block');
 
-  let tickAdjust = (g) => g.selectAll('.tick line').attr('y1', marginTop + marginBottom - height);
   let x;
 
   // Continuous
@@ -71,22 +70,16 @@ export default function Legend(
       .attr('width', width - marginLeft - marginRight)
       .attr('height', height - marginTop - marginBottom)
       .attr('preserveAspectRatio', 'none')
-      .attr(
-        'xlink:href',
-        ramp(color.copy().domain(d3.quantize(d3.interpolate(0, 1), n))).toDataURL()
-      );
+      .attr('xlink:href', ramp(color.copy().domain(d3.quantize(d3.interpolate(0, 1), n))).toDataURL());
   }
 
   // Sequential
   else if (color.interpolator) {
-    x = Object.assign(
-      color.copy().interpolator(d3.interpolateRound(marginLeft, width - marginRight)),
-      {
-        range() {
-          return [marginLeft, width - marginRight];
-        },
-      }
-    );
+    x = Object.assign(color.copy().interpolator(d3.interpolateRound(marginLeft, width - marginRight)), {
+      range() {
+        return [marginLeft, width - marginRight];
+      },
+    });
 
     svg
       .append('image')
@@ -101,10 +94,7 @@ export default function Legend(
     if (!x.ticks) {
       if (tickValues === undefined) {
         const n = Math.round(ticks + 1);
-        tickValues = d3.range(n).map((i) => d3.quantile(color.domain(), i / (n - 1)));
-      }
-      if (typeof tickFormat !== 'function') {
-        tickFormat = d3.format(tickFormat === undefined ? ',f' : tickFormat);
+        tickValues = new Array(n).fill(null).map((_, i) => d3.quantile(color.domain(), i / (n - 1)));
       }
     }
   }
@@ -117,12 +107,7 @@ export default function Legend(
       ? color.quantiles() // scaleQuantile
       : color.domain(); // scaleThreshold
 
-    const thresholdFormat =
-      tickFormat === undefined
-        ? (d) => d
-        : typeof tickFormat === 'string'
-        ? d3.format(tickFormat)
-        : tickFormat;
+    const thresholdFormat = tickFormat;
 
     x = d3
       .scaleLinear()
@@ -140,7 +125,7 @@ export default function Legend(
       .attr('height', height - marginTop - marginBottom)
       .attr('fill', (d) => d);
 
-    tickValues = d3.range(thresholds.length);
+    tickValues = new Array(thresholds.length).fill(null).map((_, i) => i);
     tickFormat = (i) => thresholdFormat(thresholds[i], i);
   }
 
@@ -161,8 +146,6 @@ export default function Legend(
       .attr('width', Math.max(0, x.bandwidth() - 1))
       .attr('height', height - marginTop - marginBottom)
       .attr('fill', color);
-
-    tickAdjust = () => {};
   }
 
   svg
@@ -176,7 +159,6 @@ export default function Legend(
         .tickSize(tickSize)
         .tickValues(tickValues)
     )
-    .call(tickAdjust)
     .call((g) => g.select('.domain').remove())
     .call((g) =>
       g
