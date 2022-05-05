@@ -68,7 +68,7 @@ const EmbeddingFilenameByName: { [K in EmbeddingName]: string } = {
 
 const AllValidEmbeddingNames = new Set(Object.keys(EmbeddingFilenameByName) as EmbeddingName[]);
 
-export const validateEmbeddingName = (name: string): EmbeddingName | null =>
+export const validateEmbeddingName = (name: string | null | undefined): EmbeddingName | null =>
   AllValidEmbeddingNames.has(name as EmbeddingName) ? (name as EmbeddingName) : null;
 
 const loadRawEmbedding = async (embeddingName: EmbeddingName): Promise<RawEmbedding> => {
