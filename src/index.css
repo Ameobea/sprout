@@ -2,9 +2,8 @@ body,
 html {
   margin: 0;
   padding: 0;
-  overflow: hidden;
   background-color: #060606;
-  color: #ccc;
+  color: #ddd;
   font-family: 'PT Sans', 'Open Sans', 'Roboto', sans-serif;
   font-display: swap;
 }
@@ -31,5 +30,5 @@ input[type=text] {
   border: 1px solid #333;
   outline: none;
   background: #121212;
-  color: #ccc;
+  color: #ddd;
 }

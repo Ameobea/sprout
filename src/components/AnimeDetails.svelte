@@ -90,7 +90,7 @@
   }
 
   h2 a {
-    color: #ccc;
+    color: #ddd;
   }
 
   h2 a:hover {

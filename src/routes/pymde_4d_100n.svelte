@@ -5,7 +5,6 @@
 <script lang="ts">
   import Atlas from 'src/components/Atlas.svelte';
   import type { Embedding } from './embedding';
-  import '../index.css';
   import type { EmbeddingName } from 'src/types';
 
   export let embedding: Embedding;

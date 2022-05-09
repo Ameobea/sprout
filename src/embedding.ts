@@ -27,7 +27,7 @@ const CachedNeighbors: Map<EmbeddingName, number[][]> = new Map();
 // HEADERS: 'id', 'title', 'title_english', 'related_anime', 'recommendations', 'aired_from_year', 'rating_count', 'average_rating'
 const METADATA_FILE_NAME = `${DATA_DIR}/processed-metadata.csv`;
 
-const loadMetadata = async () => {
+export const loadMetadata = async () => {
   const metadata = new Map<number, Metadatum>();
   await new Promise((resolve) =>
     fs

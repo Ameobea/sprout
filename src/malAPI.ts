@@ -182,11 +182,12 @@ export interface AnimeDetails {
   }[];
 }
 
-const AnimeDetailsCache: Map<number, AnimeDetails> = new Map();
+const AnimeDetailsCache = new TimedCache({ defaultTtl: 24 * 60 * 60 * 1000 });
 
 export const getAnimeByID = async (id: number, includeRecommendationsAndRelated = false) => {
-  if (AnimeDetailsCache.has(id)) {
-    const details = { ...AnimeDetailsCache.get(id) } as AnimeDetails;
+  const cached = AnimeDetailsCache.get(id);
+  if (cached) {
+    const details = { ...cached } as AnimeDetails;
     if (!includeRecommendationsAndRelated) {
       delete details.recommendations;
       delete details.related_anime;
@@ -207,7 +208,7 @@ export const getAnimeByID = async (id: number, includeRecommendationsAndRelated 
   const url = `${MAL_API_BASE_URL}/anime/${id}?fields=${fieldsToFetch.join(',')}`;
   console.log('Fetching anime...', url);
   const details = (await makeMALRequest(url)) as AnimeDetails;
-  AnimeDetailsCache.set(id, details);
+  AnimeDetailsCache.put(id, details);
 
   await new Promise((resolve) =>
     DbPool.query(
