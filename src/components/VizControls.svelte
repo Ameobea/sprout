@@ -3,7 +3,7 @@
 
   const getCurrentEmbeddingName = (): EmbeddingName => {
     switch (window.location.pathname) {
-      case '/':
+      case '/pymde_3d_40n':
         return EmbeddingName.PyMDE;
       case '/ggvec':
         return EmbeddingName.GGVec;
@@ -54,7 +54,7 @@
 
     const embeddingPathname = (
       {
-        [EmbeddingName.PyMDE]: '/',
+        [EmbeddingName.PyMDE]: '/pymde_3d_40n',
         [EmbeddingName.GGVec]: '/ggvec',
         [EmbeddingName.PyMDE_4D_40N]: '/pymde_4d_40n',
         [EmbeddingName.PyMDE_4D_100N]: '/pymde_4d_100n',
@@ -205,7 +205,7 @@
     background: #000;
     border-radius: 0;
     border: 1px solid #777;
-    color: #ccc;
+    color: #ddd;
     cursor: pointer;
   }
 </style>

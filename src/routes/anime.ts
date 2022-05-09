@@ -1,4 +1,5 @@
 import type { RequestHandler } from '@sveltejs/kit';
+
 import { getAnimeByID } from 'src/malAPI';
 
 export const get: RequestHandler = async ({ url }) => {

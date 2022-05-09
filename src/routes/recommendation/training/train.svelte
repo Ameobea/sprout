@@ -20,10 +20,12 @@
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
 
-  import { trainRecommender, type Logger } from 'src/training/trainRecommender';
-  import 'src/index.css';
+  import type { Logger } from 'src/training/trainRecommender';
+  import LossPlot from 'src/components/recommendation/training/LossPlot.svelte';
 
   let logLines = writable([] as LogLine[]);
+  let losses = writable([] as number[]);
+  const iters = 200;
 
   const logger: Logger = (() => {
     function logger(text: string) {
@@ -65,7 +67,13 @@
 
   onMount(async () => {
     logger('Initializing training...');
-    await trainRecommender(logger);
+    const { trainRecommender } = await import('src/training/trainRecommender');
+    await trainRecommender(iters, logger, (loss) => {
+      losses.update((losses) => {
+        losses.push(loss);
+        return losses;
+      });
+    });
   });
 </script>
 
@@ -75,15 +83,17 @@
       <div class={`log-line ${line.level}`}>{line.text}</div>
     {/each}
   </div>
+  <LossPlot {iters} losses={$losses} />
 </div>
 
 <style lang="css">
   .root {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
   }
 
   .console {
+    max-height: 100vh;
     min-height: 800px;
     width: calc(max(600px, 50vw));
     display: flex;

@@ -6,7 +6,6 @@
   import Atlas from 'src/components/Atlas.svelte';
   import type { Embedding } from './embedding';
   import type { EmbeddingName } from 'src/types';
-  import '../index.css';
 
   export let embedding: Embedding;
   export let embeddingName: EmbeddingName;
