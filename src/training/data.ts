@@ -1,14 +1,14 @@
 import type * as tfWeb from '@tensorflow/tfjs';
 import type * as tfNode from '@tensorflow/tfjs-node';
 
+import { RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/components/recommendation/conf';
 import type { Embedding } from 'src/routes/embedding';
 import type { TrainingDatum } from 'src/routes/recommendation/training/trainingData';
 import type { EmbeddingName } from 'src/types';
-import { RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/routes/recommendation/model';
 
 const getHoldoutCount = (validRatingCount: number): number => {
   // return 0;
-  const holdoutCount = Math.floor(validRatingCount * 0.6 * Math.random());
+  const holdoutCount = Math.floor(validRatingCount * 0.4 * Math.random());
   return holdoutCount;
 };
 
@@ -98,7 +98,7 @@ export class DataContainer {
   ): [tfWeb.Tensor2D, tfWeb.Tensor2D] => {
     const processedTrainingData = trainingData
       .map((userProfile) => {
-        const yScoreByAnimeIx = new Array<number>(this.animeMetadata.length).fill(0);
+        const xScoreByAnimeIx = new Array<number>(this.animeMetadata.length).fill(0);
 
         // for (let i = 0; i < animeMetadata.length; i++) {
         //   const v = Math.random() > 0.5;
@@ -107,7 +107,7 @@ export class DataContainer {
         // }
         // return [xScoreByAnimeIx, yScoreByAnimeIx] as const;
 
-        const { validIndices, input: xScoreByAnimeIx } = DataContainer.buildModelInput(
+        const { validIndices, input: yScoreByAnimeIx } = DataContainer.buildModelInput(
           userProfile,
           this.animeMetadata.length
         );

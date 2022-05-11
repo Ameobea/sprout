@@ -679,10 +679,10 @@ asynckit@^0.4.0:
   resolved "https://registry.yarnpkg.com/asynckit/-/asynckit-0.4.0.tgz#c79ed97f7f34cb8f2ba1bc9790bcc366474b4b79"
   integrity sha1-x57Zf380y48robyXkLzDZkdLS3k=
 
-aws-sdk@^2.1130.0:
-  version "2.1130.0"
-  resolved "https://registry.yarnpkg.com/aws-sdk/-/aws-sdk-2.1130.0.tgz#3aeeceaf1cfe82a8400295e7c2c6642a16a6a4fc"
-  integrity sha512-bkLXuOpHphKvaMAbbmqaHQtYsGICmoyEJdLlNOTCq7dH0uKxARcZEj01ebCifsJJ/fOrPt8EbNUHPu4/DOueDA==
+aws-sdk@^2.1132.0:
+  version "2.1132.0"
+  resolved "https://registry.yarnpkg.com/aws-sdk/-/aws-sdk-2.1132.0.tgz#0cb615e97db5a5133914ba0f2bdc8ea10eef4069"
+  integrity sha512-NPDesfTrNx8UMQ5VuosQNlFFFhswJ8cGVcVltZBXKVl1kW0BCp52XQBySSruIznaRX7vG6Ir2+nox0NdL05qBQ==
   dependencies:
     buffer "4.9.2"
     events "1.1.1"
@@ -1700,6 +1700,11 @@ has@^1.0.3:
   dependencies:
     function-bind "^1.1.1"
 
+hint.css@^2.7.0:
+  version "2.7.0"
+  resolved "https://registry.yarnpkg.com/hint.css/-/hint.css-2.7.0.tgz#2f7f9cd8fb07745de9800547e36a0c82ee9aedaf"
+  integrity sha512-kNtr/oXTOFA+qYLFAHY1dKVKZuAbavCPB22+w9kaFzqjB9ZLSFJyksxrVsJCphQiQxAYLazXZdrOaGLRe0hZMA==
+
 html-encoding-sniffer@^3.0.0:
   version "3.0.0"
   resolved "https://registry.yarnpkg.com/html-encoding-sniffer/-/html-encoding-sniffer-3.0.0.tgz#2cb1a8cf0db52414776e5b2a7a04d5dd98158de9"
@@ -2647,6 +2652,11 @@ saxes@^5.0.1:
   dependencies:
     xmlchars "^2.2.0"
 
+schema-dts@^0.8.2:
+  version "0.8.3"
+  resolved "https://registry.yarnpkg.com/schema-dts/-/schema-dts-0.8.3.tgz#6c03ca47200e80e9a871d6de626a7cf04fe009b7"
+  integrity sha512-GSLeVkUgEe8DzS8/FGWou1wlC8tQ1KXA5amCqCIH/psUzF74fWswtT0QFlSoJLT08CYyixnc3S/lkAm+RExoLQ==
+
 seedrandom@2.4.3:
   version "2.4.3"
   resolved "https://registry.yarnpkg.com/seedrandom/-/seedrandom-2.4.3.tgz#2438504dad33917314bff18ac4d794f16d6aaecc"
@@ -2887,6 +2897,13 @@ svelte-preprocess@^4.0.0, svelte-preprocess@^4.10.1:
     magic-string "^0.25.7"
     sorcery "^0.10.0"
     strip-indent "^3.0.0"
+
+svelte-seo@^1.4.0:
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/svelte-seo/-/svelte-seo-1.4.0.tgz#ab09a651d3ed36b046ef5d1bf7a645d59fbaded6"
+  integrity sha512-44kvY3+t8QBjjQPlKIXXRSgp+XzV0OBO4qLs0T3nx7lzgxVzmDI1G+nAgrSYXMbmZAZmmvZGpZpbUBTJckM0Lw==
+  dependencies:
+    schema-dts "^0.8.2"
 
 svelte@^3.44.0:
   version "3.47.0"

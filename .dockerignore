@@ -2,3 +2,8 @@ node_modules
 data/*
 !data/processed-metadata.csv
 !data/projected_embedding*.json
+notebooks
+*.tar.gz
+*.tar.bz2
+Justfile
+README.md
