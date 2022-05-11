@@ -32,3 +32,13 @@ input[type=text] {
   background: #121212;
   color: #ddd;
 }
+
+button {
+  box-sizing: border-box;
+  background: #121212ee;
+  display: flex;
+  align-items: center;
+  color: #ddd;
+  border: 1px solid #555;
+  border-radius: 4px;
+}

@@ -1,5 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
-import { LocalAnimelistsDB } from './localAnimelistsDB';
+
+import { getLocalAnimelistsDB } from './localAnimelistsDB';
 import { loadEmbedding } from 'src/embedding';
 import type { MALUserAnimeListItem } from 'src/malAPI';
 import { EmbeddingName } from 'src/types';
@@ -47,7 +48,7 @@ export const convertMALProfileToTrainingData = async (
 const getTrainingDataFromProcessedTable = async (
   usernames: string[]
 ): Promise<{ username: string; trainingData: TrainingDatum[] }[]> => {
-  const stmt = LocalAnimelistsDB.prepare(
+  const stmt = getLocalAnimelistsDB().prepare(
     `SELECT username, processed_animelist FROM \`processed-training-data\` WHERE username IN (${usernames
       .map(() => '?')
       .join(',')})`
@@ -64,7 +65,7 @@ const getTrainingDataFromProcessedTable = async (
 };
 
 const getTrainingDataFromRawTable = async (usernames: string[]): Promise<TrainingDatum[][]> => {
-  const stmt = LocalAnimelistsDB.prepare(
+  const stmt = getLocalAnimelistsDB().prepare(
     'SELECT username, animelist_json FROM `mal-user-animelists` WHERE username IN (' +
       usernames.map(() => '?').join(', ') +
       ')'
@@ -88,7 +89,7 @@ const getTrainingDataFromRawTable = async (usernames: string[]): Promise<Trainin
 
   // Insert into the processed table for faster access next time
   if (parsedAnimeLists.length > 0) {
-    const stmt2 = LocalAnimelistsDB.prepare(
+    const stmt2 = getLocalAnimelistsDB().prepare(
       'INSERT OR IGNORE INTO `processed-training-data` (username, processed_animelist) VALUES ' +
         animeLists.map(() => '(?, ?)').join(', ')
     );

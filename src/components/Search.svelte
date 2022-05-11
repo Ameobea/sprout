@@ -63,10 +63,6 @@
   .suggestion {
     z-index: 2;
     cursor: pointer;
-    box-sizing: border-box;
-    background: #121212ee;
-    display: flex;
-    align-items: center;
     font-size: 16px;
     padding: 4px 6px;
     border-bottom: 1px solid #888;

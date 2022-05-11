@@ -46,7 +46,21 @@
       'thumbnail synopsis synopsis'
       'details details details';
     grid-template-columns: 225px 1fr;
-    grid-template-rows: 25px auto 60px;
+    grid-template-rows: 25px auto 100px;
+  }
+
+  @media (max-width: 768px) {
+    .recommendation[data-expanded='false'] {
+      grid-template-columns: 90px 100px 1fr;
+    }
+
+    .recommendation[data-expanded='true'] {
+      grid-template-areas:
+        'title title title'
+        'thumbnail synopsis synopsis'
+        'details details details';
+      grid-template-columns: 150px 1fr;
+    }
   }
 
   .recommendation .title {
@@ -80,6 +94,19 @@
     transition: max-height 0.3s ease-in-out;
   }
 
+  @media (max-width: 768px) {
+    .recommendation[data-expanded='true'] img {
+      max-width: 150px;
+    }
+
+    .recommendation[data-expanded='true'] .title {
+      font-size: 16px;
+      text-align: center;
+      width: 100%;
+      justify-content: center;
+    }
+  }
+
   .recommendation .synopsis {
     cursor: pointer;
     display: -webkit-box;
@@ -95,6 +122,15 @@
     text-overflow: ellipsis;
     -webkit-line-clamp: 6;
     line-clamp: 6;
+  }
+
+  .recommendation[data-expanded='true'] .synopsis {
+    justify-content: flex-start;
+    align-items: flex-start;
+    height: 100%;
+    padding: 4px 0;
+    max-height: 310px;
+    overflow-y: auto;
   }
 
   .recommendation .details {

@@ -1,7 +1,7 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import TimedCache from 'timed-cache';
 
-import { LocalAnimelistsDB } from './localAnimelistsDB';
+import { getLocalAnimelistsDB } from './localAnimelistsDB';
 
 const AllUsernamesCache = new TimedCache({ defaultTtl: 60 * 60 * 1000 });
 
@@ -11,7 +11,7 @@ const getAllUsernames = async (): Promise<string[]> => {
     return cached;
   }
 
-  const stmt = LocalAnimelistsDB.prepare('SELECT username FROM `mal-user-animelists`');
+  const stmt = getLocalAnimelistsDB().prepare('SELECT username FROM `mal-user-animelists`');
   const allUsernames = await new Promise<string[]>((resolve, reject) =>
     stmt.all((err, rows) => {
       if (err) {

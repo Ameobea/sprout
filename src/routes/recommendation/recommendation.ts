@@ -1,14 +1,15 @@
 import * as tf from '@tensorflow/tfjs-node';
-import { type Either, isLeft, right } from 'fp-ts/Either';
-import { tryCatchK } from 'fp-ts/TaskEither';
+import { type Either, isLeft, right } from 'fp-ts/lib/Either.js';
+import { tryCatchK } from 'fp-ts/lib/TaskEither.js';
 import { performance } from 'perf_hooks';
+import { RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/components/recommendation/conf';
 
 import { loadEmbedding } from 'src/embedding';
 import { AnimeListStatusCode, getUserAnimeList, type MALUserAnimeListItem } from 'src/malAPI';
 import { DataContainer } from 'src/training/data';
 import { EmbeddingName } from 'src/types';
 import type { Embedding } from '../embedding';
-import { loadRecommendationModel, RECOMMENDATION_MODEL_CORPUS_SIZE } from './model';
+import { loadRecommendationModel } from './model';
 import { convertMALProfileToTrainingData, type TrainingDatum } from './training/trainingData';
 
 export interface Recommendation {
@@ -38,51 +39,15 @@ const fetchUserRankings = tryCatchK(
   }
 );
 
-// https://codereview.stackexchange.com/a/201016/116090
-const nChooseKCombinations = (n: number, k: number): number[][] => {
-  const result = [];
-  const combos = [];
-  const recurse = (start: number) => {
-    if (combos.length + (n - start + 1) < k) {
-      return;
-    }
-    recurse(start + 1);
-    combos.push(start);
-    if (combos.length === k) {
-      result.push(combos.slice());
-    } else if (combos.length + (n - start + 2) >= k) {
-      recurse(start + 1);
-    }
-    combos.pop();
-  };
-  recurse(1);
-  return result;
-};
-
-/**
- * For each recommended anime, find the top k ratings from the user's anime list that contribute the most to it.
- * This is accomplished by re-running the recommendation model on the user's anime list and holding out all sets
- * of `k` ratings from the user's anime list and finding which ratings contribute the most to the predicted rating.
- */
-const computeRecommendationContributions = async (
+const computeRecommendationContributionsInner = async (
   model: tf.LayersModel,
-  predictionOutput: Float32Array,
-  embedding: Embedding,
+  combosToCheck: number[][],
+  minOutputByRecommendationIx: number[],
+  minComboByRecommendationIx: (number[] | null)[],
   input: number[],
   recommendations: RecommendationWithIndex[],
   validRatings: TrainingDatum[]
 ) => {
-  if (recommendations.length === 0 || validRatings.length < 3) {
-    return;
-  }
-
-  // const k = validRatings.length <= 125 ? 3 : 2;
-  const k = validRatings.length <= 125 ? 2 : 1;
-  const combosToCheck = nChooseKCombinations(validRatings.length - 1, k);
-
-  const minOutputByRecommendationIx: number[] = new Array(recommendations.length).fill(1);
-  const minComboByRecommendationIx: (number[] | null)[] = new Array(recommendations.length).fill(null);
-
   const batchSize = 1024 * 16;
   const batches = Math.ceil(combosToCheck.length / batchSize);
   for (let batchIx = 0; batchIx < batches; batchIx++) {
@@ -132,6 +97,77 @@ const computeRecommendationContributions = async (
       });
     }
   }
+};
+
+/**
+ * For each recommended anime, find the top k ratings from the user's anime list that contribute the most to it.
+ * This is accomplished by re-running the recommendation model on the user's anime list and holding out all sets
+ * of `k` ratings from the user's anime list and finding which ratings contribute the most to the predicted rating.
+ */
+const computeRecommendationContributions = async (
+  model: tf.LayersModel,
+  embedding: Embedding,
+  input: number[],
+  recommendations: RecommendationWithIndex[],
+  validRatings: TrainingDatum[]
+) => {
+  if (recommendations.length === 0 || validRatings.length < 3) {
+    return;
+  }
+
+  // Run once with single-rating combos.  Although it's technically possible for the lowest score for a k-item combo
+  // to not include the rating from the the lowest 1-item combo, it is unlikely and the performance cost is too high
+  // to check them all.
+  const firstRoundCombos = new Array(validRatings.length).fill(null).map((_, i) => [i]);
+
+  const minOutputByRecommendationIx: number[] = new Array(recommendations.length).fill(1);
+  const minComboByRecommendationIx: (number[] | null)[] = new Array(recommendations.length).fill(null);
+
+  await computeRecommendationContributionsInner(
+    model,
+    firstRoundCombos,
+    minOutputByRecommendationIx,
+    minComboByRecommendationIx,
+    input,
+    recommendations,
+    validRatings
+  );
+
+  const maxK = 3;
+  for (let k = 2; k <= maxK; k++) {
+    const hashCombo = (combo: number[]): string => combo.join('-');
+    const combosToCheck: number[][] = [];
+    const allComboHashes: Set<string> = new Set();
+
+    for (const minCombo of minComboByRecommendationIx) {
+      if (!minCombo) {
+        continue;
+      }
+
+      validRatings.forEach((_rating, ratingIx) => {
+        if (minCombo.includes(ratingIx)) {
+          return;
+        }
+        const newCombo = [...minCombo, ratingIx];
+        const comboHash = hashCombo(newCombo);
+        if (allComboHashes.has(comboHash)) {
+          return;
+        }
+        allComboHashes.add(comboHash);
+        combosToCheck.push(newCombo);
+      });
+    }
+
+    await computeRecommendationContributionsInner(
+      model,
+      combosToCheck,
+      minOutputByRecommendationIx,
+      minComboByRecommendationIx,
+      input,
+      recommendations,
+      validRatings
+    );
+  }
 
   return recommendations.map((_, recoIx) => {
     const minCombo = minComboByRecommendationIx[recoIx];
@@ -144,10 +180,11 @@ const computeRecommendationContributions = async (
 
 export const getRecommendations = async (
   username: string,
+  count: number,
   computeContributions: boolean
 ): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
-  const embedding = await loadEmbedding(EmbeddingName.PyMDE);
-  const model = await loadRecommendationModel();
+  const embedding = (await loadEmbedding(EmbeddingName.PyMDE)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
+  const model = await loadRecommendationModel(embedding);
 
   const rankingsRes = await fetchUserRankings(username)();
   if (isLeft(rankingsRes)) {
@@ -203,13 +240,13 @@ export const getRecommendations = async (
           console.error(`Unknown watch status ${watchStatus}`);
           return false;
       }
-    });
+    })
+    .slice(0, count);
 
   let contributions: number[][] = [];
   if (computeContributions) {
     contributions = await computeRecommendationContributions(
       model,
-      output,
       embedding,
       input,
       recommendations,

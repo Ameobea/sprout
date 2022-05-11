@@ -1,4 +1,5 @@
 import * as tf from '@tensorflow/tfjs';
+import type { Embedding } from 'src/routes/embedding';
 
 import { EmbeddingName } from '../types';
 import { DataContainer, fetchAllUsernames, fetchTrainingData, loadAnimeMetadata } from './data';
@@ -18,17 +19,25 @@ const trainIter = async (data: DataContainer, model: tf.Sequential, dataCount: n
   return history;
 };
 
-export const getRecommenderModelCompileParams = () => ({
-  optimizer: tf.train.sgd(0.5),
-  // loss: 'meanSquaredError',
-  loss: (yTrue, yPred) => {
-    // Construct a mask for the non-zero entries in the yTrue tensor
-    const nonZeroMask = yTrue.notEqual(0).asType('float32');
-    const lossWeights = nonZeroMask.mul(8).add(1);
-    return tf.losses.meanSquaredError(yTrue, yPred, lossWeights);
-  },
-  metrics: ['accuracy'],
-});
+export const getRecommenderModelCompileParams = (embedding: Embedding) => {
+  const nClasses = embedding.length;
+  const totalRatingCount = embedding.reduce((acc, datum) => acc + datum.metadata.rating_count, 0);
+  const ratingCountsTensor = tf.tensor1d(embedding.map((datum) => datum.metadata.rating_count));
+
+  const classWeights = tf.mul(tf.add(tf.div(totalRatingCount, tf.mul(nClasses, ratingCountsTensor)), 0.5), 0.8);
+  classWeights.print();
+
+  return {
+    optimizer: tf.train.sgd(0.5),
+    loss: (yTrue, yPred) => {
+      // Construct a mask for the non-zero entries in the yTrue tensor
+      const nonZeroMask = yTrue.notEqual(0).asType('float32');
+      const lossWeights = tf.mul(nonZeroMask.mul(8).add(1), classWeights);
+      return tf.losses.meanSquaredError(yTrue, yPred, lossWeights);
+    },
+    metrics: ['accuracy'],
+  };
+};
 
 const validateModel = async (data: DataContainer, model: tf.Sequential, log: Logger) => {
   const dataForValidationUser = await fetchTrainingData(['ameo___']);
@@ -100,7 +109,7 @@ export const trainRecommender = async (iters: number, log: Logger, recordLoss: (
   );
   log('\nBuilt model:');
   model.summary(undefined, undefined, log);
-  model.compile(getRecommenderModelCompileParams());
+  model.compile(getRecommenderModelCompileParams(animeMetadata));
 
   const allUsernames = await fetchAllUsernames();
   const data = new DataContainer(tf, allUsernames, animeMetadata);
