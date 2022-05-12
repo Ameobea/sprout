@@ -79,7 +79,7 @@
   <div class="row">
     <div class="label">Color By</div>
     <div class="tabs">
-      {#each AllColorBys as { label, value }}
+      {#each AllColorBys as { label, value } (value)}
         <div class="tab" role="button" data-selected={colorBy == value} on:click={() => handleColorByChange(value)}>
           {label}
         </div>
@@ -89,7 +89,7 @@
   <div class="row">
     <div class="label">Embedding</div>
     <div class="tabs">
-      {#each AllEmbeddingNames as { label, value }}
+      {#each AllEmbeddingNames as { label, value } (value)}
         <div
           class="tab"
           role="button"

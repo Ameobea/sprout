@@ -1,4 +1,4 @@
-body,
+/* body,
 html {
   margin: 0;
   padding: 0;
@@ -24,7 +24,7 @@ html {
 *::-webkit-scrollbar-thumb {
   background: #424242;
   outline: 1px solid #333;
-}
+} */
 
 input[type=text] {
   border: 1px solid #333;
@@ -33,6 +33,7 @@ input[type=text] {
   color: #ddd;
 }
 
+/*
 button {
   box-sizing: border-box;
   background: #121212ee;
@@ -41,4 +42,4 @@ button {
   color: #ddd;
   border: 1px solid #555;
   border-radius: 4px;
-}
+} */
