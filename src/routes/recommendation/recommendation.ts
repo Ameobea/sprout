@@ -2,7 +2,7 @@ import * as tf from '@tensorflow/tfjs-node';
 import { type Either, isLeft, right } from 'fp-ts/lib/Either.js';
 import { tryCatchK } from 'fp-ts/lib/TaskEither.js';
 import { performance } from 'perf_hooks';
-import { RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/components/recommendation/conf';
+import { ModelName, RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/components/recommendation/conf';
 
 import { loadEmbedding } from 'src/embedding';
 import { AnimeListStatusCode, getUserAnimeList, type MALUserAnimeListItem } from 'src/malAPI';
@@ -181,10 +181,11 @@ const computeRecommendationContributions = async (
 export const getRecommendations = async (
   username: string,
   count: number,
-  computeContributions: boolean
+  computeContributions: boolean,
+  modelName: ModelName
 ): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
   const embedding = (await loadEmbedding(EmbeddingName.PyMDE)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
-  const model = await loadRecommendationModel(embedding);
+  const model = await loadRecommendationModel(embedding, modelName);
 
   const rankingsRes = await fetchUserRankings(username)();
   if (isLeft(rankingsRes)) {

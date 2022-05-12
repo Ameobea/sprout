@@ -1,5 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { isLeft } from 'fp-ts/lib/Either.js';
+import { ModelName, validateModelName } from 'src/components/recommendation/conf';
 
 import { getAnimeByID, type AnimeDetails } from 'src/malAPI';
 import { getRecommendations, type Recommendation } from './recommendation';
@@ -12,9 +13,14 @@ export type RecommendationsResponse =
     }
   | { type: 'error'; error: string };
 
-export const get: RequestHandler = async ({ params }) => {
+export const get: RequestHandler = async ({ params, url }) => {
   const username = params.username;
-  const recommendationsRes = await getRecommendations(username, 20, true);
+  const modelName = validateModelName(url.searchParams.get('model') ?? ModelName.Model_4K_V2);
+  if (!modelName) {
+    return { status: 400, message: 'Invalid model name' };
+  }
+
+  const recommendationsRes = await getRecommendations(username, 20, true, modelName);
   if (isLeft(recommendationsRes)) {
     return { status: 500, body: { recommendations: { type: 'error', error: recommendationsRes.left.body } } };
   }
