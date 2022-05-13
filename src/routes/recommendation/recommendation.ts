@@ -1,11 +1,20 @@
+import type { RequestHandler } from '@sveltejs/kit';
 import * as tf from '@tensorflow/tfjs-node';
 import { type Either, isLeft, right } from 'fp-ts/lib/Either.js';
 import { tryCatchK } from 'fp-ts/lib/TaskEither.js';
 import { performance } from 'perf_hooks';
-import { ModelName, RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/components/recommendation/conf';
+import * as t from 'io-ts';
+import { PathReporter } from 'io-ts/lib/PathReporter.js';
 
+import { ModelName, RECOMMENDATION_MODEL_CORPUS_SIZE, validateModelName } from 'src/components/recommendation/conf';
 import { loadEmbedding } from 'src/embedding';
-import { AnimeListStatusCode, getUserAnimeList, type MALUserAnimeListItem } from 'src/malAPI';
+import {
+  AnimeListStatusCode,
+  getAnimeByID,
+  getUserAnimeList,
+  type AnimeDetails,
+  type MALUserAnimeListItem,
+} from 'src/malAPI';
 import { DataContainer } from 'src/training/data';
 import { EmbeddingName } from 'src/types';
 import type { Embedding } from '../embedding';
@@ -182,7 +191,8 @@ export const getRecommendations = async (
   username: string,
   count: number,
   computeContributions: boolean,
-  modelName: ModelName
+  modelName: ModelName,
+  excludedRankingAnimeIDs: Set<number>
 ): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
   const embedding = (await loadEmbedding(EmbeddingName.PyMDE)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
   const model = await loadRecommendationModel(embedding, modelName);
@@ -191,7 +201,14 @@ export const getRecommendations = async (
   if (isLeft(rankingsRes)) {
     return rankingsRes;
   }
-  const { profile, ratings } = rankingsRes.right;
+  const { profile, ratings: rawRatings } = rankingsRes.right;
+  if (excludedRankingAnimeIDs.size > 0) {
+    console.log(`Excluding ${excludedRankingAnimeIDs.size} rankings`);
+  }
+  const ratings = rawRatings.filter((rating) => {
+    const animeID = embedding[rating.animeIx]?.metadata.id;
+    return !!animeID && !excludedRankingAnimeIDs.has(animeID);
+  });
   const profileAnimeByID = new Map<number, MALUserAnimeListItem>();
   for (const entry of profile) {
     if (entry?.node?.id) {
@@ -246,16 +263,70 @@ export const getRecommendations = async (
 
   let contributions: number[][] = [];
   if (computeContributions) {
-    contributions = await computeRecommendationContributions(
-      model,
-      embedding,
-      input,
-      recommendations,
-      validIndices.map((ratingIx) => ratings[ratingIx])
-    );
+    contributions =
+      (await computeRecommendationContributions(
+        model,
+        embedding,
+        input,
+        recommendations,
+        validIndices.map((ratingIx) => ratings[ratingIx])
+      )) ?? [];
   }
 
   return right(
     recommendations.map(({ score, id }, i) => ({ id, score, topRatingContributorsIds: contributions[i] ?? [] }))
   );
+};
+
+const RecommendationRequest = t.type({
+  availableAnimeMetadataIDs: t.array(t.number),
+  username: t.string,
+  excludedRankingAnimeIDs: t.array(t.number),
+  modelName: t.string,
+  includeContributors: t.boolean,
+});
+
+export const post: RequestHandler = async ({ request }) => {
+  const parsed = RecommendationRequest.decode(await request.json());
+  if (isLeft(parsed)) {
+    const errors = PathReporter.report(parsed);
+    return { status: 400, body: errors.join(', ') };
+  }
+  const req = parsed.right;
+
+  const modelName = validateModelName(req.modelName);
+  if (!modelName) {
+    return { status: 400, body: 'Invalid modelName' };
+  }
+
+  const recommendationsRes = await getRecommendations(
+    req.username,
+    20,
+    req.includeContributors,
+    modelName,
+    new Set(req.excludedRankingAnimeIDs)
+  );
+  if (isLeft(recommendationsRes)) {
+    return recommendationsRes.left;
+  }
+  const recommendationsList = recommendationsRes.right;
+
+  // TODO: Use DB rather than MAL API
+  const alreadyFetchedAnimeIDs = new Set(req.availableAnimeMetadataIDs);
+  const animeData = (
+    await Promise.all(
+      [
+        ...new Set(
+          recommendationsList
+            .flatMap(({ id, topRatingContributorsIds }) => [id, ...topRatingContributorsIds])
+            .filter((id) => !alreadyFetchedAnimeIDs.has(id))
+        ),
+      ].map((id) => getAnimeByID(id))
+    )
+  ).reduce((acc, details) => {
+    acc[details.id] = details;
+    return acc;
+  }, {} as { [id: number]: AnimeDetails });
+
+  return { status: 200, body: { recommendations: recommendationsList, animeData } };
 };

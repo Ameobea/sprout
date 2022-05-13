@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { slide } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
   import ChevronDown from 'carbon-icons-svelte/lib/ChevronDown.svelte';
   import ChevronUp from 'carbon-icons-svelte/lib/ChevronUp.svelte';
 
@@ -10,9 +12,16 @@
   export let toggleExpanded: () => void;
   export let excludeRanking: (animeID: number) => void;
   export let topRatingContributors: AnimeDetails[];
+
+  let synopsisElem: HTMLDivElement | null = null;
+  $: {
+    if (synopsisElem && !expanded) {
+      synopsisElem.scrollTop = 0;
+    }
+  }
 </script>
 
-<div class="recommendation" data-expanded={expanded.toString()}>
+<div class="recommendation" data-expanded={expanded.toString()} in:slide>
   <img
     on:click={expanded ? undefined : toggleExpanded}
     src={animeMetadata.main_picture.medium}
@@ -32,7 +41,9 @@
       <ChevronDown size={24} aria-label="Collapse anime details" />
     {/if}
   </div>
-  <div on:click={expanded ? undefined : toggleExpanded} class="synopsis">{animeMetadata.synopsis}</div>
+  <div on:click={expanded ? undefined : toggleExpanded} class="synopsis" bind:this={synopsisElem}>
+    {animeMetadata.synopsis}
+  </div>
   {#if expanded && topRatingContributors.length > 0}
     <div class="details">
       {#each topRatingContributors as contributor (contributor.id)}

@@ -13,7 +13,7 @@ export const loadRecommendationModel = async (embedding: Embedding, modelName: M
     return cached;
   }
 
-  const modelPath = `file://${DATA_DIR}/tfjs_models/model_4k/model_4k.json`;
+  const modelPath = `file://${DATA_DIR}/tfjs_models/${modelName}/${modelName}.json`;
   const model = await tf.loadLayersModel(modelPath);
   console.log('Loaded model; compiling...');
   model.compile(getRecommenderModelCompileParams(embedding.slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE)));
