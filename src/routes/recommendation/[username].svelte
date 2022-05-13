@@ -22,15 +22,15 @@
   import type { RecommendationsResponse } from './[username]';
   import InteractiveRecommendations from 'src/components/recommendation/InteractiveRecommendations.svelte';
 
-  export let recommendations: RecommendationsResponse;
+  export let initialRecommendations: RecommendationsResponse;
 
   $: animeData =
-    recommendations.type === 'ok'
-      ? recommendations.animeData
+    initialRecommendations.type === 'ok'
+      ? initialRecommendations.animeData
       : ({} as {
           [id: number]: AnimeDetails;
         });
-  $: recommendationsList = recommendations.type === 'ok' ? recommendations.recommendations : [];
+  $: recommendationsList = initialRecommendations.type === 'ok' ? initialRecommendations.recommendations : [];
   $: username = $page.params.username;
   $: title = `Anime Recommendations for ${username}`;
   $: {
@@ -45,9 +45,9 @@
   description={'AI-powered personalized anime recommendations, visualizations, and resources'}
   openGraph={{
     title: `Anime Recommendations for ${username}`,
-    description: buildOpengraphDescription(username, recommendations),
+    description: buildOpengraphDescription(username, initialRecommendations),
     images:
-      recommendations.type === 'ok'
+      initialRecommendations.type === 'ok'
         ? recommendationsList.slice(0, 2).map(({ id }) => {
             const datum = animeData[id];
             return {
@@ -62,10 +62,10 @@
     title,
     image: animeData[recommendationsList[0]?.id]?.main_picture.large,
     imageAlt: animeData[recommendationsList[0]?.id]?.title,
-    description: buildOpengraphDescription(username, recommendations),
+    description: buildOpengraphDescription(username, initialRecommendations),
   }}
 />
 
 <QueryClientProvider client={queryClient}>
-  <InteractiveRecommendations {username} initialRecommendations={recommendations} />
+  <InteractiveRecommendations {username} {initialRecommendations} />
 </QueryClientProvider>

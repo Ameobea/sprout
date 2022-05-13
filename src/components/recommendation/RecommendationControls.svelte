@@ -14,27 +14,35 @@
   import type { RecommendationControlParams } from './InteractiveRecommendations.svelte';
   import type { AnimeDetails } from 'src/malAPI';
 
-  export let state: Writable<RecommendationControlParams>;
-  export let getAnimeMetadata: (animeId: number) => AnimeDetails;
+  export let params: Writable<RecommendationControlParams>;
+  export let animeMetadataDatabase: { [animeID: number]: AnimeDetails };
 </script>
 
 <div class="root">
   <div class="top">
     <div>
-      <Dropdown style="width: 100%;" titleText="Model" bind:selectedId={$state.modelName} items={ALL_MODEL_OPTIONS} />
+      <Dropdown
+        style="width: 100%;"
+        titleText="Model"
+        selectedId={$params.modelName}
+        on:select={(selected) => {
+          $params.modelName = selected.detail.selectedItem.id;
+        }}
+        items={ALL_MODEL_OPTIONS}
+      />
     </div>
     <div />
   </div>
-  {#if $state.excludedRankingAnimeIDs.length > 0}
+  {#if $params.excludedRankingAnimeIDs.length > 0}
     <div>
       <label class="bx--label">Excluded Rankings</label>
       <div class="tags-container">
-        {#each $state.excludedRankingAnimeIDs as animeID (animeID)}
-          {@const datum = getAnimeMetadata(animeID)}
+        {#each $params.excludedRankingAnimeIDs as animeID (animeID)}
+          {@const datum = animeMetadataDatabase[animeID]}
           <Tag
             filter
             on:close={() =>
-              state.update((state) => {
+              params.update((state) => {
                 state.excludedRankingAnimeIDs = state.excludedRankingAnimeIDs.filter(
                   (oAnimeID) => oAnimeID !== animeID
                 );
@@ -42,7 +50,7 @@
               })}
             type="red"
           >
-            {datum.title}
+            {datum?.title ?? ''}
           </Tag>
         {/each}
       </div>

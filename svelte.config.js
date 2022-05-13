@@ -15,7 +15,7 @@ const config = {
       precompress: true,
     }),
     vite: {
-      plugins: [optimizeImports(), process.env.NODE_ENV === 'production' && optimizeCss(), icons(), elements()],
+      plugins: [optimizeImports(), /*process.env.NODE_ENV === 'production' && optimizeCss(),*/ icons(), elements()],
       resolve: {
         alias: {
           src: resolve('./src'),
