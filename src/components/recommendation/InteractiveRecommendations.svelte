@@ -34,7 +34,6 @@
 
     const newSearchParams = url.searchParams.toString();
     if (newSearchParams !== oldSearchParams) {
-      // goto(`${window.location.pathname}?${newSearchParams}`, { keepfocus: true, replaceState: true, noscroll: true });
       history.replaceState({}, '', url);
     }
   };
@@ -159,11 +158,19 @@
   {#if $recosRes.isError}
     <b>Error fetching recommendations: {$recosRes.error}</b>
   {:else}
-    <RecommendationControls {params} animeMetadataDatabase={$animeMetadataDatabase} />
+    <RecommendationControls
+      {params}
+      animeMetadataDatabase={$animeMetadataDatabase}
+      isLoading={$recosRes.isLoading || $recosRes.isRefetching}
+    />
     <RecommendationsList
       recommendations={recommendations?.recommendations ?? []}
       animeMetadataDatabase={$animeMetadataDatabase}
       excludeRanking={excludedRankingAnimeIDs}
+      contributorsLoading={$recosRes.isLoading ||
+        $recosRes.isRefetching ||
+        $recoContributorsRes.isLoading ||
+        $recoContributorsRes.isRefetching}
     />
   {/if}
 </div>

@@ -26,17 +26,22 @@
     <div class="details">
       <div class="placeholder-image" width={225} height={332} />
       <div class="info">
-        <h2><a target="_blank" href={buildMALLink(id)}>{datum.metadata.title}</a></h2>
+        <h2><a target="_blank" href={buildMALLink(id)}>{datum.metadata.title_english || datum.metadata.title}</a></h2>
         <p>Loading...</p>
       </div>
     </div>
     <p class="synopsis">Loading anime info...</p>
   {:then details}
     <div class="details">
-      <img src={details.main_picture.medium} width={225} height={332} alt={details.title} />
+      <img
+        src={details.main_picture.medium}
+        width={225}
+        height={332}
+        alt={datum.metadata.title_english || datum.metadata.title}
+      />
       <div class="info">
-        <h2><a target="_blank" href={buildMALLink(id)}>{datum.metadata.title}</a></h2>
-        <p>{details.start_date ?? '-'} - {details.end_date ?? '-'}</p>
+        <h2><a target="_blank" href={buildMALLink(id)}>{datum.metadata.title_english || datum.metadata.title}</a></h2>
+        <p>{details.start_date || '-'} - {details.end_date || '-'}</p>
         <p>Average rating: {datum.metadata.average_rating.toFixed(2)}</p>
       </div>
     </div>

@@ -9,6 +9,7 @@
   export let recommendations: Recommendation[];
   export let animeMetadataDatabase: { [animeID: number]: AnimeDetails };
   export let excludeRanking: (animeID: number) => void;
+  export let contributorsLoading: boolean;
 
   let expandedAnimeID: number | null = null;
   $: if (expandedAnimeID !== null && !recommendations.some((reco) => reco.id === expandedAnimeID)) {
@@ -17,7 +18,7 @@
 </script>
 
 <div class="recommendations">
-  {#each recommendations as { id, topRatingContributorsIds } (id)}
+  {#each recommendations as { id, topRatingContributorsIds, planToWatch } (id)}
     {@const animeMetadata = animeMetadataDatabase[id]}
     <div animate:flip={{ duration: (d) => 50 * Math.sqrt(d) }} in:slide>
       <RecommendationListItem
@@ -30,8 +31,13 @@
             expandedAnimeID = animeMetadata.id;
           }
         }}
-        topRatingContributors={topRatingContributorsIds.map((id) => animeMetadataDatabase[id])}
+        topRatingContributors={topRatingContributorsIds?.map((id) => ({
+          datum: animeMetadataDatabase[Math.abs(id)],
+          positiveRating: id > 0,
+        }))}
+        planToWatch={planToWatch ?? false}
         {excludeRanking}
+        {contributorsLoading}
       />
     </div>
   {/each}

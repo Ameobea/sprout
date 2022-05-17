@@ -36,8 +36,8 @@
   };
 
   onMount(() => {
-    const username = new URLSearchParams(window.location.search).get('username') ?? 'Expochant';
-    const userProfilePromise = fetch(`/mal-profile?username=${username}`).then((res) => res.json());
+    // const username = new URLSearchParams(window.location.search).get('username') ?? 'Expochant';
+    // const userProfilePromise = fetch(`/mal-profile?username=${username}`).then((res) => res.json());
     const neighborsPromise: Promise<{ neighbors: number[][] }> = fetch(`/neighbors?embedding=${embeddingName}`).then(
       (res) => res.json()
     );
@@ -50,9 +50,9 @@
 
       neighborsPromise.then(({ neighbors }) => {
         viz?.setNeighbors(neighbors);
-        userProfilePromise.then((profile) => {
-          viz?.displayMALUser(profile);
-        });
+        // userProfilePromise.then((profile) => {
+        //   viz?.displayMALUser(profile);
+        // });
       });
     });
 

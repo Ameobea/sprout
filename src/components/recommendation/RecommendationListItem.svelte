@@ -1,17 +1,18 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
-  import { flip } from 'svelte/animate';
   import ChevronDown from 'carbon-icons-svelte/lib/ChevronDown.svelte';
   import ChevronUp from 'carbon-icons-svelte/lib/ChevronUp.svelte';
+  import { Tag, Loading } from 'carbon-components-svelte';
 
   import type { AnimeDetails } from 'src/malAPI';
-  import TopInfluence from './TopInfluenceCard.svelte';
 
   export let animeMetadata: AnimeDetails;
   export let expanded: boolean;
   export let toggleExpanded: () => void;
   export let excludeRanking: (animeID: number) => void;
-  export let topRatingContributors: AnimeDetails[];
+  export let topRatingContributors: { datum: AnimeDetails; positiveRating: boolean }[] | undefined;
+  export let planToWatch: boolean;
+  export let contributorsLoading: boolean;
 
   let synopsisElem: HTMLDivElement | null = null;
   $: {
@@ -21,17 +22,24 @@
   }
 </script>
 
-<div class="recommendation" data-expanded={expanded.toString()} in:slide>
+<div class="recommendation" data-plan-to-watch={planToWatch.toString()} data-expanded={expanded.toString()} in:slide>
   <img
     on:click={expanded ? undefined : toggleExpanded}
     src={animeMetadata.main_picture.medium}
-    alt={animeMetadata.title}
+    alt={animeMetadata.alternative_titles.en || animeMetadata.title}
   />
   <div on:click={toggleExpanded} class="title">
-    {#if expanded}
-      <a target="_blank" href={`https://myanimelist.net/anime/${animeMetadata.id}`}>{animeMetadata.title}</a>
-    {:else}
-      {animeMetadata.title}
+    <div class="title-text">
+      {#if expanded}
+        <a target="_blank" href={`https://myanimelist.net/anime/${animeMetadata.id}`}>
+          {animeMetadata.alternative_titles.en || animeMetadata.title}
+        </a>
+      {:else}
+        {animeMetadata.alternative_titles.en || animeMetadata.title}
+      {/if}
+    </div>
+    {#if planToWatch && !expanded}
+      <div class="tag"><Tag style="color: white" type="green">Plan To Watch</Tag></div>
     {/if}
   </div>
   <div class="expander" on:click={toggleExpanded}>
@@ -44,12 +52,26 @@
   <div on:click={expanded ? undefined : toggleExpanded} class="synopsis" bind:this={synopsisElem}>
     {animeMetadata.synopsis}
   </div>
-  {#if expanded && topRatingContributors.length > 0}
+  {#if expanded && topRatingContributors && topRatingContributors.length > 0}
     <div class="details">
-      {#each topRatingContributors as contributor (contributor.id)}
-        <TopInfluence onDelete={() => excludeRanking(contributor.id)} name={contributor.title} />
-      {/each}
+      <div class="top-influences">
+        <h3>Recommended Because:</h3>
+        {#each topRatingContributors as { datum, positiveRating } (datum.id)}
+          <Tag
+            style="color: white;"
+            filter={!contributorsLoading}
+            skeleton={contributorsLoading}
+            on:close={() => excludeRanking(datum.id)}
+            type={positiveRating ? 'green' : 'red'}
+          >
+            You {positiveRating ? 'liked' : 'disliked'}:
+            {datum.alternative_titles.en || datum.title}
+          </Tag>
+        {/each}
+      </div>
     </div>
+  {:else}
+    <Loading withOverlay={false} />
   {/if}
 </div>
 
@@ -64,8 +86,12 @@
     grid-template-areas: 'thumbnail title synopsis expander';
   }
 
+  .recommendation[data-plan-to-watch='true'] {
+    background-color: #55d95f19;
+  }
+
   .recommendation[data-expanded='false'] {
-    grid-template-columns: 100px 140px 1fr 60px;
+    grid-template-columns: 87px 140px 1fr 60px;
   }
 
   .recommendation[data-expanded='true'] {
@@ -76,7 +102,7 @@
       'thumbnail synopsis synopsis'
       'details details details';
     grid-template-columns: 225px 1fr 60px;
-    grid-template-rows: 40px auto 250px;
+    grid-template-rows: 28px auto auto;
   }
 
   @media (max-width: 768px) {
@@ -90,26 +116,42 @@
         'thumbnail synopsis expander'
         'details details details';
       grid-template-columns: 150px 1fr 45px;
-      grid-template-rows: 30px auto 250px;
+      grid-template-rows: 30px auto auto;
     }
   }
 
   .recommendation .title {
+    display: flex;
     cursor: pointer;
     grid-area: title;
     height: 100%;
-    display: flex;
-    align-items: center;
-    padding: 2px 6px;
+    justify-content: center;
+    text-align: center;
+    padding: 0 5px;
   }
 
   .recommendation[data-expanded='false'] .title {
+    flex-direction: column;
     line-height: 1.15rem;
     font-size: 15px;
     font-weight: 500;
   }
 
+  .recommendation[data-expanded='false'] .title .title-text {
+    display: flex;
+    flex: 1;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .recommendation[data-expanded='false'] .title .tag {
+    display: flex;
+    flex: 0;
+    padding: 4px 4px;
+  }
+
   .recommendation[data-expanded='true'] .title {
+    padding: 2px 6px;
     font-weight: bold;
     text-align: center;
     font-size: 20px;
@@ -210,5 +252,20 @@
     gap: 10px;
     padding: 4px;
     box-sizing: border-box;
+  }
+
+  .top-influences {
+    display: flex;
+    flex-direction: row;
+    min-height: 30px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .top-influences h3 {
+    display: inline-flex;
+    font-size: 18px;
+    font-weight: 500;
+    margin-right: 6px;
   }
 </style>
