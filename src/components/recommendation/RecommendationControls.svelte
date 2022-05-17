@@ -8,7 +8,7 @@
 </script>
 
 <script lang="ts">
-  import { Dropdown, Tag } from 'carbon-components-svelte';
+  import { Dropdown, Loading, Tag } from 'carbon-components-svelte';
   import type { Writable } from 'svelte/store';
 
   import type { RecommendationControlParams } from './InteractiveRecommendations.svelte';
@@ -16,6 +16,7 @@
 
   export let params: Writable<RecommendationControlParams>;
   export let animeMetadataDatabase: { [animeID: number]: AnimeDetails };
+  export let isLoading: boolean;
 </script>
 
 <div class="root">
@@ -48,13 +49,15 @@
                 );
                 return state;
               })}
-            type="red"
           >
-            {datum?.title ?? ''}
+            {datum?.alternative_titles.en || datum?.title || ''}
           </Tag>
         {/each}
       </div>
     </div>
+  {/if}
+  {#if isLoading}
+    <Loading withOverlay={false} small />
   {/if}
 </div>
 

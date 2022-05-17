@@ -65,10 +65,9 @@ const getTrainingDataFromProcessedTable = async (
 };
 
 const getTrainingDataFromRawTable = async (usernames: string[]): Promise<TrainingDatum[][]> => {
+  const replacers = usernames.map(() => '?').join(', ');
   const stmt = getLocalAnimelistsDB().prepare(
-    'SELECT username, animelist_json FROM `mal-user-animelists` WHERE username IN (' +
-      usernames.map(() => '?').join(', ') +
-      ')'
+    `SELECT username, animelist_json FROM \`mal-user-animelists\` WHERE username IN (${replacers})`
   );
   const animeLists = await new Promise<{ username: string; animelist: MALUserAnimeListItem[] }[]>((resolve, reject) => {
     stmt.all(usernames, (err, rows) => {

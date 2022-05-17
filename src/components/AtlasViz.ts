@@ -619,7 +619,7 @@ export class AtlasViz {
           this.handlePointerOut();
           hoveredDatum = null;
         } else {
-          hoveredDatum = datum;
+          hoveredDatum = datum ?? null;
         }
 
         this.container.cursor = hoveredDatum ? 'pointer' : containerPointerDownPos ? 'grabbing' : 'default';
@@ -810,7 +810,7 @@ export class AtlasViz {
   };
 
   private buildHoverLabel = (datum: EmbeddedPointWithIndex): PIXI.Graphics => {
-    const text = datum.metadata.title;
+    const text = datum.metadata.title_english || datum.metadata.title;
     const textWidth = this.measureText(text);
 
     const g = new this.PIXI.Graphics();

@@ -15,6 +15,7 @@ export * from '@pixi/sprite';
 export * from '@pixi/app';
 export * from '@pixi/graphics';
 export * from '@pixi/text';
+export type { IHitArea } from '@pixi/interaction';
 export * from '@pixi/interaction';
 
 // Renderer plugins

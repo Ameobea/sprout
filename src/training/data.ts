@@ -12,7 +12,7 @@ const getHoldoutCount = (validRatingCount: number): number => {
   return holdoutCount;
 };
 
-const scoreRating = (rating: number): number => {
+export const scoreRating = (rating: number): number => {
   // switch (rating) {
   //   case 10:
   //     return 1;

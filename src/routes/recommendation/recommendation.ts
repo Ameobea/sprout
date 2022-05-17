@@ -15,7 +15,7 @@ import {
   type AnimeDetails,
   type MALUserAnimeListItem,
 } from 'src/malAPI';
-import { DataContainer } from 'src/training/data';
+import { DataContainer, scoreRating } from 'src/training/data';
 import { EmbeddingName } from 'src/types';
 import type { Embedding } from '../embedding';
 import { loadRecommendationModel } from './model';
@@ -24,7 +24,12 @@ import { convertMALProfileToTrainingData, type TrainingDatum } from './training/
 export interface Recommendation {
   id: number;
   score: number;
-  topRatingContributorsIds: number[];
+  /**
+   * These IDs will be negative to indicate a negative rating contributing to a positive recommendation.  Absolute
+   * value should be used to get IDs to look up.
+   */
+  topRatingContributorsIds?: number[];
+  planToWatch?: boolean;
 }
 
 interface RecommendationWithIndex extends Recommendation {
@@ -187,13 +192,21 @@ const computeRecommendationContributions = async (
   });
 };
 
-export const getRecommendations = async (
-  username: string,
-  count: number,
-  computeContributions: boolean,
-  modelName: ModelName,
-  excludedRankingAnimeIDs: Set<number>
-): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
+interface GetRecommendationsArgs {
+  username: string;
+  count: number;
+  computeContributions: boolean;
+  modelName: ModelName;
+  excludedRankingAnimeIDs: Set<number>;
+}
+
+export const getRecommendations = async ({
+  username,
+  count,
+  computeContributions,
+  modelName,
+  excludedRankingAnimeIDs,
+}: GetRecommendationsArgs): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
   const embedding = (await loadEmbedding(EmbeddingName.PyMDE)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
   const model = await loadRecommendationModel(embedding, modelName);
 
@@ -210,9 +223,13 @@ export const getRecommendations = async (
     return !!animeID && !excludedRankingAnimeIDs.has(animeID);
   });
   const profileAnimeByID = new Map<number, MALUserAnimeListItem>();
+  const planToWatchAnimeIDs = new Set<number>();
   for (const entry of profile) {
     if (entry?.node?.id) {
       profileAnimeByID.set(entry.node.id, entry);
+    }
+    if (entry?.list_status.status === AnimeListStatusCode.PlanToWatch) {
+      planToWatchAnimeIDs.add(entry.node.id);
     }
   }
 
@@ -239,7 +256,7 @@ export const getRecommendations = async (
 
   const recommendations: RecommendationWithIndex[] = sortedOutput
     .filter(({ ix, score }) => !allInputIndices.has(ix) && score > 0)
-    .map(({ ix, score }) => ({ ix, id: embedding[ix].metadata.id, score, topRatingContributorsIds: [] }))
+    .map(({ ix, score }) => ({ ix, id: embedding[ix].metadata.id, score }))
     .filter(({ id }) => {
       const entry = profileAnimeByID.get(id);
       if (!entry) {
@@ -274,7 +291,21 @@ export const getRecommendations = async (
   }
 
   return right(
-    recommendations.map(({ score, id }, i) => ({ id, score, topRatingContributorsIds: contributions[i] ?? [] }))
+    recommendations.map(({ score, id }, i) => {
+      const reco: Recommendation = { id, score };
+      const contribs = contributions[i];
+      if (contribs) {
+        reco.topRatingContributorsIds = contribs.map((contribAnimeID) => {
+          const rating = profileAnimeByID.get(contribAnimeID);
+          const isPositive = scoreRating(rating?.list_status.score ?? 10) > 0;
+          return isPositive ? contribAnimeID : -contribAnimeID;
+        });
+      }
+      if (planToWatchAnimeIDs.has(id)) {
+        reco.planToWatch = true;
+      }
+      return reco;
+    })
   );
 };
 
@@ -299,13 +330,13 @@ export const post: RequestHandler = async ({ request }) => {
     return { status: 400, body: 'Invalid modelName' };
   }
 
-  const recommendationsRes = await getRecommendations(
-    req.username,
-    20,
-    req.includeContributors,
+  const recommendationsRes = await getRecommendations({
+    username: req.username,
+    count: 20,
+    computeContributions: req.includeContributors,
     modelName,
-    new Set(req.excludedRankingAnimeIDs)
-  );
+    excludedRankingAnimeIDs: new Set(req.excludedRankingAnimeIDs),
+  });
   if (isLeft(recommendationsRes)) {
     return recommendationsRes.left;
   }
@@ -318,7 +349,9 @@ export const post: RequestHandler = async ({ request }) => {
       [
         ...new Set(
           recommendationsList
-            .flatMap(({ id, topRatingContributorsIds }) => [id, ...topRatingContributorsIds])
+            .flatMap(({ id, topRatingContributorsIds }) =>
+              topRatingContributorsIds ? [id, ...topRatingContributorsIds.map(Math.abs)] : id
+            )
             .filter((id) => !alreadyFetchedAnimeIDs.has(id))
         ),
       ].map((id) => getAnimeByID(id))

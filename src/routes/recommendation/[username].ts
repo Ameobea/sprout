@@ -35,14 +35,23 @@ export const get: RequestHandler = async ({ params, url }) => {
   }
   const excludedRankingAnimeIDs = parsedExcludedRankingAnimeIDs.right;
 
-  const recommendationsRes = await getRecommendations(username, 20, false, modelName, new Set(excludedRankingAnimeIDs));
+  const recommendationsRes = await getRecommendations({
+    username,
+    count: 20,
+    computeContributions: false,
+    modelName,
+    excludedRankingAnimeIDs: new Set(excludedRankingAnimeIDs),
+  });
   if (isLeft(recommendationsRes)) {
     return { status: 500, body: { recommendations: { type: 'error', error: recommendationsRes.left.body } } };
   }
   const recommendationsList = recommendationsRes.right;
 
   const animeIdsNeedingMetadata = new Set(
-    recommendationsList.flatMap(({ id, topRatingContributorsIds }) => [id, ...topRatingContributorsIds])
+    recommendationsList.flatMap(({ id, topRatingContributorsIds }) => [
+      id,
+      ...(topRatingContributorsIds ?? []).map(Math.abs),
+    ])
   );
   for (const animeID of excludedRankingAnimeIDs) {
     animeIdsNeedingMetadata.add(animeID);
