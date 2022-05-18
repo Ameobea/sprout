@@ -8,7 +8,7 @@
 </script>
 
 <script lang="ts">
-  import { Dropdown, Loading, Tag } from 'carbon-components-svelte';
+  import { Dropdown, Loading, Tag, Toggle } from 'carbon-components-svelte';
   import type { Writable } from 'svelte/store';
 
   import type { RecommendationControlParams } from './InteractiveRecommendations.svelte';
@@ -34,10 +34,15 @@
     </div>
     <div />
   </div>
+  <div class="toggles">
+    <Toggle labelText="Movies" bind:toggled={$params.includeMovies} />
+    <Toggle labelText="ONAs/OVAs/Specials" bind:toggled={$params.includeONAsOVAsSpecials} />
+    <Toggle labelText="Music" bind:toggled={$params.includeMusic} />
+  </div>
   {#if $params.excludedRankingAnimeIDs.length > 0}
     <div>
-      <label class="bx--label">Excluded Rankings</label>
-      <div class="tags-container">
+      <label for="tags-container" class="bx--label">Excluded Rankings</label>
+      <div class="tags-container" id="tags-container">
         {#each $params.excludedRankingAnimeIDs as animeID (animeID)}
           {@const datum = animeMetadataDatabase[animeID]}
           <Tag
@@ -69,10 +74,20 @@
     gap: 14px;
   }
 
+  .top {
+    max-width: 300px;
+  }
+
   .top > div {
     display: flex;
     flex: 1;
     flex-direction: column;
+  }
+
+  .toggles {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
   }
 
   .tags-container {

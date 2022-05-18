@@ -5,7 +5,7 @@ import { PathReporter } from 'io-ts/lib/PathReporter.js';
 
 import { ModelName, validateModelName } from 'src/components/recommendation/conf';
 import { getAnimeByID, type AnimeDetails } from 'src/malAPI';
-import { getRecommendations, type Recommendation } from './recommendation';
+import { getRecommendations, type Recommendation } from '../../recommendation/recommendation';
 
 export type RecommendationsResponse =
   | {
@@ -19,6 +19,19 @@ const ExcludedAnimeIDs = t.array(t.number);
 
 export const get: RequestHandler = async ({ params, url }) => {
   const username = params.username;
+  if (username === '_') {
+    return {
+      status: 200,
+      body: {
+        initialRecommendations: {
+          type: 'ok',
+          recommendations: [],
+          animeData: {},
+        },
+      },
+    };
+  }
+
   const modelName = validateModelName(url.searchParams.get('model') ?? ModelName.Model_4K_V2);
   if (!modelName) {
     return { status: 400, body: 'Invalid model name' };

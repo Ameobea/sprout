@@ -3,10 +3,15 @@
 </script>
 
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, prefetch } from '$app/navigation';
+  import { onMount } from 'svelte';
 
   let searchValue = '';
   let isLoading = false;
+
+  onMount(() => prefetch('/user/_/recommendations'));
+
+  const buildRecommendationsURL = (username: string) => `/user/${searchValue}/recommendations`;
 
   const handleRecommendationsButtonClick = () => {
     if (!searchValue) {
@@ -14,7 +19,7 @@
     }
 
     isLoading = true;
-    goto(`/recommendation/${searchValue}`).then(() => {
+    goto(buildRecommendationsURL(searchValue)).then(() => {
       isLoading = false;
     });
   };
@@ -29,6 +34,14 @@
       isLoading = false;
     });
   };
+
+  const handleSearchKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Enter' && searchValue) {
+      handleRecommendationsButtonClick();
+    }
+  };
+
+  const prefetchRecommendations = () => prefetch(buildRecommendationsURL(searchValue));
 </script>
 
 <div class="root">
@@ -37,9 +50,17 @@
     LOADING TODO
   {/if}
 
-  <input type="text" class="main-search" bind:value={searchValue} placeholder="Enter MyAnimeList Username" />
+  <input
+    type="text"
+    class="main-search"
+    bind:value={searchValue}
+    placeholder="Enter MyAnimeList Username"
+    on:keydown={handleSearchKeyDown}
+  />
   <div class="buttons-container">
-    <button on:click={handleRecommendationsButtonClick} disabled={!searchValue}>Recommendations</button>
+    <button on:mouseenter={prefetchRecommendations} on:click={handleRecommendationsButtonClick} disabled={!searchValue}
+      >Recommendations</button
+    >
     <button on:click={handleGalaxyVizButtonClick} disabled={!searchValue}>Galaxy Visualization</button>
   </div>
 
@@ -51,6 +72,9 @@
     display: flex;
     flex-direction: column;
     text-align: center;
+    height: 100vh;
+    align-items: center;
+    justify-content: center;
   }
 
   .main-search {
@@ -74,6 +98,7 @@
     flex-direction: row;
     justify-content: center;
     gap: 20px;
+    margin-bottom: 25vh;
   }
 
   .buttons-container button {

@@ -2,7 +2,7 @@ import type { RequestHandler } from '@sveltejs/kit';
 
 import { getLocalAnimelistsDB } from './localAnimelistsDB';
 import { loadEmbedding } from 'src/embedding';
-import type { MALUserAnimeListItem } from 'src/malAPI';
+import { AnimeListStatusCode, type MALUserAnimeListItem } from 'src/malAPI';
 import { EmbeddingName } from 'src/types';
 
 export interface TrainingDatum {
@@ -16,7 +16,7 @@ const getAnimeIxByID = async (): Promise<Map<number, number>> => {
   if (!AnimeIxByID) {
     const embedding = await loadEmbedding(EmbeddingName.PyMDE);
     AnimeIxByID = new Map<number, number>();
-    embedding.forEach((datum, i) => AnimeIxByID.set(datum.metadata.id, i));
+    embedding.forEach((datum, i) => AnimeIxByID!.set(datum.metadata.id, i));
   }
   return AnimeIxByID;
 };
@@ -27,16 +27,26 @@ export const convertMALProfileToTrainingData = async (
   const AnimeIxByID = await getAnimeIxByID();
 
   return rawData.map((userProfileAnime) => {
+    const validRatings = userProfileAnime.filter((datum) =>
+      [
+        AnimeListStatusCode.Completed,
+        AnimeListStatusCode.Watching,
+        AnimeListStatusCode.OnHold,
+        AnimeListStatusCode.Dropped,
+      ].includes(datum.list_status.status)
+    );
     let unratedCount = 0;
-    for (const rating of userProfileAnime) {
+    for (const rating of validRatings) {
       if (!rating?.list_status?.score) {
         unratedCount += 1;
       }
     }
     const userIsNonRater = unratedCount / userProfileAnime.length > 0.5;
-    console.log({ userIsNonRater });
+    if (userIsNonRater) {
+      console.log({ userIsNonRater });
+    }
 
-    return userProfileAnime
+    return validRatings
       .filter((datum) => userIsNonRater || datum.list_status?.score > 0)
       .map((datum) => ({
         animeIx: AnimeIxByID.get(datum.node.id)!,
@@ -92,7 +102,7 @@ const getTrainingDataFromRawTable = async (usernames: string[]): Promise<Trainin
       'INSERT OR IGNORE INTO `processed-training-data` (username, processed_animelist) VALUES ' +
         animeLists.map(() => '(?, ?)').join(', ')
     );
-    const binds = [];
+    const binds: string[] = [];
     for (let i = 0; i < animeLists.length; i++) {
       const username = animeLists[i].username;
       const animeList = JSON.stringify(parsedAnimeLists[i]);

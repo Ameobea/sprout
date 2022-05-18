@@ -79,12 +79,12 @@ export class DataContainer {
   public static buildModelInput = (userProfile: TrainingDatum[], corpusSize: number): ModelInput => {
     const scoreByAnimeIx = new Array<number>(corpusSize).fill(0);
     const validIndices: number[] = [];
-    userProfile.forEach((datum, i) => {
+    userProfile.forEach((datum, ratingIx) => {
       const { animeIx, rating } = datum;
       if (typeof animeIx !== 'number' || animeIx >= corpusSize) {
         return;
       }
-      validIndices.push(i);
+      validIndices.push(ratingIx);
       const score = scoreRating(rating);
       scoreByAnimeIx[animeIx] = score;
     });
