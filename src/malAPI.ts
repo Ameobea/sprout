@@ -65,6 +65,16 @@ export interface MALUserAnimeListResponse {
   paging: { next?: string | null };
 }
 
+export enum AnimeMediaType {
+  Unknown = 'unknown',
+  TV = 'tv',
+  OVA = 'ova',
+  Movie = 'movie',
+  Special = 'special',
+  ONA = 'ona',
+  Music = 'music',
+}
+
 export enum MangaListStatusCode {
   Reading = 'reading',
   Completed = 'completed',
@@ -175,6 +185,7 @@ export interface AnimeDetails {
     node: AnimeBasicDetails;
     num_recommendations: number;
   }[];
+  media_type: AnimeMediaType;
   related_anime?: {
     node: AnimeBasicDetails;
     relation_type: string;
@@ -204,6 +215,7 @@ export const getAnimeByID = async (id: number, includeRecommendationsAndRelated 
     'genres',
     'recommendations',
     'related_anime',
+    'media_type',
   ];
   const url = `${MAL_API_BASE_URL}/anime/${id}?fields=${fieldsToFetch.join(',')}`;
   console.log('Fetching anime...', url);

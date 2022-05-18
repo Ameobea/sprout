@@ -4,6 +4,7 @@ import { parse } from 'csv-parse';
 import { DATA_DIR } from './conf';
 import type { Embedding } from './routes/embedding';
 import { EmbeddingName } from './types';
+import type { AnimeMediaType } from './malAPI';
 
 interface RawEmbedding {
   points: { [index: string]: { x: number; y: number } };
@@ -18,13 +19,14 @@ export interface Metadatum {
   rating_count: number;
   average_rating: number;
   aired_from_year: number;
+  media_type: AnimeMediaType;
 }
 
 const CachedRawEmbeddings: Map<EmbeddingName, RawEmbedding> = new Map();
 const CachedEmbeddings: Map<EmbeddingName, Embedding> = new Map();
 const CachedNeighbors: Map<EmbeddingName, number[][]> = new Map();
 
-// HEADERS: 'id', 'title', 'title_english', 'related_anime', 'recommendations', 'aired_from_year', 'rating_count', 'average_rating'
+// HEADERS: 'id', 'title', 'title_english', 'related_anime', 'recommendations', 'aired_from_year', 'rating_count', 'average_rating', 'media_type
 const METADATA_FILE_NAME = `${DATA_DIR}/processed-metadata.csv`;
 
 export const loadMetadata = async () => {
@@ -50,6 +52,7 @@ export const loadMetadata = async () => {
           rating_count: +row[6],
           average_rating: +row[7],
           aired_from_year: +row[5],
+          media_type: row[8] as AnimeMediaType,
         });
       })
       .on('end', () => {

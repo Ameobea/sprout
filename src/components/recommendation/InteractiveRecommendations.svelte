@@ -4,6 +4,9 @@
   export interface RecommendationControlParams {
     modelName: ModelName;
     excludedRankingAnimeIDs: number[];
+    includeONAsOVAsSpecials: boolean;
+    includeMovies: boolean;
+    includeMusic: boolean;
   }
 
   const DEFAULT_MODEL_NAME = ModelName.Model_4K_V2;
@@ -13,6 +16,9 @@
     return {
       modelName: (queryParams.get('model') as any) ?? DEFAULT_MODEL_NAME,
       excludedRankingAnimeIDs: queryParams.getAll('eid').map((eid) => +eid),
+      includeONAsOVAsSpecials: queryParams.get('specials') !== 'false',
+      includeMovies: queryParams.get('movies') !== 'false',
+      includeMusic: queryParams.get('music') === 'true',
     };
   };
 
@@ -30,6 +36,15 @@
     }
     if (params.modelName !== DEFAULT_MODEL_NAME) {
       url.searchParams.set('model', params.modelName);
+    }
+    if (!params.includeONAsOVAsSpecials) {
+      url.searchParams.set('specials', 'false');
+    }
+    if (!params.includeMovies) {
+      url.searchParams.set('movies', 'false');
+    }
+    if (params.includeMusic) {
+      url.searchParams.set('music', 'true');
     }
 
     const newSearchParams = url.searchParams.toString();
@@ -62,9 +77,9 @@
 
   import RecommendationsList from 'src/components/recommendation/RecommendationsList.svelte';
   import type { AnimeDetails } from 'src/malAPI';
-  import type { RecommendationsResponse } from 'src/routes/recommendation/[username]';
   import RecommendationControls from './RecommendationControls.svelte';
   import type { Recommendation } from 'src/routes/recommendation/recommendation';
+  import type { RecommendationsResponse } from 'src/routes/user/[username]/recommendations';
 
   export let initialRecommendations: RecommendationsResponse;
   export let username: string;
@@ -106,7 +121,7 @@
         true
       );
     },
-    { refetchOnMount: false, refetchOnWindowFocus: false, keepPreviousData: true }
+    { refetchOnMount: false, refetchOnWindowFocus: false, keepPreviousData: false }
   );
 
   $: {

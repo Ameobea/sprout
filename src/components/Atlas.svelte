@@ -63,6 +63,10 @@
   });
 </script>
 
+<svelte:head>
+  <link href="https://fonts.googleapis.com/css2?family=PT+Sans" rel="stylesheet" />
+</svelte:head>
+
 <div class="root">
   <canvas id="viz" />
 </div>

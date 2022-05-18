@@ -19,7 +19,7 @@
 
   import { HeaderTitle } from 'src/components/recommendation/HeaderTitle';
   import type { AnimeDetails } from 'src/malAPI';
-  import type { RecommendationsResponse } from './[username]';
+  import type { RecommendationsResponse } from './recommendations';
   import InteractiveRecommendations from 'src/components/recommendation/InteractiveRecommendations.svelte';
 
   export let initialRecommendations: RecommendationsResponse;

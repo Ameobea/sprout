@@ -27,6 +27,7 @@
     on:click={expanded ? undefined : toggleExpanded}
     src={animeMetadata.main_picture.medium}
     alt={animeMetadata.alternative_titles.en || animeMetadata.title}
+    loading="lazy"
   />
   <div on:click={toggleExpanded} class="title">
     <div class="title-text">
@@ -52,22 +53,26 @@
   <div on:click={expanded ? undefined : toggleExpanded} class="synopsis" bind:this={synopsisElem}>
     {animeMetadata.synopsis}
   </div>
-  {#if expanded && topRatingContributors && topRatingContributors.length > 0}
+  {#if expanded}
     <div class="details">
       <div class="top-influences">
         <h3>Recommended Because:</h3>
-        {#each topRatingContributors as { datum, positiveRating } (datum.id)}
-          <Tag
-            style="color: white;"
-            filter={!contributorsLoading}
-            skeleton={contributorsLoading}
-            on:close={() => excludeRanking(datum.id)}
-            type={positiveRating ? 'green' : 'red'}
-          >
-            You {positiveRating ? 'liked' : 'disliked'}:
-            {datum.alternative_titles.en || datum.title}
-          </Tag>
-        {/each}
+        {#if topRatingContributors && topRatingContributors.length > 0}
+          {#each topRatingContributors as { datum, positiveRating } (datum.id)}
+            <Tag
+              style="color: white;"
+              filter={!contributorsLoading}
+              skeleton={contributorsLoading}
+              on:close={() => excludeRanking(datum.id)}
+              type={positiveRating ? 'green' : 'red'}
+            >
+              You {positiveRating ? 'liked' : 'disliked'}:
+              {datum.alternative_titles.en || datum.title}
+            </Tag>
+          {/each}
+        {:else}
+          <Tag skeleton /><Tag skeleton /><Tag skeleton />
+        {/if}
       </div>
     </div>
   {:else}
@@ -81,6 +86,7 @@
     grid-gap: 0;
     border-bottom: 1px solid #ccc;
     max-height: 120px;
+
     overflow: hidden;
     align-items: center;
     grid-template-areas: 'thumbnail title synopsis expander';
@@ -179,16 +185,18 @@
   }
 
   .recommendation img {
-    max-height: 120px;
-    min-height: 120px;
-    min-width: 87px;
     /* preserve aspect ratio */
     object-fit: cover;
     grid-area: thumbnail;
   }
 
   .recommendation[data-expanded='false'] img {
+    min-height: 120px;
+    max-height: 120px;
+    min-width: 87px;
     cursor: pointer;
+    height: 120px;
+    width: 87px;
   }
 
   .recommendation[data-expanded='true'] img {

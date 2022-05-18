@@ -9,5 +9,5 @@ export const getLocalAnimelistsDB = () => {
     return LocalAnimelistsDB;
   }
   LocalAnimelistsDB = new sqlite3.Database('/home/casey/anime-atlas/data/raw_animelists.db');
-  return LocalAnimelistsDB;
+  return LocalAnimelistsDB!;
 };

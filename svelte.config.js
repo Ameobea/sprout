@@ -7,7 +7,7 @@ import { optimizeImports, optimizeCss, icons, elements } from 'carbon-preprocess
 const config = {
   // Consult https://github.com/sveltejs/svelte-preprocess
   // for more information about preprocessors
-  preprocess: preprocess(),
+  preprocess: [preprocess(), optimizeImports()],
 
   kit: {
     inlineStyleThreshold: 2048,
@@ -15,15 +15,28 @@ const config = {
       precompress: true,
     }),
     vite: {
-      plugins: [optimizeImports(), /*process.env.NODE_ENV === 'production' && optimizeCss(),*/ icons(), elements()],
+      plugins: [
+        // process.env.NODE_ENV === 'production' && optimizeCss({ safelist: { deep: [/.*data-*$/] } }),
+        icons(),
+        elements(),
+      ],
       resolve: {
         alias: {
           src: resolve('./src'),
         },
       },
       build: {
-        sourcemap: true,
+        // sourcemap: true,
       },
+    },
+    prerender: {
+      concurrency: 6,
+    },
+    floc: true,
+  },
+  experimental: {
+    inspector: {
+      holdMode: true,
     },
   },
 };

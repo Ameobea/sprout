@@ -7,7 +7,7 @@ import { getAnimeByID, MALAPIError } from '../malAPI';
 
 const fillFromScratch = async () => {
   const allAnimeIDs: number[] = await new Promise((resolve) =>
-    fs.readFile('/home/casey/mal-graph/data/all-anime-ids.json', 'utf8', (err, data) => resolve(JSON.parse(data)))
+    fs.readFile('/home/casey/anime-atlas/data/all-anime-ids.json', 'utf8', (err, data) => resolve(JSON.parse(data)))
   );
 
   await new Promise((resolve, reject) => {

@@ -5,11 +5,13 @@ import { tryCatchK } from 'fp-ts/lib/TaskEither.js';
 import { performance } from 'perf_hooks';
 import * as t from 'io-ts';
 import { PathReporter } from 'io-ts/lib/PathReporter.js';
+import { Worker, isMainThread } from 'node:worker_threads';
 
 import { ModelName, RECOMMENDATION_MODEL_CORPUS_SIZE, validateModelName } from 'src/components/recommendation/conf';
 import { loadEmbedding } from 'src/embedding';
 import {
   AnimeListStatusCode,
+  AnimeMediaType,
   getAnimeByID,
   getUserAnimeList,
   type AnimeDetails,
@@ -33,8 +35,10 @@ export interface Recommendation {
 }
 
 interface RecommendationWithIndex extends Recommendation {
-  ix: number;
+  animeIx: number;
 }
+
+const maxK = 3;
 
 const fetchUserRankings = tryCatchK(
   async (username: string): Promise<{ profile: MALUserAnimeListItem[]; ratings: TrainingDatum[] }> => {
@@ -60,8 +64,11 @@ const computeRecommendationContributionsInner = async (
   minComboByRecommendationIx: (number[] | null)[],
   input: number[],
   recommendations: RecommendationWithIndex[],
-  validRatings: TrainingDatum[]
+  validRatings: TrainingDatum[],
+  fastMode: boolean
 ) => {
+  const outputs: Float32Array[] = [];
+
   const batchSize = 1024 * 16;
   const batches = Math.ceil(combosToCheck.length / batchSize);
   for (let batchIx = 0; batchIx < batches; batchIx++) {
@@ -95,21 +102,58 @@ const computeRecommendationContributionsInner = async (
     tf.dispose(batchInputTensor);
     tf.dispose(batchOutputsTensor);
 
-    for (let comboIx = 0; comboIx < batchCombos.length; comboIx++) {
-      const combo = batchCombos[comboIx];
-      const output = batchOutputs.subarray(
-        comboIx * RECOMMENDATION_MODEL_CORPUS_SIZE,
-        (comboIx + 1) * RECOMMENDATION_MODEL_CORPUS_SIZE
-      );
+    if (fastMode) {
+      outputs.push(batchOutputs);
+    } else {
+      for (let comboIx = 0; comboIx < batchCombos.length; comboIx++) {
+        const combo = batchCombos[comboIx];
+        const output = batchOutputs.subarray(
+          comboIx * RECOMMENDATION_MODEL_CORPUS_SIZE,
+          (comboIx + 1) * RECOMMENDATION_MODEL_CORPUS_SIZE
+        );
 
-      recommendations.forEach(({ ix: animeIx }, recommendationIx) => {
-        const animeOutput = output[animeIx];
-        if (animeOutput < minOutputByRecommendationIx[recommendationIx]) {
-          minOutputByRecommendationIx[recommendationIx] = animeOutput;
-          minComboByRecommendationIx[recommendationIx] = combo;
-        }
-      });
+        recommendations.forEach(({ animeIx }, recommendationIx) => {
+          const animeOutput = output[animeIx];
+          if (animeOutput < minOutputByRecommendationIx[recommendationIx]) {
+            minOutputByRecommendationIx[recommendationIx] = animeOutput;
+            minComboByRecommendationIx[recommendationIx] = combo;
+          }
+        });
+      }
     }
+  }
+
+  if (fastMode) {
+    recommendations.forEach(({ animeIx }, recommendationIx) => {
+      const outputsForRecommendation = outputs
+        .flatMap((batchOutputs) => {
+          const batchSize = batchOutputs.length / RECOMMENDATION_MODEL_CORPUS_SIZE;
+          // make sure batchSize is an integer as a sanity check
+          if (batchSize % 1 !== 0) {
+            throw new Error('Unexpected batch size');
+          }
+
+          const outputsForRecommendation: number[] = [];
+          for (let predIx = 0; predIx < batchSize; predIx++) {
+            const output = batchOutputs[predIx * RECOMMENDATION_MODEL_CORPUS_SIZE + animeIx];
+            outputsForRecommendation.push(output);
+          }
+          return outputsForRecommendation;
+        })
+        .map((output, comboIx) => ({ output, comboIx }));
+
+      // Find `maxK` combos which produced lowest outputs for this recommendation
+      const topK = outputsForRecommendation.sort((a, b) => a.output - b.output).slice(0, maxK);
+      const combo = topK.map(({ comboIx }) => {
+        const combo = combosToCheck[comboIx];
+        if (combo.length !== 1) {
+          throw new Error('Unexpected combo length');
+        }
+        return combo[0];
+      });
+      minComboByRecommendationIx[recommendationIx] = combo;
+      minOutputByRecommendationIx[recommendationIx] = topK[0].output;
+    });
   }
 };
 
@@ -123,7 +167,8 @@ const computeRecommendationContributions = async (
   embedding: Embedding,
   input: number[],
   recommendations: RecommendationWithIndex[],
-  validRatings: TrainingDatum[]
+  validRatings: TrainingDatum[],
+  fastMode: boolean
 ) => {
   if (recommendations.length === 0 || validRatings.length < 3) {
     return;
@@ -144,43 +189,46 @@ const computeRecommendationContributions = async (
     minComboByRecommendationIx,
     input,
     recommendations,
-    validRatings
+    validRatings,
+    fastMode
   );
 
-  const maxK = 3;
-  for (let k = 2; k <= maxK; k++) {
-    const hashCombo = (combo: number[]): string => combo.join('-');
-    const combosToCheck: number[][] = [];
-    const allComboHashes: Set<string> = new Set();
+  if (!fastMode) {
+    for (let k = 2; k <= maxK; k++) {
+      const hashCombo = (combo: number[]): string => combo.join('-');
+      const combosToCheck: number[][] = [];
+      const allComboHashes: Set<string> = new Set();
 
-    for (const minCombo of minComboByRecommendationIx) {
-      if (!minCombo) {
-        continue;
+      for (const minCombo of minComboByRecommendationIx) {
+        if (!minCombo) {
+          continue;
+        }
+
+        validRatings.forEach((_rating, ratingIx) => {
+          if (minCombo.includes(ratingIx)) {
+            return;
+          }
+          const newCombo = [...minCombo, ratingIx];
+          const comboHash = hashCombo(newCombo);
+          if (allComboHashes.has(comboHash)) {
+            return;
+          }
+          allComboHashes.add(comboHash);
+          combosToCheck.push(newCombo);
+        });
       }
 
-      validRatings.forEach((_rating, ratingIx) => {
-        if (minCombo.includes(ratingIx)) {
-          return;
-        }
-        const newCombo = [...minCombo, ratingIx];
-        const comboHash = hashCombo(newCombo);
-        if (allComboHashes.has(comboHash)) {
-          return;
-        }
-        allComboHashes.add(comboHash);
-        combosToCheck.push(newCombo);
-      });
+      await computeRecommendationContributionsInner(
+        model,
+        combosToCheck,
+        minOutputByRecommendationIx,
+        minComboByRecommendationIx,
+        input,
+        recommendations,
+        validRatings,
+        false
+      );
     }
-
-    await computeRecommendationContributionsInner(
-      model,
-      combosToCheck,
-      minOutputByRecommendationIx,
-      minComboByRecommendationIx,
-      input,
-      recommendations,
-      validRatings
-    );
   }
 
   return recommendations.map((_, recoIx) => {
@@ -198,6 +246,9 @@ interface GetRecommendationsArgs {
   computeContributions: boolean;
   modelName: ModelName;
   excludedRankingAnimeIDs: Set<number>;
+  includeONAsOVAsSpecials: boolean;
+  includeMovies: boolean;
+  includeMusic: boolean;
 }
 
 export const getRecommendations = async ({
@@ -206,6 +257,9 @@ export const getRecommendations = async ({
   computeContributions,
   modelName,
   excludedRankingAnimeIDs,
+  includeONAsOVAsSpecials,
+  includeMovies,
+  includeMusic,
 }: GetRecommendationsArgs): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
   const embedding = (await loadEmbedding(EmbeddingName.PyMDE)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
   const model = await loadRecommendationModel(embedding, modelName);
@@ -249,14 +303,33 @@ export const getRecommendations = async ({
   const output = (await outputTensor.data()) as Float32Array;
   tf.dispose(inputTensor);
   tf.dispose(outputTensor);
-  const allInputIndices = new Set(validIndices.map((ixIx) => ratings[ixIx].animeIx));
+  const allInputAnimeIndices = new Set(validIndices.map((ixIx) => ratings[ixIx].animeIx));
 
   // Sort output by indices of top recommendations from highest to lowest
-  const sortedOutput = [...output].map((score, ix) => ({ score, ix })).sort((a, b) => b.score - a.score);
+  const validAnimeMediaTypes = new Set<AnimeMediaType>();
+  validAnimeMediaTypes.add(AnimeMediaType.TV);
+  if (includeONAsOVAsSpecials) {
+    validAnimeMediaTypes.add(AnimeMediaType.OVA);
+    validAnimeMediaTypes.add(AnimeMediaType.Special);
+    validAnimeMediaTypes.add(AnimeMediaType.ONA);
+  }
+  if (includeMovies) {
+    validAnimeMediaTypes.add(AnimeMediaType.Movie);
+  }
+  if (includeMusic) {
+    validAnimeMediaTypes.add(AnimeMediaType.Music);
+  }
+  const sortedOutput = [...output]
+    .filter((_score, animeIx) => {
+      const animeMediaType = embedding[animeIx].metadata.media_type;
+      return !animeMediaType || validAnimeMediaTypes.has(animeMediaType);
+    })
+    .map((score, animeIx) => ({ score, animeIx }))
+    .sort((a, b) => b.score - a.score);
 
   const recommendations: RecommendationWithIndex[] = sortedOutput
-    .filter(({ ix, score }) => !allInputIndices.has(ix) && score > 0)
-    .map(({ ix, score }) => ({ ix, id: embedding[ix].metadata.id, score }))
+    .filter(({ animeIx, score }) => !allInputAnimeIndices.has(animeIx) && score > 0)
+    .map(({ animeIx, score }) => ({ animeIx, id: embedding[animeIx].metadata.id, score: +score.toFixed(3) }))
     .filter(({ id }) => {
       const entry = profileAnimeByID.get(id);
       if (!entry) {
@@ -286,7 +359,8 @@ export const getRecommendations = async ({
         embedding,
         input,
         recommendations,
-        validIndices.map((ratingIx) => ratings[ratingIx])
+        validIndices.map((ratingIx) => ratings[ratingIx]),
+        true
       )) ?? [];
   }
 
@@ -315,6 +389,9 @@ const RecommendationRequest = t.type({
   excludedRankingAnimeIDs: t.array(t.number),
   modelName: t.string,
   includeContributors: t.boolean,
+  includeONAsOVAsSpecials: t.boolean,
+  includeMovies: t.boolean,
+  includeMusic: t.boolean,
 });
 
 export const post: RequestHandler = async ({ request }) => {
@@ -329,6 +406,7 @@ export const post: RequestHandler = async ({ request }) => {
   if (!modelName) {
     return { status: 400, body: 'Invalid modelName' };
   }
+  const { includeONAsOVAsSpecials, includeMovies, includeMusic } = req;
 
   const recommendationsRes = await getRecommendations({
     username: req.username,
@@ -336,6 +414,9 @@ export const post: RequestHandler = async ({ request }) => {
     computeContributions: req.includeContributors,
     modelName,
     excludedRankingAnimeIDs: new Set(req.excludedRankingAnimeIDs),
+    includeONAsOVAsSpecials,
+    includeMovies,
+    includeMusic,
   });
   if (isLeft(recommendationsRes)) {
     return recommendationsRes.left;
