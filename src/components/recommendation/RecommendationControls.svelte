@@ -2,8 +2,9 @@
   import { ModelName } from './conf';
 
   const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
-    { id: ModelName.Model_4K, text: 'Top 4k Anime v1' },
-    { id: ModelName.Model_4K_V2, text: 'Top 4k Anime w. more loss weights' },
+    { id: ModelName.Model_4K, text: '[OUT-OF-DATE FOR EMBEDDING] Top 4k Anime v1' },
+    { id: ModelName.Model_4K_V2, text: '[OUT-OF-DATE FOR EMBEDDING] Top 4k Anime w. more loss weights' },
+    { id: ModelName.Model_6K, text: 'Top 6k Anime v1' },
   ];
 </script>
 
@@ -35,9 +36,15 @@
     <div />
   </div>
   <div class="toggles">
-    <Toggle labelText="Movies" bind:toggled={$params.includeMovies} />
-    <Toggle labelText="ONAs/OVAs/Specials" bind:toggled={$params.includeONAsOVAsSpecials} />
-    <Toggle labelText="Music" bind:toggled={$params.includeMusic} />
+    <div>
+      <Toggle labelText="Movies" bind:toggled={$params.includeMovies} />
+    </div>
+    <div>
+      <Toggle labelText="ONAs/OVAs/Specials" bind:toggled={$params.includeONAsOVAsSpecials} />
+    </div>
+    <div>
+      <Toggle labelText="Music" bind:toggled={$params.includeMusic} />
+    </div>
   </div>
   {#if $params.excludedRankingAnimeIDs.length > 0}
     <div>
@@ -70,8 +77,9 @@
   .root {
     display: flex;
     flex-direction: column;
-    min-height: 250px;
     gap: 14px;
+    padding: 5px 0px 10px 0px;
+    border-bottom: 1px solid #cccccc22;
   }
 
   .top {
@@ -88,6 +96,19 @@
     display: flex;
     flex-direction: row;
     flex: 1;
+  }
+
+  .toggles > div {
+    padding: 8px;
+    box-sizing: border-box;
+    border-right: 1px solid #cccccc22;
+    border-top: 1px solid #cccccc22;
+    border-bottom: 1px solid #cccccc22;
+    width: 130px;
+  }
+
+  .toggles > div:first-child {
+    border-left: 1px solid #cccccc22;
   }
 
   .tags-container {

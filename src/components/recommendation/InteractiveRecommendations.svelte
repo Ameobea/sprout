@@ -1,5 +1,5 @@
 <script context="module" lang="ts">
-  import { ModelName } from './conf';
+  import { DEFAULT_MODEL_NAME, ModelName } from './conf';
 
   export interface RecommendationControlParams {
     modelName: ModelName;
@@ -8,8 +8,6 @@
     includeMovies: boolean;
     includeMusic: boolean;
   }
-
-  const DEFAULT_MODEL_NAME = ModelName.Model_4K_V2;
 
   const getDefaultRecommendationControlParams = (): RecommendationControlParams => {
     const queryParams = new URLSearchParams(browser ? window.location.search : '');

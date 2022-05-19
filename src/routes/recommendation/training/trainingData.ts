@@ -14,7 +14,7 @@ let AnimeIxByID: Map<number, number> | null = null;
 
 const getAnimeIxByID = async (): Promise<Map<number, number>> => {
   if (!AnimeIxByID) {
-    const embedding = await loadEmbedding(EmbeddingName.PyMDE);
+    const embedding = await loadEmbedding(EmbeddingName.PyMDE_3D_40N);
     AnimeIxByID = new Map<number, number>();
     embedding.forEach((datum, i) => AnimeIxByID!.set(datum.metadata.id, i));
   }

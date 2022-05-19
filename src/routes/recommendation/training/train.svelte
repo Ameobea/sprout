@@ -25,7 +25,7 @@
 
   let logLines = writable([] as LogLine[]);
   let losses = writable([] as number[]);
-  const iters = 200;
+  const iters = 250;
 
   const logger: Logger = (() => {
     function logger(text: string) {

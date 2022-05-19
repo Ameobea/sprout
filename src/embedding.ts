@@ -4,7 +4,7 @@ import { parse } from 'csv-parse';
 import { DATA_DIR } from './conf';
 import type { Embedding } from './routes/embedding';
 import { EmbeddingName } from './types';
-import type { AnimeMediaType } from './malAPI';
+import { AnimeMediaType, getAnimeByID } from './malAPI';
 
 interface RawEmbedding {
   points: { [index: string]: { x: number; y: number } };
@@ -63,8 +63,8 @@ export const loadMetadata = async () => {
 };
 
 const EmbeddingFilenameByName: { [K in EmbeddingName]: string } = {
-  [EmbeddingName.PyMDE]: 'projected_embedding_pymde_3d_40n.json',
-  [EmbeddingName.GGVec]: 'projected_embedding.json',
+  [EmbeddingName.PyMDE_3D_40N]: 'projected_embedding_pymde_3d_40n.json',
+  [EmbeddingName.GGVec_10D_40N_Order2]: 'projected_embedding_ggvec_top40_10d_order2.json',
   [EmbeddingName.PyMDE_4D_40N]: 'projected_embedding_pymde_4d_40n.json',
   [EmbeddingName.PyMDE_4D_100N]: 'projected_embedding_pymde_4d_100n.json',
 };
@@ -100,6 +100,16 @@ const loadRawEmbedding = async (embeddingName: EmbeddingName): Promise<RawEmbedd
   );
 };
 
+const buildDummyMetadatum = (id: number): Metadatum => ({
+  id,
+  title: 'Unknown',
+  title_english: 'Unknown',
+  rating_count: 0,
+  average_rating: 0,
+  aired_from_year: 0,
+  media_type: AnimeMediaType.Unknown,
+});
+
 export const loadEmbedding = async (embeddingName: EmbeddingName): Promise<Embedding> => {
   const cached = CachedEmbeddings.get(embeddingName);
   if (cached) {
@@ -111,19 +121,27 @@ export const loadEmbedding = async (embeddingName: EmbeddingName): Promise<Embed
   const rawEmbedding = await loadRawEmbedding(embeddingName);
   const entries = Object.entries(rawEmbedding.points);
 
-  const embedding = entries.map(([index, point]) => {
+  const embedding: Embedding = [];
+  for (const [index, point] of entries) {
     const i = +index;
     const id = +rawEmbedding.ids[i];
-    const metadatum = metadata.get(id);
+    let metadatum = metadata.get(id);
     if (!metadatum) {
-      throw new Error('Missing metadata for id ' + id);
+      console.error(`Missing metadata for id ${id}; fetching from MAL`);
+      try {
+        await getAnimeByID(id);
+        throw new Error('Missing metadata for id but it is fetched from MAL');
+      } catch (e) {
+        console.error(`Failed to fetch metadata for id ${id}; embedding probably needs to be updated`);
+        metadatum = buildDummyMetadatum(id);
+      }
     }
 
-    return {
+    embedding.push({
       vector: { x: point.x * 2.5, y: point.y * 2.5 },
-      metadata: metadatum,
-    };
-  });
+      metadata: metadatum!,
+    });
+  }
   embedding.sort((a, b) => {
     if (b.metadata.rating_count !== a.metadata.rating_count) {
       return b.metadata.rating_count - a.metadata.rating_count;

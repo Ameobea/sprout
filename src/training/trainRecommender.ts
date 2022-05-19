@@ -4,7 +4,7 @@ import type { Embedding } from 'src/routes/embedding';
 import { EmbeddingName } from '../types';
 import { DataContainer, fetchAllUsernames, fetchTrainingData, loadAnimeMetadata } from './data';
 
-const EMBEDDING_NAME = EmbeddingName.PyMDE;
+const EMBEDDING_NAME = EmbeddingName.PyMDE_3D_40N;
 
 export type Logger = ((msg: string) => void) & { error: (msg: string) => void; warn: (msg: string) => void };
 
@@ -28,7 +28,7 @@ export const getRecommenderModelCompileParams = (embedding: Embedding) => {
   classWeights.print();
 
   return {
-    optimizer: tf.train.sgd(0.5),
+    optimizer: tf.train.sgd(0.25),
     loss: (yTrue, yPred) => {
       // Construct a mask for the non-zero entries in the yTrue tensor
       const nonZeroMask = yTrue.notEqual(0).asType('float32');
@@ -77,6 +77,14 @@ export const trainRecommender = async (iters: number, log: Logger, recordLoss: (
   model.add(
     tf.layers.dense({
       inputShape: [animeMetadata.length],
+      units: 1024 * 16,
+      activation: 'tanh',
+      useBias: true,
+      kernelInitializer: 'glorotNormal',
+    })
+  );
+  model.add(
+    tf.layers.dense({
       units: 1024 * 8,
       activation: 'tanh',
       useBias: true,
@@ -85,15 +93,7 @@ export const trainRecommender = async (iters: number, log: Logger, recordLoss: (
   );
   model.add(
     tf.layers.dense({
-      units: 1024 * 4,
-      activation: 'tanh',
-      useBias: true,
-      kernelInitializer: 'glorotNormal',
-    })
-  );
-  model.add(
-    tf.layers.dense({
-      units: 1024 * 4,
+      units: 1024 * 8,
       activation: 'tanh',
       useBias: true,
       kernelInitializer: 'glorotNormal',
@@ -124,5 +124,5 @@ export const trainRecommender = async (iters: number, log: Logger, recordLoss: (
   await validateModel(data, model, log);
 
   // serialize the model to disk
-  await model.save('downloads://model_4k');
+  await model.save('downloads://model');
 };

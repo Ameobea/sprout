@@ -7,7 +7,7 @@ import * as d3 from '../d3';
 import type * as PIXI from '../pixi';
 
 const WORLD_SIZE = 1;
-const BASE_LABEL_FONT_SIZE = 42;
+const BASE_LABEL_FONT_SIZE = 48;
 const BASE_RADIUS = 50;
 const MAL_NODE_COLOR = 0x2bcaff;
 const SELECTED_NODE_COLOR = 0xdb18ce;
@@ -146,7 +146,7 @@ export class AtlasViz {
   };
   private textMeasurerCtx = (() => {
     const ctx = document.createElement('canvas').getContext('2d')!;
-    ctx.font = '42px PT Sans';
+    ctx.font = `${BASE_LABEL_FONT_SIZE}px IBM Plex Sans`;
     return ctx;
   })();
   private malProfileEntities: { pointGlowBackgrounds: PIXI.ParticleContainer; connections: PIXI.Graphics } | null =
@@ -826,7 +826,7 @@ export class AtlasViz {
     g.pivot.set(textWidth / 2, 25);
 
     const textSprite = new this.PIXI.Text(text, {
-      fontFamily: 'PT Sans',
+      fontFamily: 'IBM Plex Sans',
       fontSize: BASE_LABEL_FONT_SIZE,
       fill: 0xcccccc,
       align: 'center',
@@ -1091,7 +1091,7 @@ export class AtlasViz {
   };
 
   private buildLabel = (datum: EmbeddedPointWithIndex, labelScale: number) => {
-    const text = datum.metadata.title;
+    const text = datum.metadata.title_english ?? datum.metadata.title;
     const cachedTextSprite = this.cachedLabels.get(text);
     if (cachedTextSprite) {
       this.setLabelScale(cachedTextSprite, datum, 1, labelScale);
@@ -1103,7 +1103,7 @@ export class AtlasViz {
     const label = new this.NodeLabel(
       text,
       {
-        fontFamily: 'PT Sans',
+        fontFamily: 'IBM Plex Sans',
         fontSize: BASE_LABEL_FONT_SIZE,
         fill: 0xcccccc,
         align: 'center',

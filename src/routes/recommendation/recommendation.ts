@@ -261,7 +261,7 @@ export const getRecommendations = async ({
   includeMovies,
   includeMusic,
 }: GetRecommendationsArgs): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
-  const embedding = (await loadEmbedding(EmbeddingName.PyMDE)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
+  const embedding = (await loadEmbedding(EmbeddingName.PyMDE_3D_40N)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
   const model = await loadRecommendationModel(embedding, modelName);
 
   const rankingsRes = await fetchUserRankings(username)();
@@ -308,6 +308,7 @@ export const getRecommendations = async ({
   // Sort output by indices of top recommendations from highest to lowest
   const validAnimeMediaTypes = new Set<AnimeMediaType>();
   validAnimeMediaTypes.add(AnimeMediaType.TV);
+  validAnimeMediaTypes.add(AnimeMediaType.Unknown);
   if (includeONAsOVAsSpecials) {
     validAnimeMediaTypes.add(AnimeMediaType.OVA);
     validAnimeMediaTypes.add(AnimeMediaType.Special);
@@ -320,11 +321,13 @@ export const getRecommendations = async ({
     validAnimeMediaTypes.add(AnimeMediaType.Music);
   }
   const sortedOutput = [...output]
-    .filter((_score, animeIx) => {
+    .map((score, animeIx) => {
       const animeMediaType = embedding[animeIx].metadata.media_type;
-      return !animeMediaType || validAnimeMediaTypes.has(animeMediaType);
+      if (animeMediaType && !validAnimeMediaTypes.has(animeMediaType)) {
+        return { score: -2, animeIx };
+      }
+      return { score, animeIx };
     })
-    .map((score, animeIx) => ({ score, animeIx }))
     .sort((a, b) => b.score - a.score);
 
   const recommendations: RecommendationWithIndex[] = sortedOutput

@@ -1,13 +1,11 @@
-/* body,
+body,
 html {
   margin: 0;
   padding: 0;
-  background-color: #060606;
-  color: #ddd;
-  font-family: 'PT Sans', 'Open Sans', 'Roboto', sans-serif;
-  font-display: swap;
+  background-color: #060606 !important;
 }
 
+/*
 * {
   scrollbar-color: rgb(27, 27, 27);
 }
@@ -29,7 +27,7 @@ html {
 input[type=text] {
   border: 1px solid #333;
   outline: none;
-  background: #121212;
+  background: #000;
   color: #ddd;
 }
 

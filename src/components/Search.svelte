@@ -63,9 +63,10 @@
   .suggestion {
     z-index: 2;
     cursor: pointer;
-    font-size: 16px;
-    padding: 4px 6px;
+    font-size: 17px;
+    padding: 6px 8px;
     border-bottom: 1px solid #888;
+    background-color: #080808;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;

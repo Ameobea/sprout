@@ -1,6 +1,4 @@
 <script lang="ts">
-  import 'carbon-components-svelte/css/g100.css';
-
   import Header from 'src/components/recommendation/Header.svelte';
   import { HeaderTitle } from 'src/components/recommendation/HeaderTitle';
 </script>

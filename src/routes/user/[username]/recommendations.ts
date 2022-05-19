@@ -3,7 +3,7 @@ import { isLeft } from 'fp-ts/lib/Either.js';
 import * as t from 'io-ts';
 import { PathReporter } from 'io-ts/lib/PathReporter.js';
 
-import { ModelName, validateModelName } from 'src/components/recommendation/conf';
+import { DEFAULT_MODEL_NAME, ModelName, validateModelName } from 'src/components/recommendation/conf';
 import { getAnimeByID, type AnimeDetails } from 'src/malAPI';
 import { getRecommendations, type Recommendation } from '../../recommendation/recommendation';
 
@@ -32,7 +32,7 @@ export const get: RequestHandler = async ({ params, url }) => {
     };
   }
 
-  const modelName = validateModelName(url.searchParams.get('model') ?? ModelName.Model_4K_V2);
+  const modelName = validateModelName(url.searchParams.get('model') ?? DEFAULT_MODEL_NAME);
   if (!modelName) {
     return { status: 400, body: 'Invalid model name' };
   }
@@ -48,12 +48,19 @@ export const get: RequestHandler = async ({ params, url }) => {
   }
   const excludedRankingAnimeIDs = parsedExcludedRankingAnimeIDs.right;
 
+  const includeONAsOVAsSpecials = url.searchParams.get('specials') !== 'false';
+  const includeMovies = url.searchParams.get('movies') !== 'false';
+  const includeMusic = url.searchParams.get('music') === 'true';
+
   const recommendationsRes = await getRecommendations({
     username,
     count: 20,
     computeContributions: false,
     modelName,
     excludedRankingAnimeIDs: new Set(excludedRankingAnimeIDs),
+    includeONAsOVAsSpecials,
+    includeMovies,
+    includeMusic,
   });
   if (isLeft(recommendationsRes)) {
     return { status: 500, body: { recommendations: { type: 'error', error: recommendationsRes.left.body } } };

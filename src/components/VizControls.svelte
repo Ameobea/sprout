@@ -4,16 +4,16 @@
   const getCurrentEmbeddingName = (): EmbeddingName => {
     switch (window.location.pathname) {
       case '/pymde_3d_40n':
-        return EmbeddingName.PyMDE;
+        return EmbeddingName.PyMDE_3D_40N;
       case '/ggvec':
-        return EmbeddingName.GGVec;
+        return EmbeddingName.GGVec_10D_40N_Order2;
       case '/pymde_4d_40n':
         return EmbeddingName.PyMDE_4D_40N;
       case '/pymde_4d_100n':
         return EmbeddingName.PyMDE_4D_100N;
       default:
         console.error('Unknown embedding name:', window.location.pathname);
-        return EmbeddingName.PyMDE;
+        return EmbeddingName.PyMDE_3D_40N;
     }
   };
 
@@ -23,10 +23,10 @@
   ];
 
   const AllEmbeddingNames = [
-    { label: 'PyMDE 3D 40 Neighbors -> t-SNE', value: EmbeddingName.PyMDE },
+    { label: 'PyMDE 3D 40 Neighbors -> t-SNE', value: EmbeddingName.PyMDE_3D_40N },
     { label: 'PyMDE 4D 40 Neighbors -> t-SNE', value: EmbeddingName.PyMDE_4D_40N },
     { label: 'PyMDE 4D 100 Neighbors -> t-SNE', value: EmbeddingName.PyMDE_4D_100N },
-    { label: 'GGVec 10D -> t-SNE', value: EmbeddingName.GGVec },
+    { label: 'GGVec 10D -> t-SNE', value: EmbeddingName.GGVec_10D_40N_Order2 },
   ];
 </script>
 
@@ -54,8 +54,8 @@
 
     const embeddingPathname = (
       {
-        [EmbeddingName.PyMDE]: '/pymde_3d_40n',
-        [EmbeddingName.GGVec]: '/ggvec',
+        [EmbeddingName.PyMDE_3D_40N]: '/pymde_3d_40n',
+        [EmbeddingName.GGVec_10D_40N_Order2]: '/ggvec',
         [EmbeddingName.PyMDE_4D_40N]: '/pymde_4d_40n',
         [EmbeddingName.PyMDE_4D_100N]: '/pymde_4d_100n',
       } as const
