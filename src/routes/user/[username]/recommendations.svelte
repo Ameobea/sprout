@@ -26,6 +26,7 @@
   import InteractiveRecommendations from 'src/components/recommendation/InteractiveRecommendations.svelte';
 
   export let initialRecommendations: RecommendationsResponse;
+  export let genreNames: { [genreID: number]: string } | undefined;
 
   $: animeData =
     initialRecommendations.type === 'ok'
@@ -68,5 +69,5 @@
 />
 
 <QueryClientProvider client={queryClient}>
-  <InteractiveRecommendations {username} {initialRecommendations} />
+  <InteractiveRecommendations {username} {initialRecommendations} {genreNames} />
 </QueryClientProvider>

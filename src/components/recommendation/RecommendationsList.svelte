@@ -9,7 +9,7 @@
   export let recommendations: Recommendation[];
   export let animeMetadataDatabase: { [animeID: number]: AnimeDetails };
   export let excludeRanking: (animeID: number) => void;
-  export let excludeGenre: (genreID: number) => void;
+  export let excludeGenre: (genreID: number, genreName: string) => void;
   export let contributorsLoading: boolean;
 
   let expandedAnimeID: number | null = null;

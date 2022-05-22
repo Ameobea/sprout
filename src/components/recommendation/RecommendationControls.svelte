@@ -18,41 +18,51 @@
 </script>
 
 <script lang="ts">
-  import { Dropdown, Tag, Toggle } from 'carbon-components-svelte';
-  import type { Writable } from 'svelte/store';
+  import { Dropdown, InlineLoading, Tag, Toggle } from 'carbon-components-svelte';
+  import { get, type Writable } from 'svelte/store';
 
   import type { RecommendationControlParams } from './InteractiveRecommendations.svelte';
   import type { AnimeDetails } from 'src/malAPI';
+  import { browser } from '$app/env';
+
+  let innerWidth = browser ? window.innerWidth : 0;
+  $: isMobile = innerWidth < 768;
 
   export let params: Writable<RecommendationControlParams>;
   export let animeMetadataDatabase: { [animeID: number]: AnimeDetails };
+  export let isLoading: boolean;
+  export let genresDB: Writable<Map<number, string>>;
 </script>
 
+<svelte:window bind:innerWidth />
+
 <div class="root">
-  <div class="top">
-    <div>
-      <Dropdown
-        style="width: 100%;"
-        titleText="Model"
-        selectedId={$params.modelName}
-        on:select={(selected) => {
-          $params.modelName = selected.detail.selectedItem.id;
-        }}
-        items={ALL_MODEL_OPTIONS}
-      />
+  {#if !isMobile}
+    <div class="top">
+      <div>
+        <Dropdown
+          style="width: 100%;"
+          titleText="Model"
+          selectedId={$params.modelName}
+          on:select={(selected) => {
+            $params.modelName = selected.detail.selectedItem.id;
+          }}
+          items={ALL_MODEL_OPTIONS}
+        />
+      </div>
+      <div>
+        <Dropdown
+          style="width: 100%;"
+          titleText="Popularity Attenuation Factor"
+          selectedId={$params.popularityAttenuationFactor}
+          on:select={(selected) => {
+            $params.popularityAttenuationFactor = selected.detail.selectedItem.id;
+          }}
+          items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
+        />
+      </div>
     </div>
-    <div>
-      <Dropdown
-        style="width: 100%;"
-        titleText="Popularity Attenuation Factor"
-        selectedId={$params.popularityAttenuationFactor}
-        on:select={(selected) => {
-          $params.popularityAttenuationFactor = selected.detail.selectedItem.id;
-        }}
-        items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
-      />
-    </div>
-  </div>
+  {/if}
   <div class="toggles">
     <div>
       <Toggle labelText="Extra Seasons" bind:toggled={$params.includeExtraSeasons} />
@@ -63,9 +73,17 @@
     <div>
       <Toggle labelText="ONAs / OVAs / Specials" bind:toggled={$params.includeONAsOVAsSpecials} />
     </div>
-    <div>
+    <div style="position: relative">
       <Toggle labelText="Music" bind:toggled={$params.includeMusic} />
+      {#if isLoading && isMobile}
+        <div style="position: absolute; right: -4px; bottom: -4px; flex: 0;">
+          <InlineLoading />
+        </div>
+      {/if}
     </div>
+    {#if !isMobile && isLoading}
+      <InlineLoading style="flex: 0; margin-left: 10px;" />
+    {/if}
   </div>
   {#if $params.excludedRankingAnimeIDs.length > 0}
     <div>
@@ -94,7 +112,7 @@
       <label for="tags-container" class="bx--label">Excluded Genres</label>
       <div class="tags-container" id="tags-container">
         {#each [...new Set($params.excludedGenreIDs)] as genreID (genreID)}
-          <!-- TODO: Look up genre names -->
+          {@const genreName = $genresDB.get(genreID) ?? genreID.toString()}
           <Tag
             filter
             on:close={() =>
@@ -103,7 +121,7 @@
                 return state;
               })}
           >
-            {genreID}
+            {genreName}
           </Tag>
         {/each}
       </div>

@@ -10,7 +10,7 @@
   export let expanded: boolean;
   export let toggleExpanded: () => void;
   export let excludeRanking: (animeID: number) => void;
-  export let excludeGenre: (genreID: number) => void;
+  export let excludeGenre: (genreID: number, genreName: string) => void;
   export let topRatingContributors: { datum: AnimeDetails; positiveRating: boolean }[] | undefined;
   export let planToWatch: boolean;
   export let contributorsLoading: boolean;
@@ -59,8 +59,10 @@
           filter
           size="sm"
           type="cool-gray"
-          on:close={() => excludeGenre(genre.id)}>{genre.name}</Tag
+          on:close={() => excludeGenre(genre.id, genre.name)}
         >
+          {genre.name}
+        </Tag>
       {/each}
     </div>
   {/if}

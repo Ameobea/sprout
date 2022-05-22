@@ -9,7 +9,7 @@ import {
   validateModelName,
 } from 'src/components/recommendation/conf';
 import { getAnimesByID, type AnimeDetails } from 'src/malAPI';
-import { getRecommendations, type Recommendation } from '../../recommendation/recommendation';
+import { getGenresDB, getRecommendations, type Recommendation } from '../../recommendation/recommendation';
 
 export type RecommendationsResponse =
   | {
@@ -53,7 +53,7 @@ export const get: RequestHandler = async ({ params, url }) => {
     return { status: 400, body: 'Invalid model name' };
   }
 
-  const includeExtraSeasons = url.searchParams.get('exs') !== 'false';
+  const includeExtraSeasons = url.searchParams.get('exs') === 'true';
   const includeONAsOVAsSpecials = url.searchParams.get('specials') !== 'false';
   const includeMovies = url.searchParams.get('movies') !== 'false';
   const includeMusic = url.searchParams.get('music') === 'true';
@@ -118,8 +118,21 @@ export const get: RequestHandler = async ({ params, url }) => {
     animeData,
   };
 
+  const genreNames: { [id: number]: string } = {};
+  if (excludedGenreIDs.length > 0) {
+    const genresDB = await getGenresDB();
+    for (const genreID of excludedGenreIDs) {
+      const genreName = genresDB.get(genreID);
+      if (!genreName) {
+        console.error(`Could not find genre name for genre ID ${genreID}`);
+        continue;
+      }
+      genreNames[genreID] = genreName;
+    }
+  }
+
   return {
     status: 200,
-    body: { initialRecommendations: recommendations },
+    body: { initialRecommendations: recommendations, genreNames },
   };
 };

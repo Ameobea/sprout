@@ -21,9 +21,9 @@
     const queryParams = new URLSearchParams(browser ? window.location.search : '');
     return {
       modelName: (queryParams.get('model') as any) ?? DEFAULT_MODEL_NAME,
-      excludedRankingAnimeIDs: queryParams.getAll('eid').map((eid) => +eid),
-      excludedGenreIDs: queryParams.getAll('egid').map((egid) => +egid),
-      includeExtraSeasons: queryParams.get('exs') !== 'false',
+      excludedRankingAnimeIDs: Array.from(new Set(queryParams.getAll('eid').map((eid) => +eid))),
+      excludedGenreIDs: Array.from(new Set(queryParams.getAll('egid').map((egid) => +egid))),
+      includeExtraSeasons: queryParams.get('exs') === 'true',
       includeONAsOVAsSpecials: queryParams.get('specials') !== 'false',
       includeMovies: queryParams.get('movies') !== 'false',
       includeMusic: queryParams.get('music') === 'true',
@@ -40,14 +40,17 @@
     url.searchParams.forEach((_val, key) => url.searchParams.delete(key));
     const oldSearchParams = new URLSearchParams(window.location.search).toString();
 
-    for (const animeID of params.excludedRankingAnimeIDs) {
+    for (const animeID of new Set(params.excludedRankingAnimeIDs)) {
       url.searchParams.append('eid', animeID.toString());
+    }
+    for (const genreID of new Set(params.excludedGenreIDs)) {
+      url.searchParams.append('egid', genreID.toString());
     }
     if (params.modelName !== DEFAULT_MODEL_NAME) {
       url.searchParams.set('model', params.modelName);
     }
-    if (!params.includeExtraSeasons) {
-      url.searchParams.set('exs', 'false');
+    if (params.includeExtraSeasons) {
+      url.searchParams.set('exs', 'true');
     }
     if (!params.includeONAsOVAsSpecials) {
       url.searchParams.set('specials', 'false');
@@ -86,7 +89,7 @@
 </script>
 
 <script lang="ts">
-  import { writable } from 'svelte/store';
+  import { writable, type Writable } from 'svelte/store';
   import { useQuery } from '@sveltestack/svelte-query';
   import { browser } from '$app/env';
 
@@ -98,6 +101,18 @@
 
   export let initialRecommendations: RecommendationsResponse;
   export let username: string;
+  export let genreNames: { [genreID: number]: string } | undefined;
+
+  const genresDB: Writable<Map<number, string>> = writable(new Map());
+
+  $: if (genreNames) {
+    genresDB.update((db) => {
+      for (const [genreID, genreName] of Object.entries(genreNames ?? {})) {
+        db.set(+genreID, genreName);
+      }
+      return db;
+    });
+  }
 
   const animeMetadataDatabase = writable(initialRecommendations.type === 'ok' ? initialRecommendations.animeData : {});
 
@@ -183,7 +198,9 @@
       return state;
     });
 
-  const excludeGenreID = (genreID: number) =>
+  const excludeGenreID = (genreID: number, genreName: string) => {
+    genresDB.update((db) => db.set(genreID, genreName));
+
     params.update((state) => {
       if (state.excludedGenreIDs.includes(genreID)) {
         return state;
@@ -192,13 +209,19 @@
       state.excludedGenreIDs.push(genreID);
       return state;
     });
+  };
 </script>
 
 <div class="root">
   {#if $recosRes.isError}
     <b>Error fetching recommendations: {$recosRes.error}</b>
   {:else}
-    <RecommendationControls {params} animeMetadataDatabase={$animeMetadataDatabase} />
+    <RecommendationControls
+      {params}
+      animeMetadataDatabase={$animeMetadataDatabase}
+      isLoading={$recosRes.isLoading || $recosRes.isRefetching}
+      {genresDB}
+    />
     <RecommendationsList
       recommendations={recommendations?.recommendations ?? []}
       animeMetadataDatabase={$animeMetadataDatabase}

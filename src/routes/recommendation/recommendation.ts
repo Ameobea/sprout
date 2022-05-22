@@ -5,6 +5,7 @@ import { tryCatchK } from 'fp-ts/lib/TaskEither.js';
 import { performance } from 'perf_hooks';
 import * as t from 'io-ts';
 import { PathReporter } from 'io-ts/lib/PathReporter.js';
+import * as R from 'ramda';
 import { Worker, isMainThread } from 'node:worker_threads';
 
 import { ModelName, RECOMMENDATION_MODEL_CORPUS_SIZE, validateModelName } from 'src/components/recommendation/conf';
@@ -267,6 +268,45 @@ interface GetRecommendationsArgs {
   popularityAttenuationFactor: number;
 }
 
+let CachedEmbeddingMetadata: AnimeDetails[] | null = null;
+let CachedGenresDB: Map<number, string> | null = null;
+
+const getEmbeddingMetadata = async (embedding: Embedding): Promise<AnimeDetails[]> => {
+  if (CachedEmbeddingMetadata) {
+    return CachedEmbeddingMetadata;
+  }
+
+  const fetched = await getAnimesByID(embedding.map(({ metadata }) => metadata.id));
+  CachedEmbeddingMetadata = fetched.map((item, i) => {
+    if (!item) {
+      throw new Error(`Could not find metadata for anime ID ${embedding[i].metadata.id}`);
+    }
+    return item;
+  });
+  return CachedEmbeddingMetadata;
+};
+
+export const getGenresDB = async (): Promise<Map<number, string>> => {
+  if (CachedGenresDB) {
+    return CachedGenresDB;
+  }
+
+  const embedding = (await loadEmbedding(EmbeddingName.PyMDE_3D_40N)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
+  const embeddingMetadata = await getEmbeddingMetadata(embedding);
+  const genresDB = new Map<number, string>();
+  for (const metadatum of embeddingMetadata) {
+    if (!metadatum.genres) {
+      continue;
+    }
+
+    for (const genre of metadatum.genres) {
+      genresDB.set(genre.id, genre.name);
+    }
+  }
+  CachedGenresDB = genresDB;
+  return CachedGenresDB;
+};
+
 export const getRecommendations = async ({
   username,
   count,
@@ -389,12 +429,21 @@ export const getRecommendations = async ({
     }
   }
 
+  const embeddingMetadata = excludedGenreIDs.size > 0 ? await getEmbeddingMetadata(embedding) : [];
+
   const sortedOutput = [...output]
     .map((score, animeIx) => {
       const datum = embedding[animeIx];
       const animeMediaType = datum.metadata.media_type;
       if (animeMediaType && !validAnimeMediaTypes.has(animeMediaType)) {
         return { score: -Infinity, animeIx };
+      }
+
+      if (excludedGenreIDs.size > 0) {
+        const metadatum = embeddingMetadata[animeIx];
+        if (metadatum && metadatum.genres?.some((genre) => excludedGenreIDs.has(genre.id))) {
+          return { score: -Infinity, animeIx };
+        }
       }
 
       if (seasonRelationshipsByAnimeID) {
