@@ -3,6 +3,8 @@ import preprocess from 'svelte-preprocess';
 import { resolve } from 'path';
 import { optimizeImports, optimizeCss, icons, elements } from 'carbon-preprocess-svelte';
 
+const production = process.env.NODE_ENV === 'production';
+
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
   // Consult https://github.com/sveltejs/svelte-preprocess
@@ -16,7 +18,7 @@ const config = {
     }),
     vite: {
       plugins: [
-        // process.env.NODE_ENV === 'production' && optimizeCss({ safelist: { deep: [/.*data-*$/] } }),
+        // production && optimizeCss({ safelist: { deep: [/.*data-*$/] } }),
         icons(),
         elements(),
       ],
@@ -28,6 +30,12 @@ const config = {
       build: {
         // sourcemap: true,
       },
+      optimizeDeps: {
+        include: ['@carbon/charts'],
+      },
+      ssr: {
+        noExternal: [production && '@carbon/charts'].filter(Boolean),
+      },
     },
     prerender: {
       concurrency: 6,
@@ -38,6 +46,7 @@ const config = {
     inspector: {
       holdMode: true,
     },
+    prebundleSvelteLibraries: true,
   },
 };
 

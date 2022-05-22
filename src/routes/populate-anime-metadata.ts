@@ -1,9 +1,9 @@
-import fs from 'fs';
+import * as fs from 'fs';
 import type { RequestHandler } from '@sveltejs/kit';
 
 import { DbPool } from '../dbUtil';
 import { ADMIN_API_TOKEN } from '../conf';
-import { getAnimeByID, MALAPIError } from '../malAPI';
+import { getAnimesByID, MALAPIError } from '../malAPI';
 
 const fillFromScratch = async () => {
   const allAnimeIDs: number[] = await new Promise((resolve) =>
@@ -58,7 +58,7 @@ export const post: RequestHandler = async ({ url }) => {
     }
 
     try {
-      await getAnimeByID(idToFetch);
+      await getAnimesByID([idToFetch]);
     } catch (err) {
       if (err instanceof MALAPIError) {
         const statusCode = err.statusCode;

@@ -2,7 +2,7 @@
   import { browser } from '$app/env';
   import type { EmbeddingName } from 'src/types';
 
-  import { onDestroy, onMount } from 'svelte';
+  import { onMount } from 'svelte';
 
   import type { Embedding } from '../routes/embedding';
   import AnimeDetails from './AnimeDetails.svelte';
@@ -12,10 +12,16 @@
 
   export let embeddingName: EmbeddingName;
   export let embedding: Embedding;
+  export let username: string | undefined;
+  export let maxWidth: number | undefined;
 
   let viz: AtlasViz | null = null;
   let selectedAnimeID: number | null = null;
   $: selectedDatum = selectedAnimeID === null || !viz ? null : viz.embeddedPointByID.get(selectedAnimeID)!;
+
+  $: if (viz) {
+    viz.setMaxWidth(maxWidth);
+  }
 
   let colorBy = browser ? getDefaultColorBy() : ColorBy.AiredFromYear;
   const setColorBy = (newColorBy: ColorBy) => {
@@ -36,16 +42,17 @@
   };
 
   onMount(() => {
-    const username = new URLSearchParams(window.location.search).get('username');
-    const userProfilePromise = username && fetch(`/mal-profile?username=${username}`).then((res) => res.json());
+    const usernameToLoad = username ?? new URLSearchParams(window.location.search).get('username');
+    const userProfilePromise = usernameToLoad && fetch(`/mal-profile?username=${username}`).then((res) => res.json());
     const neighborsPromise: Promise<{ neighbors: number[][] }> = fetch(`/neighbors?embedding=${embeddingName}`).then(
       (res) => res.json()
     );
 
     import('../pixi').then((mod) => {
-      viz = new AtlasViz(mod, 'viz', embedding, (newSelectedAnimeID: number | null) => {
+      const setSelectedAnimeID = (newSelectedAnimeID: number | null) => {
         selectedAnimeID = newSelectedAnimeID;
-      });
+      };
+      viz = new AtlasViz(mod, 'viz', embedding, setSelectedAnimeID, maxWidth);
       viz.setColorBy(colorBy);
 
       neighborsPromise.then(({ neighbors }) => {

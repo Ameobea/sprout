@@ -12,7 +12,8 @@ import { loadEmbedding } from 'src/embedding';
 import {
   AnimeListStatusCode,
   AnimeMediaType,
-  getAnimeByID,
+  AnimeRelationType,
+  getAnimesByID,
   getUserAnimeList,
   type AnimeDetails,
   type MALUserAnimeListItem,
@@ -240,15 +241,30 @@ const computeRecommendationContributions = async (
   });
 };
 
+/**
+ * Weights ratings of less-popular anime more heavily.
+ */
+const attenuateRecommendationOutputs = (outputs: Float32Array, boostFactor: number): Float32Array => {
+  for (let i = 0; i < outputs.length; i++) {
+    // May need to tweak this.
+    const boost = Math.log(Math.E + i * boostFactor);
+    outputs[i] *= boost;
+  }
+  return outputs;
+};
+
 interface GetRecommendationsArgs {
   username: string;
   count: number;
   computeContributions: boolean;
   modelName: ModelName;
   excludedRankingAnimeIDs: Set<number>;
+  excludedGenreIDs: Set<number>;
+  includeExtraSeasons: boolean;
   includeONAsOVAsSpecials: boolean;
   includeMovies: boolean;
   includeMusic: boolean;
+  popularityAttenuationFactor: number;
 }
 
 export const getRecommendations = async ({
@@ -257,9 +273,12 @@ export const getRecommendations = async ({
   computeContributions,
   modelName,
   excludedRankingAnimeIDs,
+  excludedGenreIDs,
+  includeExtraSeasons,
   includeONAsOVAsSpecials,
   includeMovies,
   includeMusic,
+  popularityAttenuationFactor,
 }: GetRecommendationsArgs): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
   const embedding = (await loadEmbedding(EmbeddingName.PyMDE_3D_40N)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
   const model = await loadRecommendationModel(embedding, modelName);
@@ -300,10 +319,16 @@ export const getRecommendations = async ({
   console.log(`Model ran in ${elapsed}ms`);
   console.log(outputTensor.shape);
 
-  const output = (await outputTensor.data()) as Float32Array;
+  let output = (await outputTensor.data()) as Float32Array;
   tf.dispose(inputTensor);
   tf.dispose(outputTensor);
+
+  if (popularityAttenuationFactor) {
+    output = attenuateRecommendationOutputs(output, popularityAttenuationFactor);
+  }
+
   const allInputAnimeIndices = new Set(validIndices.map((ixIx) => ratings[ixIx].animeIx));
+  const allInputAnimeIDs = new Set(validIndices.map((ixIx) => embedding[ratings[ixIx].animeIx].metadata.id));
 
   // Sort output by indices of top recommendations from highest to lowest
   const validAnimeMediaTypes = new Set<AnimeMediaType>();
@@ -320,12 +345,79 @@ export const getRecommendations = async ({
   if (includeMusic) {
     validAnimeMediaTypes.add(AnimeMediaType.Music);
   }
+
+  let seasonRelationshipsByAnimeID: Map<number, Set<number>> | null = null;
+  if (!includeExtraSeasons) {
+    seasonRelationshipsByAnimeID = new Map();
+    const metadata = await getAnimesByID(
+      profile.map((entry) => entry.node.id),
+      true
+    );
+
+    for (let i = 0; i < metadata.length; i++) {
+      const datum = metadata[i];
+      if (!datum) {
+        console.warn(`Could not find metadata for anime ${profile[i].node.id}`);
+        continue;
+      }
+      if (!datum.related_anime) {
+        continue;
+      }
+
+      const extraSeasonIDs = new Set(
+        datum.related_anime
+          .filter((entry) => {
+            switch (entry.relation_type) {
+              case AnimeRelationType.Sequel:
+              case AnimeRelationType.Prequel:
+              case AnimeRelationType.ParentStory:
+              case AnimeRelationType.SideStory:
+                return true;
+              default:
+                return false;
+            }
+          })
+          .map((entry) => entry.node.id)
+      );
+      seasonRelationshipsByAnimeID.set(datum.id, extraSeasonIDs);
+      for (const extraSeasonID of extraSeasonIDs) {
+        if (!seasonRelationshipsByAnimeID.has(extraSeasonID)) {
+          seasonRelationshipsByAnimeID.set(extraSeasonID, new Set());
+        }
+        seasonRelationshipsByAnimeID.get(extraSeasonID)!.add(datum.id);
+      }
+    }
+  }
+
   const sortedOutput = [...output]
     .map((score, animeIx) => {
-      const animeMediaType = embedding[animeIx].metadata.media_type;
+      const datum = embedding[animeIx];
+      const animeMediaType = datum.metadata.media_type;
       if (animeMediaType && !validAnimeMediaTypes.has(animeMediaType)) {
-        return { score: -2, animeIx };
+        return { score: -Infinity, animeIx };
       }
+
+      if (seasonRelationshipsByAnimeID) {
+        const extraSeasonIDs = seasonRelationshipsByAnimeID.get(datum.metadata.id);
+        if (extraSeasonIDs) {
+          for (const extraSeasonAnimeID of extraSeasonIDs) {
+            if (allInputAnimeIDs.has(extraSeasonAnimeID)) {
+              return { score: -Infinity, animeIx };
+            }
+
+            // We need to crawl one addition level up the relationship tree to see if the extra season is in the input
+            const extraSeasonIDsForRelation = seasonRelationshipsByAnimeID.get(extraSeasonAnimeID);
+            if (extraSeasonIDsForRelation) {
+              for (const extraSeasonID of extraSeasonIDsForRelation) {
+                if (allInputAnimeIDs.has(extraSeasonID)) {
+                  return { score: -Infinity, animeIx };
+                }
+              }
+            }
+          }
+        }
+      }
+
       return { score, animeIx };
     })
     .sort((a, b) => b.score - a.score);
@@ -390,11 +482,14 @@ const RecommendationRequest = t.type({
   availableAnimeMetadataIDs: t.array(t.number),
   username: t.string,
   excludedRankingAnimeIDs: t.array(t.number),
+  excludedGenreIDs: t.array(t.number),
   modelName: t.string,
   includeContributors: t.boolean,
+  includeExtraSeasons: t.boolean,
   includeONAsOVAsSpecials: t.boolean,
   includeMovies: t.boolean,
   includeMusic: t.boolean,
+  popularityAttenuationFactor: t.number,
 });
 
 export const post: RequestHandler = async ({ request }) => {
@@ -409,7 +504,8 @@ export const post: RequestHandler = async ({ request }) => {
   if (!modelName) {
     return { status: 400, body: 'Invalid modelName' };
   }
-  const { includeONAsOVAsSpecials, includeMovies, includeMusic } = req;
+  const { includeExtraSeasons, includeONAsOVAsSpecials, includeMovies, includeMusic, popularityAttenuationFactor } =
+    req;
 
   const recommendationsRes = await getRecommendations({
     username: req.username,
@@ -417,30 +513,33 @@ export const post: RequestHandler = async ({ request }) => {
     computeContributions: req.includeContributors,
     modelName,
     excludedRankingAnimeIDs: new Set(req.excludedRankingAnimeIDs),
+    excludedGenreIDs: new Set(req.excludedGenreIDs),
+    includeExtraSeasons,
     includeONAsOVAsSpecials,
     includeMovies,
     includeMusic,
+    popularityAttenuationFactor,
   });
   if (isLeft(recommendationsRes)) {
     return recommendationsRes.left;
   }
   const recommendationsList = recommendationsRes.right;
 
-  // TODO: Use DB rather than MAL API
   const alreadyFetchedAnimeIDs = new Set(req.availableAnimeMetadataIDs);
-  const animeData = (
-    await Promise.all(
-      [
-        ...new Set(
-          recommendationsList
-            .flatMap(({ id, topRatingContributorsIds }) =>
-              topRatingContributorsIds ? [id, ...topRatingContributorsIds.map(Math.abs)] : id
-            )
-            .filter((id) => !alreadyFetchedAnimeIDs.has(id))
-        ),
-      ].map((id) => getAnimeByID(id))
-    )
-  ).reduce((acc, details) => {
+  const idsToFetch = [
+    ...new Set(
+      recommendationsList
+        .flatMap(({ id, topRatingContributorsIds }) =>
+          topRatingContributorsIds ? [id, ...topRatingContributorsIds.map(Math.abs)] : id
+        )
+        .filter((id) => !alreadyFetchedAnimeIDs.has(id))
+    ),
+  ];
+  const animeData = (await getAnimesByID(idsToFetch)).reduce((acc, details) => {
+    if (!details) {
+      return acc;
+    }
+
     acc[details.id] = details;
     return acc;
   }, {} as { [id: number]: AnimeDetails });

@@ -1,12 +1,20 @@
 <script context="module" lang="ts">
-  import { DEFAULT_MODEL_NAME, ModelName } from './conf';
+  import {
+    DEFAULT_MODEL_NAME,
+    DEFAULT_POPULARITY_ATTENUATION_FACTOR,
+    ModelName,
+    PopularityAttenuationFactor,
+  } from './conf';
 
   export interface RecommendationControlParams {
     modelName: ModelName;
     excludedRankingAnimeIDs: number[];
+    excludedGenreIDs: number[];
+    includeExtraSeasons: boolean;
     includeONAsOVAsSpecials: boolean;
     includeMovies: boolean;
     includeMusic: boolean;
+    popularityAttenuationFactor: PopularityAttenuationFactor;
   }
 
   const getDefaultRecommendationControlParams = (): RecommendationControlParams => {
@@ -14,9 +22,12 @@
     return {
       modelName: (queryParams.get('model') as any) ?? DEFAULT_MODEL_NAME,
       excludedRankingAnimeIDs: queryParams.getAll('eid').map((eid) => +eid),
+      excludedGenreIDs: queryParams.getAll('egid').map((egid) => +egid),
+      includeExtraSeasons: queryParams.get('exs') !== 'false',
       includeONAsOVAsSpecials: queryParams.get('specials') !== 'false',
       includeMovies: queryParams.get('movies') !== 'false',
       includeMusic: queryParams.get('music') === 'true',
+      popularityAttenuationFactor: +(queryParams.get('apops') ?? DEFAULT_POPULARITY_ATTENUATION_FACTOR),
     };
   };
 
@@ -35,6 +46,9 @@
     if (params.modelName !== DEFAULT_MODEL_NAME) {
       url.searchParams.set('model', params.modelName);
     }
+    if (!params.includeExtraSeasons) {
+      url.searchParams.set('exs', 'false');
+    }
     if (!params.includeONAsOVAsSpecials) {
       url.searchParams.set('specials', 'false');
     }
@@ -43,6 +57,9 @@
     }
     if (params.includeMusic) {
       url.searchParams.set('music', 'true');
+    }
+    if (params.popularityAttenuationFactor !== DEFAULT_POPULARITY_ATTENUATION_FACTOR) {
+      url.searchParams.set('apops', params.popularityAttenuationFactor.toString());
     }
 
     const newSearchParams = url.searchParams.toString();
@@ -75,9 +92,9 @@
 
   import RecommendationsList from 'src/components/recommendation/RecommendationsList.svelte';
   import type { AnimeDetails } from 'src/malAPI';
-  import RecommendationControls from './RecommendationControls.svelte';
   import type { Recommendation } from 'src/routes/recommendation/recommendation';
   import type { RecommendationsResponse } from 'src/routes/user/[username]/recommendations';
+  import RecommendationControls from './RecommendationControls.svelte';
 
   export let initialRecommendations: RecommendationsResponse;
   export let username: string;
@@ -165,21 +182,28 @@
       state.excludedRankingAnimeIDs.push(animeID);
       return state;
     });
+
+  const excludeGenreID = (genreID: number) =>
+    params.update((state) => {
+      if (state.excludedGenreIDs.includes(genreID)) {
+        return state;
+      }
+
+      state.excludedGenreIDs.push(genreID);
+      return state;
+    });
 </script>
 
 <div class="root">
   {#if $recosRes.isError}
     <b>Error fetching recommendations: {$recosRes.error}</b>
   {:else}
-    <RecommendationControls
-      {params}
-      animeMetadataDatabase={$animeMetadataDatabase}
-      isLoading={$recosRes.isLoading || $recosRes.isRefetching}
-    />
+    <RecommendationControls {params} animeMetadataDatabase={$animeMetadataDatabase} />
     <RecommendationsList
       recommendations={recommendations?.recommendations ?? []}
       animeMetadataDatabase={$animeMetadataDatabase}
       excludeRanking={excludedRankingAnimeIDs}
+      excludeGenre={excludeGenreID}
       contributorsLoading={$recosRes.isLoading ||
         $recosRes.isRefetching ||
         $recoContributorsRes.isLoading ||

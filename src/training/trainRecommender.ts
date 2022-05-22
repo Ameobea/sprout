@@ -77,7 +77,7 @@ export const trainRecommender = async (iters: number, log: Logger, recordLoss: (
   model.add(
     tf.layers.dense({
       inputShape: [animeMetadata.length],
-      units: 1024 * 16,
+      units: 1024 * 18,
       activation: 'tanh',
       useBias: true,
       kernelInitializer: 'glorotNormal',
@@ -85,7 +85,7 @@ export const trainRecommender = async (iters: number, log: Logger, recordLoss: (
   );
   model.add(
     tf.layers.dense({
-      units: 1024 * 8,
+      units: 1024 * 10,
       activation: 'tanh',
       useBias: true,
       kernelInitializer: 'glorotNormal',
@@ -93,7 +93,7 @@ export const trainRecommender = async (iters: number, log: Logger, recordLoss: (
   );
   model.add(
     tf.layers.dense({
-      units: 1024 * 8,
+      units: 1024 * 10,
       activation: 'tanh',
       useBias: true,
       kernelInitializer: 'glorotNormal',

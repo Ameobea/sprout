@@ -1,10 +1,10 @@
-import fs from 'fs';
+import * as fs from 'fs';
 import { parse } from 'csv-parse';
 
 import { DATA_DIR } from './conf';
 import type { Embedding } from './routes/embedding';
 import { EmbeddingName } from './types';
-import { AnimeMediaType, getAnimeByID } from './malAPI';
+import { AnimeMediaType, getAnimesByID } from './malAPI';
 
 interface RawEmbedding {
   points: { [index: string]: { x: number; y: number } };
@@ -129,8 +129,12 @@ export const loadEmbedding = async (embeddingName: EmbeddingName): Promise<Embed
     if (!metadatum) {
       console.error(`Missing metadata for id ${id}; fetching from MAL`);
       try {
-        await getAnimeByID(id);
-        throw new Error('Missing metadata for id but it is fetched from MAL');
+        const [datum] = await getAnimesByID([id]);
+        if (datum) {
+          throw new Error('Missing metadata for id but it is fetched from MAL');
+        } else {
+          throw new Error('Missing metadata for id and it is not fetched from MAL');
+        }
       } catch (e) {
         console.error(`Failed to fetch metadata for id ${id}; embedding probably needs to be updated`);
         metadatum = buildDummyMetadatum(id);

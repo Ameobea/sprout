@@ -10,6 +10,7 @@
   export let expanded: boolean;
   export let toggleExpanded: () => void;
   export let excludeRanking: (animeID: number) => void;
+  export let excludeGenre: (genreID: number) => void;
   export let topRatingContributors: { datum: AnimeDetails; positiveRating: boolean }[] | undefined;
   export let planToWatch: boolean;
   export let contributorsLoading: boolean;
@@ -50,6 +51,19 @@
       <ChevronDown size={24} aria-label="Collapse anime details" />
     {/if}
   </div>
+  {#if !expanded}
+    <div class="genres">
+      {#each animeMetadata.genres ?? [] as genre, i (genre)}
+        <Tag
+          style={i === 0 ? 'margin-left: 0' : undefined}
+          filter
+          size="sm"
+          type="cool-gray"
+          on:close={() => excludeGenre(genre.id)}>{genre.name}</Tag
+        >
+      {/each}
+    </div>
+  {/if}
   <div on:click={expanded ? undefined : toggleExpanded} class="synopsis" bind:this={synopsisElem}>
     {animeMetadata.synopsis}
   </div>
@@ -89,7 +103,7 @@
 
     overflow: hidden;
     align-items: center;
-    grid-template-areas: 'thumbnail title synopsis expander';
+    grid-template-areas: 'thumbnail title genres synopsis expander';
   }
 
   .recommendation[data-plan-to-watch='true'] {
@@ -97,7 +111,8 @@
   }
 
   .recommendation[data-expanded='false'] {
-    grid-template-columns: 87px 140px 1fr 60px;
+    height: 120px;
+    grid-template-columns: 87px 140px 190px 1fr 60px;
   }
 
   .recommendation[data-expanded='true'] {
@@ -113,7 +128,12 @@
 
   @media (max-width: 768px) {
     .recommendation[data-expanded='false'] {
+      grid-template-areas: 'thumbnail title genres expander';
       grid-template-columns: 90px 100px 1fr 45px;
+    }
+
+    .recommendation[data-expanded='false'] .synopsis {
+      display: none;
     }
 
     .recommendation[data-expanded='true'] {
@@ -141,6 +161,8 @@
     line-height: 1.15rem;
     font-size: 15px;
     font-weight: 500;
+    border-right: 1px solid #cccccc55;
+    max-height: 120px;
   }
 
   .recommendation[data-expanded='false'] .title .title-text {
@@ -224,6 +246,16 @@
     }
   }
 
+  .recommendation .genres {
+    overflow-y: hidden;
+    height: 120px;
+    max-height: 120px;
+    padding: 4px 0px 0px 4px;
+    justify-content: flex-start;
+    align-items: flex-start;
+    border-right: 1px solid #cccccc55;
+  }
+
   .recommendation .synopsis {
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -240,6 +272,7 @@
     text-overflow: ellipsis;
     -webkit-line-clamp: 6;
     line-clamp: 6;
+    padding: 4px 6px;
   }
 
   .recommendation[data-expanded='true'] .synopsis {

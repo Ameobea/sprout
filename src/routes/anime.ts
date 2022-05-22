@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 
-import { getAnimeByID } from 'src/malAPI';
+import { getAnimesByID } from 'src/malAPI';
 
 export const get: RequestHandler = async ({ url }) => {
   const id = url.searchParams.get('id');
@@ -12,8 +12,11 @@ export const get: RequestHandler = async ({ url }) => {
   }
 
   try {
-    const anime = await getAnimeByID(+id);
-    return { body: anime };
+    const [anime] = await getAnimesByID([+id]);
+    if (anime) {
+      return { body: anime };
+    }
+    return { status: 404, body: 'Anime not found' };
   } catch (err) {
     console.error('Error getting anime: ', err);
     return { status: 500, body: 'Unable to fetch anime due to internal error' };

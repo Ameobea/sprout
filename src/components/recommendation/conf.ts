@@ -22,3 +22,13 @@ export const validateModelName = (name: string): ModelName | null => {
 };
 
 export const DEFAULT_MODEL_NAME = ModelName.Model_6K;
+
+export enum PopularityAttenuationFactor {
+  None = 0,
+  VeryLow = 0.0001,
+  Low = 0.0004,
+  Medium = 0.0008,
+  High = 0.004,
+  VeryHigh = 0.01,
+}
+export const DEFAULT_POPULARITY_ATTENUATION_FACTOR: PopularityAttenuationFactor = PopularityAttenuationFactor.Low;

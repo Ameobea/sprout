@@ -1,10 +1,14 @@
 import type { RequestHandler } from '@sveltejs/kit';
-import { isLeft } from 'fp-ts/lib/Either.js';
+import { type Either, isLeft, mapLeft } from 'fp-ts/lib/Either.js';
 import * as t from 'io-ts';
 import { PathReporter } from 'io-ts/lib/PathReporter.js';
 
-import { DEFAULT_MODEL_NAME, ModelName, validateModelName } from 'src/components/recommendation/conf';
-import { getAnimeByID, type AnimeDetails } from 'src/malAPI';
+import {
+  DEFAULT_MODEL_NAME,
+  DEFAULT_POPULARITY_ATTENUATION_FACTOR,
+  validateModelName,
+} from 'src/components/recommendation/conf';
+import { getAnimesByID, type AnimeDetails } from 'src/malAPI';
 import { getRecommendations, type Recommendation } from '../../recommendation/recommendation';
 
 export type RecommendationsResponse =
@@ -15,7 +19,19 @@ export type RecommendationsResponse =
     }
   | { type: 'error'; error: string };
 
-const ExcludedAnimeIDs = t.array(t.number);
+const ExcludedIDs = t.array(t.number);
+
+const parseExcludedIDs = (searchParamKey: string, url: URL): Either<{ status: number; body: string }, number[]> => {
+  const rawExcludedIDs = url.searchParams.getAll(searchParamKey);
+  const parsedExcludedIDs = ExcludedIDs.decode(
+    Array.isArray(rawExcludedIDs) ? rawExcludedIDs.map((x) => +x) : rawExcludedIDs
+  );
+  return mapLeft<any, { status: number; body: string }>((_err) => {
+    console.error(`Invalid \`${searchParamKey}\` params: ${rawExcludedIDs}`);
+    const errors = PathReporter.report(parsedExcludedIDs);
+    return { status: 400, body: errors.join(', ') };
+  })(parsedExcludedIDs);
+};
 
 export const get: RequestHandler = async ({ params, url }) => {
   const username = params.username;
@@ -37,20 +53,29 @@ export const get: RequestHandler = async ({ params, url }) => {
     return { status: 400, body: 'Invalid model name' };
   }
 
-  const rawExcludedRankingAnimeIDs = url.searchParams.getAll('eid');
-  const parsedExcludedRankingAnimeIDs = ExcludedAnimeIDs.decode(
-    Array.isArray(rawExcludedRankingAnimeIDs) ? rawExcludedRankingAnimeIDs.map((x) => +x) : rawExcludedRankingAnimeIDs
-  );
-  if (isLeft(parsedExcludedRankingAnimeIDs)) {
-    console.error(`Invalid \`eid\` params: ${rawExcludedRankingAnimeIDs}`);
-    const errors = PathReporter.report(parsedExcludedRankingAnimeIDs);
-    return { status: 400, body: errors.join(', ') };
-  }
-  const excludedRankingAnimeIDs = parsedExcludedRankingAnimeIDs.right;
-
+  const includeExtraSeasons = url.searchParams.get('exs') !== 'false';
   const includeONAsOVAsSpecials = url.searchParams.get('specials') !== 'false';
   const includeMovies = url.searchParams.get('movies') !== 'false';
   const includeMusic = url.searchParams.get('music') === 'true';
+  const popularityAttenuationFactorRaw = url.searchParams.get('apops');
+  const popularityAttenuationFactor = popularityAttenuationFactorRaw
+    ? +popularityAttenuationFactorRaw
+    : DEFAULT_POPULARITY_ATTENUATION_FACTOR;
+  if (isNaN(popularityAttenuationFactor)) {
+    return { status: 400, body: 'Invalid popularityAttenuationFactor' };
+  }
+
+  const excludedRankingAnimeIDsRes = parseExcludedIDs('eid', url);
+  if (isLeft(excludedRankingAnimeIDsRes)) {
+    return excludedRankingAnimeIDsRes.left;
+  }
+  const excludedRankingAnimeIDs = excludedRankingAnimeIDsRes.right;
+
+  const excludedGenreIDsRes = parseExcludedIDs('egid', url);
+  if (isLeft(excludedGenreIDsRes)) {
+    return excludedGenreIDsRes.left;
+  }
+  const excludedGenreIDs = excludedGenreIDsRes.right;
 
   const recommendationsRes = await getRecommendations({
     username,
@@ -58,9 +83,12 @@ export const get: RequestHandler = async ({ params, url }) => {
     computeContributions: false,
     modelName,
     excludedRankingAnimeIDs: new Set(excludedRankingAnimeIDs),
+    excludedGenreIDs: new Set(excludedGenreIDs),
+    includeExtraSeasons,
     includeONAsOVAsSpecials,
     includeMovies,
     includeMusic,
+    popularityAttenuationFactor,
   });
   if (isLeft(recommendationsRes)) {
     return { status: 500, body: { recommendations: { type: 'error', error: recommendationsRes.left.body } } };
@@ -77,14 +105,12 @@ export const get: RequestHandler = async ({ params, url }) => {
     animeIdsNeedingMetadata.add(animeID);
   }
 
-  // TODO: Use DB rather than MAL API
-  const animeData = (await Promise.all([...animeIdsNeedingMetadata].map((id) => getAnimeByID(id)))).reduce(
-    (acc, details) => {
+  const animeData = (await getAnimesByID(Array.from(animeIdsNeedingMetadata))).reduce((acc, details) => {
+    if (details) {
       acc[details.id] = details;
-      return acc;
-    },
-    {} as { [id: number]: AnimeDetails }
-  );
+    }
+    return acc;
+  }, {} as { [id: number]: AnimeDetails });
 
   const recommendations: RecommendationsResponse = {
     type: 'ok',

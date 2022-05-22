@@ -12,11 +12,12 @@
     flex-direction: row;
     justify-content: center;
     border-bottom: 1px solid #cccccc44;
+    background: #060606;
   }
 
   h1 {
     font-size: 22px;
     margin: 0;
-    padding: 2px 4px;
+    padding: 5px 0;
   }
 </style>

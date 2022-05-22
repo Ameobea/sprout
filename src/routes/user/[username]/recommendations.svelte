@@ -6,7 +6,11 @@
 
     const recommendationsString = recommendations.recommendations
       .slice(0, 4)
-      .map((recommendation) => recommendations.animeData[recommendation.id].title)
+      .map(
+        (recommendation) =>
+          recommendations.animeData[recommendation.id].alternative_titles?.en ||
+          recommendations.animeData[recommendation.id].title
+      )
       .join(', ');
     return `Top anime recommendations for ${username}:\n\n${recommendationsString}...`;
   };
@@ -17,7 +21,6 @@
   import SvelteSeo from 'svelte-seo';
   import { QueryClient, QueryClientProvider } from '@sveltestack/svelte-query';
 
-  import { HeaderTitle } from 'src/components/recommendation/HeaderTitle';
   import type { AnimeDetails } from 'src/malAPI';
   import type { RecommendationsResponse } from './recommendations';
   import InteractiveRecommendations from 'src/components/recommendation/InteractiveRecommendations.svelte';
@@ -33,9 +36,6 @@
   $: recommendationsList = initialRecommendations.type === 'ok' ? initialRecommendations.recommendations : [];
   $: username = $page.params.username;
   $: title = `Anime Recommendations for ${username}`;
-  $: {
-    HeaderTitle.set(`Anime Recommendations for ${username}`);
-  }
 
   const queryClient = new QueryClient();
 </script>
@@ -61,7 +61,8 @@
     card: 'summary',
     title,
     image: animeData[recommendationsList[0]?.id]?.main_picture.large,
-    imageAlt: animeData[recommendationsList[0]?.id]?.title,
+    imageAlt:
+      animeData[recommendationsList[0]?.id]?.alternative_titles?.en || animeData[recommendationsList[0]?.id]?.title,
     description: buildOpengraphDescription(username, initialRecommendations),
   }}
 />

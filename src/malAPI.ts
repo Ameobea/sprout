@@ -38,7 +38,7 @@ export enum AnimeListStatusCode {
   PlanToWatch = 'plan_to_watch',
 }
 
-interface AnimeBasicDetails {
+export interface AnimeBasicDetails {
   id: number;
   title: string;
   main_picture: {
@@ -47,7 +47,7 @@ interface AnimeBasicDetails {
   };
 }
 
-interface AnimeListStatus {
+export interface AnimeListStatus {
   status: AnimeListStatusCode;
   score: number;
   num_episodes_watched: number;
@@ -166,6 +166,22 @@ export const getUserMangaList = async (username: string): Promise<MALUserMangaLi
   return data;
 };
 
+interface Genre {
+  id: number;
+  name: string;
+}
+
+export enum AnimeRelationType {
+  Sequel = 'sequel',
+  Prequel = 'prequel',
+  AlternativeSetting = 'alternative_setting',
+  AlternativeVersion = 'alternative_version',
+  SideStory = 'side_story',
+  ParentStory = 'parent_story',
+  Summary = 'summary',
+  FullStory = 'full_story',
+}
+
 export interface AnimeDetails {
   id: number;
   title: string;
@@ -188,24 +204,15 @@ export interface AnimeDetails {
   media_type: AnimeMediaType;
   related_anime?: {
     node: AnimeBasicDetails;
-    relation_type: string;
+    relation_type: AnimeRelationType;
     relation_type_formatted: string;
   }[];
+  genres?: Genre[];
 }
 
 const AnimeDetailsCache = new TimedCache({ defaultTtl: 24 * 60 * 60 * 1000 });
 
-export const getAnimeByID = async (id: number, includeRecommendationsAndRelated = false) => {
-  const cached = AnimeDetailsCache.get(id);
-  if (cached) {
-    const details = { ...cached } as AnimeDetails;
-    if (!includeRecommendationsAndRelated) {
-      delete details.recommendations;
-      delete details.related_anime;
-    }
-    return details;
-  }
-
+const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails> => {
   const fieldsToFetch = [
     'main_picture',
     'alternative_titles',
@@ -222,22 +229,96 @@ export const getAnimeByID = async (id: number, includeRecommendationsAndRelated 
   const details = (await makeMALRequest(url)) as AnimeDetails;
   AnimeDetailsCache.put(id, details);
 
-  await new Promise((resolve) =>
-    DbPool.query(
-      'INSERT INTO `anime-metadata` (id, metadata) VALUES (?, ?) ON DUPLICATE KEY UPDATE metadata = VALUES(metadata)',
-      [id, JSON.stringify(details)],
-      (err) => {
-        if (err) {
-          console.error('Failed to save anime metadata', err);
-        }
-        resolve(undefined);
+  // Update DB in the background
+  DbPool.query(
+    'INSERT INTO `anime-metadata` (id, metadata) VALUES (?, ?) ON DUPLICATE KEY UPDATE metadata = VALUES(metadata)',
+    [id, JSON.stringify(details)],
+    (err) => {
+      if (err) {
+        console.error('Failed to save anime metadata', err);
       }
-    )
+    }
   );
-  if (!includeRecommendationsAndRelated) {
-    delete details.recommendations;
-    delete details.related_anime;
-  }
 
   return details;
+};
+
+const fetchAnimesFromDB = async (ids: number[]): Promise<(AnimeDetails | null)[]> => {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const entries = await new Promise<{ id: number; metadata: string; update_timestamp: string }[]>((resolve, reject) => {
+    const oldestValidTimestamp = new Date(new Date().getTime() - 7 * 24 * 60 * 60 * 1000);
+    const replacers = ids.map(() => '?').join(',');
+    // Re-fetch from MAL if older than 7 days
+    const query = `SELECT id, metadata, update_timestamp FROM \`anime-metadata\` WHERE update_timestamp > ? AND id IN (${replacers})`;
+
+    DbPool.query(query, [oldestValidTimestamp, ...ids], (err, res) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(res);
+      }
+    });
+  });
+
+  const entriesByID = entries.reduce((acc, entry) => {
+    acc[entry.id] = entry;
+    return acc;
+  }, {} as { [id: number]: { id: number; metadata: string; update_timestamp: string } });
+  return ids.map((id) => {
+    const entry = entriesByID[id];
+    if (entry) {
+      return JSON.parse(entry.metadata);
+    } else {
+      return null;
+    }
+  });
+};
+
+const fetchAnimesByID = async (ids: number[]): Promise<(AnimeDetails | null)[]> => {
+  const fromDB = await fetchAnimesFromDB(ids);
+  const missingIDs = ids.filter((_id, i) => fromDB[i] === null);
+  if (missingIDs.length === 0) {
+    return fromDB as AnimeDetails[];
+  }
+
+  console.log(`Missing ${missingIDs.length} anime from DB. Fetching from MAL...`);
+  const fromMAL = await Promise.all(missingIDs.map(fetchAnimeFromMALAPI));
+  return fromDB.map((entry) => entry || fromMAL.shift() || null);
+};
+
+export const getAnimesByID = async (
+  ids: number[],
+  includeRecommendationsAndRelated = false
+): Promise<(AnimeDetails | null)[]> => {
+  const cached: (AnimeDetails | undefined | null)[] = ids.map((id) => AnimeDetailsCache.get(id));
+  const uncachedIds: number[] = cached
+    .map((entry, i) => [i, entry] as const)
+    .filter((entry) => entry[1] === null || entry[1] === undefined)
+    .map(([i]) => ids[i]);
+
+  if (uncachedIds.length === 0) {
+    return cached as AnimeDetails[];
+  }
+
+  const fetched = await fetchAnimesByID(uncachedIds);
+  const joined = cached.map((entry) => {
+    let datum = entry || fetched.shift() || null;
+    if (!datum) {
+      return datum;
+    }
+
+    AnimeDetailsCache.put(datum.id, datum);
+
+    datum = { ...datum };
+    if (!includeRecommendationsAndRelated) {
+      delete datum.recommendations;
+      delete datum.related_anime;
+    }
+
+    return datum;
+  });
+  return joined;
 };

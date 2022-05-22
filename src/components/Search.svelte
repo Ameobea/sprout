@@ -30,7 +30,7 @@
 
   {#each suggestions as suggestion (suggestion.item.metadata.id)}
     <div role="button" tabindex={0} class="suggestion" on:mousedown={() => onSubmit(suggestion.item.metadata.id)}>
-      {suggestion.item.metadata.title}
+      {suggestion.item.metadata.title_english || suggestion.item.metadata.title}
     </div>
   {/each}
 </div>

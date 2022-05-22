@@ -134,6 +134,7 @@ export class AtlasViz {
   private PIXI: typeof import('../pixi');
   private app: PIXI.Application;
   private container: Viewport;
+  private maxCanvasWidth: number | undefined;
   private pointsContainer: PIXI.Container;
   private selectedNodeContainer: PIXI.Container;
   private decorationsContainer: PIXI.Container;
@@ -410,8 +411,10 @@ export class AtlasViz {
     pixi: typeof import('../pixi'),
     containerID: string,
     embedding: Embedding,
-    setSelectedAnimeID: (id: number | null) => void
+    setSelectedAnimeID: (id: number | null) => void,
+    maxCanvasWidth?: number
   ) {
+    this.maxCanvasWidth = maxCanvasWidth;
     let minX = Infinity,
       maxX = -Infinity,
       minY = Infinity,
@@ -469,7 +472,7 @@ export class AtlasViz {
       autoDensity: true,
       view: canvas,
       height: window.innerHeight,
-      width: window.innerWidth,
+      width: Math.min(window.innerWidth, maxCanvasWidth ?? Infinity),
       backgroundColor: 0,
     });
 
@@ -663,8 +666,9 @@ export class AtlasViz {
   }
 
   private handleResize = () => {
-    this.app.renderer.resize(window.innerWidth, window.innerHeight);
-    this.container.resize(window.innerWidth, window.innerHeight);
+    const width = Math.min(window.innerWidth, this.maxCanvasWidth ?? Infinity);
+    this.app.renderer.resize(width, window.innerHeight);
+    this.container.resize(width, window.innerHeight);
   };
 
   private getNodeRadiusAdjustment = (newZoomScale: number) => {
@@ -1152,6 +1156,11 @@ export class AtlasViz {
     for (const label of labelsToRender) {
       this.labelsContainer.addChild(label);
     }
+  };
+
+  public setMaxWidth = (maxWidth: number | undefined) => {
+    this.maxCanvasWidth = maxWidth;
+    this.handleResize();
   };
 
   public dispose() {

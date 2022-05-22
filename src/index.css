@@ -3,9 +3,9 @@ html {
   margin: 0;
   padding: 0;
   background-color: #060606 !important;
+  box-sizing: border-box;
 }
 
-/*
 * {
   scrollbar-color: rgb(27, 27, 27);
 }
@@ -20,9 +20,9 @@ html {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #424242;
-  outline: 1px solid #333;
-} */
+  background: #252425;
+  outline: 1px solid #252425;
+}
 
 input[type=text] {
   border: 1px solid #333;
@@ -30,14 +30,3 @@ input[type=text] {
   background: #000;
   color: #ddd;
 }
-
-/*
-button {
-  box-sizing: border-box;
-  background: #121212ee;
-  display: flex;
-  align-items: center;
-  color: #ddd;
-  border: 1px solid #555;
-  border-radius: 4px;
-} */
