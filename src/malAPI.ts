@@ -212,7 +212,7 @@ export interface AnimeDetails {
 
 const AnimeDetailsCache = new TimedCache({ defaultTtl: 24 * 60 * 60 * 1000 });
 
-const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails> => {
+const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | null> => {
   const fieldsToFetch = [
     'main_picture',
     'alternative_titles',
@@ -226,7 +226,16 @@ const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails> => {
   ];
   const url = `${MAL_API_BASE_URL}/anime/${id}?fields=${fieldsToFetch.join(',')}`;
   console.log('Fetching anime...', url);
-  const details = (await makeMALRequest(url)) as AnimeDetails;
+  const details = (await makeMALRequest(url).catch((err) => {
+    if (err instanceof MALAPIError && err.statusCode === 404) {
+      return null;
+    }
+    throw err;
+  })) as AnimeDetails | null;
+  if (!details) {
+    return null;
+  }
+
   AnimeDetailsCache.put(id, details);
 
   // Update DB in the background

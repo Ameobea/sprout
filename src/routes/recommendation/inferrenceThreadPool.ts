@@ -6,9 +6,7 @@ let InferrenceWorker: Worker | null = null;
 
 const InferrenceCBsByToken: Map<string, (outputs: Float32Array) => void> = new Map();
 
-const WORKER_FILENAME = IS_DOCKER
-  ? '/app/inferrenceWorker.mjs'
-  : '/home/casey/anime-atlas/src/routes/recommendation/inferrenceWorker.js';
+const WORKER_FILENAME = IS_DOCKER ? '/app/inferrenceWorker.mjs' : './src/routes/recommendation/inferrenceWorker.js';
 
 const getWorker = () => {
   if (InferrenceWorker) {

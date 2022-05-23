@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { slide } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
   import { flip } from 'svelte/animate';
 
   import type { AnimeDetails } from 'src/malAPI';
@@ -21,7 +21,7 @@
 <div class="recommendations">
   {#each recommendations as { id, topRatingContributorsIds, planToWatch } (id)}
     {@const animeMetadata = animeMetadataDatabase[id]}
-    <div animate:flip={{ duration: (d) => 50 * Math.sqrt(d) }} in:slide>
+    <div in:fade animate:flip={{ duration: (d) => 50 * Math.sqrt(d) }}>
       <RecommendationListItem
         {animeMetadata}
         expanded={expandedAnimeID === animeMetadata.id}

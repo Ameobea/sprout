@@ -262,10 +262,10 @@ interface GetRecommendationsArgs {
   popularityAttenuationFactor: number;
 }
 
-let CachedEmbeddingMetadata: AnimeDetails[] | null = null;
+let CachedEmbeddingMetadata: (AnimeDetails | null)[] | null = null;
 let CachedGenresDB: Map<number, string> | null = null;
 
-const getEmbeddingMetadata = async (embedding: Embedding): Promise<AnimeDetails[]> => {
+const getEmbeddingMetadata = async (embedding: Embedding): Promise<(AnimeDetails | null)[]> => {
   if (CachedEmbeddingMetadata) {
     return CachedEmbeddingMetadata;
   }
@@ -273,7 +273,8 @@ const getEmbeddingMetadata = async (embedding: Embedding): Promise<AnimeDetails[
   const fetched = await getAnimesByID(embedding.map(({ metadata }) => metadata.id));
   CachedEmbeddingMetadata = fetched.map((item, i) => {
     if (!item) {
-      throw new Error(`Could not find metadata for anime ID ${embedding[i].metadata.id}`);
+      console.error(`Could not find metadata for anime ID ${embedding[i].metadata.id}`);
+      return null;
     }
     return item;
   });
@@ -289,7 +290,7 @@ export const getGenresDB = async (): Promise<Map<number, string>> => {
   const embeddingMetadata = await getEmbeddingMetadata(embedding);
   const genresDB = new Map<number, string>();
   for (const metadatum of embeddingMetadata) {
-    if (!metadatum.genres) {
+    if (!metadatum || !metadatum.genres) {
       continue;
     }
 
