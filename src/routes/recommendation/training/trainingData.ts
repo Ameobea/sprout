@@ -23,7 +23,7 @@ const getAnimeIxByID = async (): Promise<Map<number, number>> => {
 
 export const convertMALProfileToTrainingData = async (
   rawData: MALUserAnimeListItem[][]
-): Promise<TrainingDatum[][]> => {
+): Promise<{ ratings: TrainingDatum[]; userIsNonRater: boolean }[]> => {
   const AnimeIxByID = await getAnimeIxByID();
 
   return rawData.map((userProfileAnime) => {
@@ -46,12 +46,13 @@ export const convertMALProfileToTrainingData = async (
       console.log({ userIsNonRater });
     }
 
-    return validRatings
+    const ratings = validRatings
       .filter((datum) => userIsNonRater || datum.list_status?.score > 0)
       .map((datum) => ({
         animeIx: AnimeIxByID.get(datum.node.id)!,
         rating: userIsNonRater && datum.list_status.score === 0 ? 7 : datum.list_status.score,
       }));
+    return { ratings, userIsNonRater };
   });
 };
 
@@ -94,7 +95,9 @@ const getTrainingDataFromRawTable = async (usernames: string[]): Promise<Trainin
     });
   });
 
-  const parsedAnimeLists = await convertMALProfileToTrainingData(animeLists.map((user) => user.animelist));
+  const parsedAnimeLists = (await convertMALProfileToTrainingData(animeLists.map((user) => user.animelist))).map(
+    ({ ratings }) => ratings
+  );
 
   // Insert into the processed table for faster access next time
   if (parsedAnimeLists.length > 0) {

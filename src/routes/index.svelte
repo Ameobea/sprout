@@ -3,14 +3,14 @@
 
   const SITE_TITLE = 'Anime Recommendations, Stats, MAL Profile Analysis';
   const SITE_DESCRIPTION =
-    'Personalized anime recommendations based your MyAnimeList profile. Find new shows, visualize your preferences, and explore the world of anime!';
+    'Personalized AI-powered anime recommendations based your MyAnimeList profile. Find new shows, visualize your watch history, and explore the world of anime!';
 
   const buildRecommendationsURL = (username: string) => `/user/${username}/recommendations`;
 </script>
 
 <script lang="ts">
   import { goto, prefetch } from '$app/navigation';
-  import { InlineLoading } from 'carbon-components-svelte';
+  import { InlineLoading, Tag } from 'carbon-components-svelte';
   import { Search } from 'carbon-icons-svelte';
   import { onMount } from 'svelte';
   import SvelteSeo from 'svelte-seo';
@@ -65,7 +65,7 @@
 
 <div class="root">
   <div class="top">
-    <h1>Ameo's To-Be-Named Anime Site</h1>
+    <h1>Ameo's To-Be-Named Anime Recommendation Site</h1>
 
     <div class="search-container">
       <input
@@ -96,7 +96,75 @@
     </div>
   </div>
 
-  <footer>Created by <a style="margin-left: 4px;" href="https://cprimozic.net">Casey Primozic / ameo</a></footer>
+  <div class="bottom">
+    <div class="about">
+      <div>
+        <h2>About This Site</h2>
+        <p>
+          This site's main function is an interactive anime recommendation engine. It uses a machine learning model to
+          generate tailored recommendations based on your watch history and ratings. It also provides a variety of
+          filters and options for narrowing the results.
+        </p>
+        <p>
+          In addition to recommendation, this site also provides a growing variety of stats and visualizations of both
+          your personal anime watch history and preferences as well as the entire world of anime via the <a
+            sveltekit:prefetch
+            href="/pymde_4d_40n"
+          >
+            Atlas Visualization
+          </a>.
+        </p>
+        <p>
+          <i>This site is still in active development</i>. This is an alpha version, but all currently existing features
+          are expected to work.
+        </p>
+        <p>
+          If you encounter any issues or have any other feedback, please feel free to <a
+            href="mailto:casey@cprimozic.net"
+          >
+            Email Me
+          </a>
+          or DM me on Twitter <a href="https://twitter.com/ameobea10">@ameobea10</a>. I'm particularly interested in
+          feedback about the recommendations - please do let me know what you think. I'm interested in making this site
+          as good + useful as it can be!
+        </p>
+      </div>
+      <div>
+        <h2>About the Recommendations</h2>
+        <p>
+          This site loads your anime list from your MyAnimeList profile <span style="color: #bbb; font-size: 13px;">
+            (Anilist support coming soon!)
+          </span> and uses it to generate a list of recommendations of animes that you are likely to also like. It takes
+          your ratings into account as well — low ratings are treated as negatives for the model.
+        </p>
+        <p>
+          In order to do this, it uses a neural network that is trained using data from other MyAnimeList users. Unlike
+          some other recommendation strategies that generate recommendations on a rating-by-rating basis, this model has
+          the advantage of being able to consider your entire anime list at once. This allows it to make use of complex
+          relationships between anime + ratings to produce higher-quality recommendations.
+        </p>
+      </div>
+      <div>
+        <h2>About the Atlas Visualization</h2>
+        <p>
+          The <a sveltekit:prefetch href="/pymde_4d_40n">Atlas Visualization</a> is an interactive map of the world of anime.
+          It is built by using data about relationships between different anime derived from both user ratings as well as
+          anime metadata to place more closely related anime near each other.
+        </p>
+        <p>
+          If you load in your anime list to the visualization or view it from your user profile page, it will highlight
+          anime that you have watched with a blue glow. This is useful as context when exploring the atlas - I highly
+          suggest doing so!
+        </p>
+        <p>
+          The atlas visualization was built by constructing a high-dimensional <b>Graph Embedding</b> which encodes the
+          relationship data between all the animes and then projecting that down into 2D using <b>t-SNE</b>.
+        </p>
+      </div>
+    </div>
+
+    <footer>Created by <a style="margin-left: 4px;" href="https://cprimozic.net">Casey Primozic / ameo</a></footer>
+  </div>
 </div>
 
 <style lang="css">
@@ -184,7 +252,54 @@
     transition: background-color 0.1s ease-in-out;
   }
 
+  p {
+    text-align: left;
+  }
+
+  p:not(:first-of-type) {
+    margin-top: 7px;
+  }
+
+  .bottom {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+    margin-left: 20px;
+    margin-right: 20px;
+  }
+
+  .about {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    gap: 40px;
+    justify-content: space-around;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .about > div {
+    padding-left: 6px;
+    padding-right: 6px;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 400px;
+    max-width: 750px;
+  }
+
+  .about > div h2 {
+    padding-bottom: 8px;
+    margin-top: 0;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #181818;
+  }
+
   footer {
+    margin-top: 40px;
     display: flex;
     flex-direction: row;
     justify-content: center;

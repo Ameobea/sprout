@@ -7,6 +7,9 @@ ADD ./data/projected_embedding_pymde.json /opt/data/projected_embedding_pymde.js
 ADD ./data/projected_embedding_pymde_3d_40n.json /opt/data/projected_embedding_pymde_3d_40n.json
 ADD ./data/projected_embedding_pymde_4d_40n.json /opt/data/projected_embedding_pymde_4d_40n.json
 ADD ./data/projected_embedding_pymde_4d_100n.json /opt/data/projected_embedding_pymde_4d_100n.json
+
+ADD ./src/routes/recommendation/inferrenceWorker.js /app/inferrenceWorker.mjs
+
 WORKDIR /app
 
 RUN npm install

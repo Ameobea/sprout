@@ -38,6 +38,8 @@
   export let colorBy: ColorBy;
   export let setColorBy: (newColorBy: ColorBy) => void;
   export let loadMALProfile: (username: string) => void;
+  export let disableEmbeddingSelection: boolean | undefined;
+  export let disableUsernameSearch: boolean | undefined;
 
   const handleColorByChange = (newColorBy: ColorBy) => {
     setColorBy(newColorBy);
@@ -86,39 +88,43 @@
       {/each}
     </div>
   </div>
-  <div class="row">
-    <div class="label">Embedding</div>
-    <div class="tabs">
-      {#each AllEmbeddingNames as { label, value } (value)}
-        <div
-          class="tab"
-          role="button"
-          data-selected={embeddingName == value}
-          on:click={() => handleEmbeddingNameChange(value)}
-        >
-          {label}
-        </div>
-      {/each}
+  {#if !disableEmbeddingSelection}
+    <div class="row">
+      <div class="label">Embedding</div>
+      <div class="tabs">
+        {#each AllEmbeddingNames as { label, value } (value)}
+          <div
+            class="tab"
+            role="button"
+            data-selected={embeddingName == value}
+            on:click={() => handleEmbeddingNameChange(value)}
+          >
+            {label}
+          </div>
+        {/each}
+      </div>
     </div>
-  </div>
-  <div class="row">
-    <div class="label">MAL Username</div>
-    <div class="input">
-      <input
-        type="text"
-        bind:value={malUsername}
-        on:keydown={(evt) => {
-          if (evt.key === 'Enter') {
-            handleLoadMALProfileButtonClick();
-          }
-        }}
-        placeholder="Enter MyAnimeList Username"
-      />
-      {#if malUsername.length > 0}
-        <button class="load-mal-profile-button" on:click={handleLoadMALProfileButtonClick}>Go</button>
-      {/if}
+  {/if}
+  {#if !disableUsernameSearch}
+    <div class="row">
+      <div class="label">MAL Username</div>
+      <div class="input">
+        <input
+          type="text"
+          bind:value={malUsername}
+          on:keydown={(evt) => {
+            if (evt.key === 'Enter') {
+              handleLoadMALProfileButtonClick();
+            }
+          }}
+          placeholder="Enter MyAnimeList Username"
+        />
+        {#if malUsername.length > 0}
+          <button class="load-mal-profile-button" on:click={handleLoadMALProfileButtonClick}>Go</button>
+        {/if}
+      </div>
     </div>
-  </div>
+  {/if}
 </div>
 
 <style lang="css">

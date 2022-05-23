@@ -10,6 +10,7 @@ const loadEnv = (key: string, defaultValue?: string) => {
   return value;
 };
 
+export const IS_DOCKER = loadEnv('IS_DOCKER', 'false') === 'true';
 export const DATA_DIR = loadEnv('DATA_DIR', '/opt/data');
 
 export const MAL_CLIENT_ID = loadEnv('MAL_CLIENT_ID');

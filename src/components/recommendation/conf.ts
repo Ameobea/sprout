@@ -4,16 +4,16 @@
 export const RECOMMENDATION_MODEL_CORPUS_SIZE = 6000;
 
 export enum ModelName {
-  Model_4K = 'model_4k',
-  Model_4K_V2 = 'model_4k_v2',
   Model_6K = 'model_6k',
+  Model_6K_TFLite = 'model_6k_tflite',
+  Model_6K_Smaller = 'model_6k_smaller',
 }
 
 export const validateModelName = (name: string): ModelName | null => {
   switch (name) {
-    case ModelName.Model_4K:
-    case ModelName.Model_4K_V2:
     case ModelName.Model_6K:
+    case ModelName.Model_6K_TFLite:
+    case ModelName.Model_6K_Smaller:
       return name as ModelName;
     default:
       console.error('Invalid model name: ' + name);
@@ -21,7 +21,7 @@ export const validateModelName = (name: string): ModelName | null => {
   }
 };
 
-export const DEFAULT_MODEL_NAME = ModelName.Model_6K;
+export const DEFAULT_MODEL_NAME = ModelName.Model_6K_Smaller;
 
 export enum PopularityAttenuationFactor {
   None = 0,
@@ -31,4 +31,4 @@ export enum PopularityAttenuationFactor {
   High = 0.004,
   VeryHigh = 0.01,
 }
-export const DEFAULT_POPULARITY_ATTENUATION_FACTOR: PopularityAttenuationFactor = PopularityAttenuationFactor.Low;
+export const DEFAULT_POPULARITY_ATTENUATION_FACTOR: PopularityAttenuationFactor = PopularityAttenuationFactor.Medium;

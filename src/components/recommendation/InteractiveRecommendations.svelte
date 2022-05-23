@@ -37,7 +37,7 @@
     }
 
     const url = new URL(window.location.toString());
-    url.searchParams.forEach((_val, key) => url.searchParams.delete(key));
+    url.search = '';
     const oldSearchParams = new URLSearchParams(window.location.search).toString();
 
     for (const animeID of new Set(params.excludedRankingAnimeIDs)) {
@@ -117,7 +117,7 @@
   const animeMetadataDatabase = writable(initialRecommendations.type === 'ok' ? initialRecommendations.animeData : {});
 
   const params = writable(getDefaultRecommendationControlParams());
-  $: updateQueryParams($params);
+  params.subscribe(updateQueryParams);
 
   let usedInitialData = false;
   const initialData = initialRecommendations.type === 'ok' ? initialRecommendations : undefined;

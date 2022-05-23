@@ -17,6 +17,8 @@
   {:else}
     <RatingDistributionChart profile={profileRes.profile} />
     <GenresBarChart profile={profileRes.profile} {animeData} />
+
+    <i style="margin-top: 20px;">More stats + charts will be added soon!</i>
   {/if}
 </div>
 

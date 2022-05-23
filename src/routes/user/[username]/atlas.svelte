@@ -47,7 +47,7 @@
       maxWidth = isFullScreen ? undefined : 950;
     }}
   >
-    <Atlas {embeddingName} {embedding} {username} {maxWidth} />
+    <Atlas {embeddingName} {embedding} {username} {maxWidth} disableEmbeddingSelection disableUsernameSearch />
   </div>
 </div>
 

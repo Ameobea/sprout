@@ -2,9 +2,9 @@
   import { ModelName, PopularityAttenuationFactor } from './conf';
 
   const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
-    { id: ModelName.Model_4K, text: '[OUT-OF-DATE FOR EMBEDDING] Top 4k Anime v1' },
-    { id: ModelName.Model_4K_V2, text: '[OUT-OF-DATE FOR EMBEDDING] Top 4k Anime w. more loss weights' },
     { id: ModelName.Model_6K, text: 'Top 6k Anime v1' },
+    // { id: ModelName.Model_6K_TFLite, text: 'Top 6k TFLite' },
+    { id: ModelName.Model_6K_Smaller, text: 'Top 6k Smaller' },
   ];
 
   const ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS: { id: PopularityAttenuationFactor; text: string }[] = [
@@ -19,7 +19,7 @@
 
 <script lang="ts">
   import { Dropdown, InlineLoading, Tag, Toggle } from 'carbon-components-svelte';
-  import { get, type Writable } from 'svelte/store';
+  import type { Writable } from 'svelte/store';
 
   import type { RecommendationControlParams } from './InteractiveRecommendations.svelte';
   import type { AnimeDetails } from 'src/malAPI';
@@ -37,7 +37,7 @@
 <svelte:window bind:innerWidth />
 
 <div class="root">
-  {#if !isMobile}
+  <!-- {#if !isMobile}
     <div class="top">
       <div>
         <Dropdown
@@ -62,7 +62,7 @@
         />
       </div>
     </div>
-  {/if}
+  {/if} -->
   <div class="toggles">
     <div>
       <Toggle labelText="Extra Seasons" bind:toggled={$params.includeExtraSeasons} />

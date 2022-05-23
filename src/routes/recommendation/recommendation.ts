@@ -1,12 +1,9 @@
 import type { RequestHandler } from '@sveltejs/kit';
-import * as tf from '@tensorflow/tfjs-node';
 import { type Either, isLeft, right } from 'fp-ts/lib/Either.js';
 import { tryCatchK } from 'fp-ts/lib/TaskEither.js';
 import { performance } from 'perf_hooks';
 import * as t from 'io-ts';
 import { PathReporter } from 'io-ts/lib/PathReporter.js';
-import * as R from 'ramda';
-import { Worker, isMainThread } from 'node:worker_threads';
 
 import { ModelName, RECOMMENDATION_MODEL_CORPUS_SIZE, validateModelName } from 'src/components/recommendation/conf';
 import { loadEmbedding } from 'src/embedding';
@@ -22,8 +19,8 @@ import {
 import { DataContainer, scoreRating } from 'src/training/data';
 import { EmbeddingName } from 'src/types';
 import type { Embedding } from '../embedding';
-import { loadRecommendationModel } from './model';
 import { convertMALProfileToTrainingData, type TrainingDatum } from './training/trainingData';
+import { performInferrence } from './inferrenceThreadPool';
 
 export interface Recommendation {
   id: number;
@@ -43,15 +40,17 @@ interface RecommendationWithIndex extends Recommendation {
 const maxK = 3;
 
 const fetchUserRankings = tryCatchK(
-  async (username: string): Promise<{ profile: MALUserAnimeListItem[]; ratings: TrainingDatum[] }> => {
+  async (
+    username: string
+  ): Promise<{ profile: MALUserAnimeListItem[]; ratings: TrainingDatum[]; userIsNonRater: boolean }> => {
     const profile: MALUserAnimeListItem[] = await getUserAnimeList(username);
     if (!Array.isArray(profile)) {
       console.error('Unexpected response from /mal-profile', profile);
       throw new Error('Failed to fetch user profile from MyAnimeList');
     }
 
-    const ratings = (await convertMALProfileToTrainingData([profile]))[0];
-    return { profile, ratings };
+    const { ratings, userIsNonRater } = (await convertMALProfileToTrainingData([profile]))[0];
+    return { profile, ratings, userIsNonRater };
   },
   (err: Error) => {
     console.error('Failed to fetch user rankings', err);
@@ -60,7 +59,7 @@ const fetchUserRankings = tryCatchK(
 );
 
 const computeRecommendationContributionsInner = async (
-  model: tf.LayersModel,
+  modelName: ModelName,
   combosToCheck: number[][],
   minOutputByRecommendationIx: number[],
   minComboByRecommendationIx: (number[] | null)[],
@@ -92,17 +91,12 @@ const computeRecommendationContributionsInner = async (
       });
     }
 
-    const batchInputTensor = tf.tensor(batchInputs, [batchCombos.length, RECOMMENDATION_MODEL_CORPUS_SIZE]);
     console.log(`Running batch ${batchIx + 1}/${batches} with ${batchCombos.length} inputs...`);
     const now = performance.now();
-    const batchOutputsTensor = model.predict(batchInputTensor) as tf.Tensor;
+    const batchOutputs = await performInferrence(modelName, batchInputs);
     const elapsed = performance.now() - now;
     console.log(`Model ran in ${elapsed}ms`);
     console.log(`Batch ${batchIx + 1}/${batches} complete`);
-
-    const batchOutputs = (await batchOutputsTensor.data()) as Float32Array;
-    tf.dispose(batchInputTensor);
-    tf.dispose(batchOutputsTensor);
 
     if (fastMode) {
       outputs.push(batchOutputs);
@@ -165,7 +159,7 @@ const computeRecommendationContributionsInner = async (
  * of `k` ratings from the user's anime list and finding which ratings contribute the most to the predicted rating.
  */
 const computeRecommendationContributions = async (
-  model: tf.LayersModel,
+  modelName: ModelName,
   embedding: Embedding,
   input: number[],
   recommendations: RecommendationWithIndex[],
@@ -185,7 +179,7 @@ const computeRecommendationContributions = async (
   const minComboByRecommendationIx: (number[] | null)[] = new Array(recommendations.length).fill(null);
 
   await computeRecommendationContributionsInner(
-    model,
+    modelName,
     firstRoundCombos,
     minOutputByRecommendationIx,
     minComboByRecommendationIx,
@@ -221,7 +215,7 @@ const computeRecommendationContributions = async (
       }
 
       await computeRecommendationContributionsInner(
-        model,
+        modelName,
         combosToCheck,
         minOutputByRecommendationIx,
         minComboByRecommendationIx,
@@ -321,13 +315,12 @@ export const getRecommendations = async ({
   popularityAttenuationFactor,
 }: GetRecommendationsArgs): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
   const embedding = (await loadEmbedding(EmbeddingName.PyMDE_3D_40N)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
-  const model = await loadRecommendationModel(embedding, modelName);
 
   const rankingsRes = await fetchUserRankings(username)();
   if (isLeft(rankingsRes)) {
     return rankingsRes;
   }
-  const { profile, ratings: rawRatings } = rankingsRes.right;
+  const { profile, ratings: rawRatings, userIsNonRater } = rankingsRes.right;
   if (excludedRankingAnimeIDs.size > 0) {
     console.log(`Excluding ${excludedRankingAnimeIDs.size} rankings`);
   }
@@ -347,21 +340,15 @@ export const getRecommendations = async ({
   }
 
   const { input, validIndices } = DataContainer.buildModelInput(ratings, RECOMMENDATION_MODEL_CORPUS_SIZE);
-  const inputTensor = tf.tensor([input], [1, RECOMMENDATION_MODEL_CORPUS_SIZE]);
 
   console.log(`Running recommendation model for user ${username} with ${validIndices.length} anime in input...`, {
     posRatingCount: input.filter((score) => score > 0).length,
     negRatingCount: input.filter((score) => score < 0).length,
   });
   const now = performance.now();
-  const outputTensor = (await model.predict(inputTensor)) as tf.Tensor;
+  let output = await performInferrence(modelName, new Float32Array(input));
   const elapsed = performance.now() - now;
   console.log(`Model ran in ${elapsed}ms`);
-  console.log(outputTensor.shape);
-
-  let output = (await outputTensor.data()) as Float32Array;
-  tf.dispose(inputTensor);
-  tf.dispose(outputTensor);
 
   if (popularityAttenuationFactor) {
     output = attenuateRecommendationOutputs(output, popularityAttenuationFactor);
@@ -499,7 +486,7 @@ export const getRecommendations = async ({
   if (computeContributions) {
     contributions =
       (await computeRecommendationContributions(
-        model,
+        modelName,
         embedding,
         input,
         recommendations,
@@ -516,7 +503,7 @@ export const getRecommendations = async ({
         reco.topRatingContributorsIds = contribs.map((contribAnimeID) => {
           const rating = profileAnimeByID.get(contribAnimeID);
           const isPositive = scoreRating(rating?.list_status.score ?? 10) > 0;
-          return isPositive ? contribAnimeID : -contribAnimeID;
+          return isPositive || userIsNonRater ? contribAnimeID : -contribAnimeID;
         });
       }
       if (planToWatchAnimeIDs.has(id)) {

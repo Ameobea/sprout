@@ -30,3 +30,11 @@ input[type=text] {
   background: #000;
   color: #ddd;
 }
+
+b {
+  font-weight: 500;
+}
+
+i {
+  font-style: italic;
+}

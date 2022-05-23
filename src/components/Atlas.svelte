@@ -14,6 +14,8 @@
   export let embedding: Embedding;
   export let username: string | undefined;
   export let maxWidth: number | undefined;
+  export let disableEmbeddingSelection: boolean = false;
+  export let disableUsernameSearch: boolean = false;
 
   let viz: AtlasViz | null = null;
   let selectedAnimeID: number | null = null;
@@ -81,7 +83,7 @@
 </div>
 {#if viz}
   <Search {embedding} onSubmit={(id) => viz?.flyTo(id)} />
-  <VizControls {colorBy} {setColorBy} {loadMALProfile} />
+  <VizControls {colorBy} {setColorBy} {loadMALProfile} {disableEmbeddingSelection} {disableUsernameSearch} />
 {/if}
 <div id="atlas-viz-legend" />
 {#if selectedDatum !== null && viz}
