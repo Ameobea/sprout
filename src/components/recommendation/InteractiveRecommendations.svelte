@@ -98,6 +98,7 @@
   import type { Recommendation } from 'src/routes/recommendation/recommendation';
   import type { RecommendationsResponse } from 'src/routes/user/[username]/recommendations';
   import RecommendationControls from './RecommendationControls.svelte';
+  import { captureMessage } from 'src/sentry';
 
   export let initialRecommendations: RecommendationsResponse;
   export let username: string;
@@ -194,6 +195,7 @@
         return state;
       }
 
+      captureMessage('Add excluded anime', { id: animeID, title: $animeMetadataDatabase[animeID]?.title });
       state.excludedRankingAnimeIDs.push(animeID);
       return state;
     });
@@ -206,6 +208,7 @@
         return state;
       }
 
+      captureMessage('Add excluded genre', { id: genreID, name: genreName });
       state.excludedGenreIDs.push(genreID);
       return state;
     });

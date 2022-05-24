@@ -5,6 +5,19 @@
     Atlas = 2,
   }
 
+  const formatTabName = (tab: UserTab) => {
+    switch (tab) {
+      case UserTab.Recommendations:
+        return 'Recommendations';
+      case UserTab.Stats:
+        return 'Stats';
+      case UserTab.Atlas:
+        return 'Atlas';
+      default:
+        return 'Unknown';
+    }
+  };
+
   const getActiveTab = (url: URL) => {
     const pathname = url.pathname;
     if (pathname.endsWith('/recommendations')) {
@@ -35,6 +48,7 @@
 <script lang="ts">
   import { goto, prefetch } from '$app/navigation';
   import { page } from '$app/stores';
+  import { captureMessage } from 'src/sentry';
   import { Tabs, Tab } from 'carbon-components-svelte';
 
   import Header from 'src/components/recommendation/Header.svelte';
@@ -56,6 +70,7 @@
 
   const handleTabSelected = (evt: any) => {
     const newSelectedTab = evt.detail as UserTab;
+    captureMessage(`User page tab click: ${formatTabName(newSelectedTab)}`);
     goto(getTabPath(username, newSelectedTab));
   };
 

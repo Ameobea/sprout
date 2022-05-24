@@ -1,12 +1,13 @@
 <script lang="ts">
   import { browser } from '$app/env';
-
+  import { onDestroy, onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { FitToScreen, Maximize } from 'carbon-icons-svelte';
+  import { Maximize } from 'carbon-icons-svelte';
+
   import Atlas from 'src/components/Atlas.svelte';
   import type { Embedding } from 'src/routes/embedding';
   import type { EmbeddingName } from 'src/types';
-  import { onDestroy, onMount } from 'svelte';
+  import { captureMessage } from 'src/sentry';
 
   export let embeddingName: EmbeddingName;
   export let embedding: Embedding;
@@ -34,6 +35,7 @@
         return;
       }
 
+      captureMessage('Maximizing Atlas on user profile');
       atlasWrapperElem.requestFullscreen();
     }}
   >

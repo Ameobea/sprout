@@ -5,6 +5,7 @@ import type { EmbeddedPoint, Embedding } from '../routes/embedding';
 import ColorLegend from './ColorLegend';
 import * as d3 from '../d3';
 import type * as PIXI from '../pixi';
+import { captureMessage } from 'src/sentry';
 
 const WORLD_SIZE = 1;
 const BASE_LABEL_FONT_SIZE = 48;
@@ -691,7 +692,13 @@ export class AtlasViz {
     this.renderedHoverObjects = { label, neighborLines };
   };
   private handlePointerOut = () => this.maybeRemoveHoverObjects();
-  private handlePointerDown = (datum: EmbeddedPoint) => this.setSelectedAnimeID(datum.metadata.id);
+  private handlePointerDown = (datum: EmbeddedPoint) => {
+    captureMessage('Atlas set selected anime', {
+      animeID: datum.metadata.id,
+      title: datum.metadata.title,
+    });
+    this.setSelectedAnimeID(datum.metadata.id);
+  };
 
   private getNodeTexture = (): PIXI.Texture => {
     if (this.cachedNodeTexture) {
@@ -778,6 +785,7 @@ export class AtlasViz {
   }
 
   public flyTo(id: number) {
+    captureMessage('Fly to anime in atlas', { id, title: this.embeddedPointByID.get(id)?.metadata.title });
     this.setSelectedAnimeID(id);
     const { x, y } = this.embedding.find((p) => p.metadata.id === id)!.vector;
     this.container.animate({

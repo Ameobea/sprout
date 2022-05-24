@@ -24,6 +24,7 @@
   import type { RecommendationControlParams } from './InteractiveRecommendations.svelte';
   import type { AnimeDetails } from 'src/malAPI';
   import { browser } from '$app/env';
+  import { captureMessage } from 'src/sentry';
 
   let innerWidth = browser ? window.innerWidth : 0;
   $: isMobile = innerWidth < 768;
@@ -91,17 +92,20 @@
       <div class="tags-container" id="tags-container">
         {#each [...new Set($params.excludedRankingAnimeIDs)] as animeID (animeID)}
           {@const datum = animeMetadataDatabase[animeID]}
+          {@const title = datum?.alternative_titles.en || datum?.title || ''}
           <Tag
             filter
-            on:close={() =>
+            on:close={() => {
+              captureMessage('Remove excluded ranking', { id: animeID, name: datum.title });
               params.update((state) => {
                 state.excludedRankingAnimeIDs = state.excludedRankingAnimeIDs.filter(
                   (oAnimeID) => oAnimeID !== animeID
                 );
                 return state;
-              })}
+              });
+            }}
           >
-            {datum?.alternative_titles.en || datum?.title || ''}
+            {title}
           </Tag>
         {/each}
       </div>
@@ -115,11 +119,13 @@
           {@const genreName = $genresDB.get(genreID) ?? genreID.toString()}
           <Tag
             filter
-            on:close={() =>
+            on:close={() => {
+              captureMessage('Remove excluded genre', { id: genreID, name: genreName });
               params.update((state) => {
                 state.excludedGenreIDs = state.excludedGenreIDs.filter((oGenreID) => oGenreID !== genreID);
                 return state;
-              })}
+              });
+            }}
           >
             {genreName}
           </Tag>

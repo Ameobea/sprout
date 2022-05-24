@@ -45,7 +45,8 @@
 
   onMount(() => {
     const usernameToLoad = username ?? new URLSearchParams(window.location.search).get('username');
-    const userProfilePromise = usernameToLoad && fetch(`/mal-profile?username=${username}`).then((res) => res.json());
+    const userProfilePromise =
+      usernameToLoad && fetch(`/mal-profile?username=${usernameToLoad}`).then((res) => res.json());
     const neighborsPromise: Promise<{ neighbors: number[][] }> = fetch(`/neighbors?embedding=${embeddingName}`).then(
       (res) => res.json()
     );

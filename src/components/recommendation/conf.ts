@@ -31,4 +31,4 @@ export enum PopularityAttenuationFactor {
   High = 0.004,
   VeryHigh = 0.01,
 }
-export const DEFAULT_POPULARITY_ATTENUATION_FACTOR: PopularityAttenuationFactor = PopularityAttenuationFactor.Medium;
+export const DEFAULT_POPULARITY_ATTENUATION_FACTOR: PopularityAttenuationFactor = PopularityAttenuationFactor.High;
