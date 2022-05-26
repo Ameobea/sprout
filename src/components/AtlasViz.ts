@@ -294,7 +294,12 @@ export class AtlasViz {
     const connections = new this.PIXI.Graphics();
     connections.lineStyle(1, NEIGHBOR_LINE_COLOR, NEIGHBOR_LINE_OPACITY * 0.2, undefined, true);
     allMALNodeIDs.forEach((id) => {
-      const datum = this.embeddedPointByID.get(+id)!;
+      const datum = this.embeddedPointByID.get(+id);
+      if (!datum) {
+        console.warn(`User has anime id=${id} in their profile which isn't in the embedding; ignoring it`);
+        return;
+      }
+
       const neighbors = this.neighbors?.[datum.index] ?? [];
       neighbors.forEach((neighborID) => {
         if (!allMALNodeIDs.has(neighborID)) {

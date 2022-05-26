@@ -28,7 +28,7 @@ const config = {
         },
       },
       build: {
-        // sourcemap: true,
+        sourcemap: true,
       },
       optimizeDeps: {
         include: ['@carbon/charts'],
