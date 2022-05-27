@@ -34,6 +34,7 @@
   import { goto } from '$app/navigation';
 
   import { ColorBy } from './AtlasViz';
+  import { captureMessage } from 'src/sentry';
 
   export let colorBy: ColorBy;
   export let setColorBy: (newColorBy: ColorBy) => void;
@@ -42,6 +43,7 @@
   export let disableUsernameSearch: boolean | undefined;
 
   const handleColorByChange = (newColorBy: ColorBy) => {
+    captureMessage('Atlas color by changed', { newColorBy });
     setColorBy(newColorBy);
 
     // Set query param

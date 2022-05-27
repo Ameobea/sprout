@@ -2,6 +2,7 @@ import { MAL_API_BASE_URL, MAL_CLIENT_ID } from './conf';
 import { delay } from './util';
 import TimedCache from 'timed-cache';
 import { DbPool } from './dbUtil';
+import { AsyncSemaphore } from './util/asyncSemaphore';
 
 export class MALAPIError extends Error {
   public statusCode: number;
@@ -13,7 +14,10 @@ export class MALAPIError extends Error {
   }
 }
 
-const makeMALRequest = async (url: string, retryCount?: number) => {
+const MAX_CONCURRENT_MAL_API_REQUESTS = 4;
+const MALAPIConcurrencyLimiter = new AsyncSemaphore(MAX_CONCURRENT_MAL_API_REQUESTS);
+
+const makeMALRequestInner = async (url: string, retryCount?: number) => {
   const res = await fetch(url, { headers: { 'X-MAL-CLIENT-ID': MAL_CLIENT_ID } });
   if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
     console.log(`Retryable error ${res.status} for ${url}`);
@@ -23,12 +27,14 @@ const makeMALRequest = async (url: string, retryCount?: number) => {
     } else {
       await delay(+retryAfter * 1000);
     }
-    return makeMALRequest(url, (retryCount ?? 0) + 1);
+    return makeMALRequestInner(url, (retryCount ?? 0) + 1);
   } else if (!res.ok) {
     throw new MALAPIError(`MAL API returned ${res.status}: ${await res.text()}`, res.status);
   }
   return res.json();
 };
+
+const makeMALRequest = MALAPIConcurrencyLimiter.wrap(makeMALRequestInner);
 
 export enum AnimeListStatusCode {
   Watching = 'watching',
@@ -180,6 +186,7 @@ export enum AnimeRelationType {
   ParentStory = 'parent_story',
   Summary = 'summary',
   FullStory = 'full_story',
+  Other = 'other',
 }
 
 export interface AnimeDetails {
@@ -212,7 +219,7 @@ export interface AnimeDetails {
 
 const AnimeDetailsCache = new TimedCache({ defaultTtl: 24 * 60 * 60 * 1000 });
 
-const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | null> => {
+export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | null> => {
   const fieldsToFetch = [
     'main_picture',
     'alternative_titles',
@@ -258,12 +265,11 @@ const fetchAnimesFromDB = async (ids: number[]): Promise<(AnimeDetails | null)[]
   }
 
   const entries = await new Promise<{ id: number; metadata: string; update_timestamp: string }[]>((resolve, reject) => {
-    const oldestValidTimestamp = new Date(new Date().getTime() - 7 * 24 * 60 * 60 * 1000);
     const replacers = ids.map(() => '?').join(',');
-    // Re-fetch from MAL if older than 7 days
-    const query = `SELECT id, metadata, update_timestamp FROM \`anime-metadata\` WHERE update_timestamp > ? AND id IN (${replacers})`;
+    // Re-fetch from MAL if older than 30 days
+    const query = `SELECT id, metadata, update_timestamp FROM \`anime-metadata\` WHERE update_timestamp >= now() - interval 30 DAY AND id IN (${replacers})`;
 
-    DbPool.query(query, [oldestValidTimestamp, ...ids], (err, res) => {
+    DbPool.query(query, ids, (err, res) => {
       if (err) {
         reject(err);
       } else {
@@ -309,7 +315,14 @@ export const getAnimesByID = async (
     .map(([i]) => ids[i]);
 
   if (uncachedIds.length === 0) {
-    return cached as AnimeDetails[];
+    return (cached as AnimeDetails[]).map((cachedDatum) => {
+      const datum = { ...cachedDatum };
+      if (!includeRecommendationsAndRelated) {
+        delete datum.recommendations;
+        delete datum.related_anime;
+      }
+      return datum;
+    });
   }
 
   const fetched = await fetchAnimesByID(uncachedIds);

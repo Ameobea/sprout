@@ -21,7 +21,7 @@
 <div class="recommendations">
   {#each recommendations as { id, topRatingContributorsIds, planToWatch } (id)}
     {@const animeMetadata = animeMetadataDatabase[id]}
-    <div in:fade animate:flip={{ duration: (d) => 50 * Math.sqrt(d) }}>
+    <div in:fade animate:flip={{ duration: (d) => 39 * Math.sqrt(d) }}>
       <RecommendationListItem
         {animeMetadata}
         expanded={expandedAnimeID === animeMetadata.id}

@@ -91,7 +91,7 @@ export const get: RequestHandler = async ({ params, url }) => {
     popularityAttenuationFactor,
   });
   if (isLeft(recommendationsRes)) {
-    return { status: 500, body: { recommendations: { type: 'error', error: recommendationsRes.left.body } } };
+    return { status: 200, body: { initialRecommendations: { type: 'error', error: recommendationsRes.left.body } } };
   }
   const recommendationsList = recommendationsRes.right;
 

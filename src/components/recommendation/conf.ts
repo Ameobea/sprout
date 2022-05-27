@@ -7,13 +7,24 @@ export enum ModelName {
   Model_6K = 'model_6k',
   Model_6K_TFLite = 'model_6k_tflite',
   Model_6K_Smaller = 'model_6k_smaller',
+  Model_6K_Smaller_Weighted = 'model_6k_smaller_weighted',
 }
+
+export const getIsModelScoresWeighted = (modelName: ModelName): boolean => {
+  switch (modelName) {
+    case ModelName.Model_6K_Smaller_Weighted:
+      return true;
+    default:
+      return false;
+  }
+};
 
 export const validateModelName = (name: string): ModelName | null => {
   switch (name) {
     case ModelName.Model_6K:
     case ModelName.Model_6K_TFLite:
     case ModelName.Model_6K_Smaller:
+    case ModelName.Model_6K_Smaller_Weighted:
       return name as ModelName;
     default:
       console.error('Invalid model name: ' + name);
@@ -21,7 +32,7 @@ export const validateModelName = (name: string): ModelName | null => {
   }
 };
 
-export const DEFAULT_MODEL_NAME = ModelName.Model_6K_Smaller;
+export const DEFAULT_MODEL_NAME = ModelName.Model_6K_Smaller_Weighted;
 
 export enum PopularityAttenuationFactor {
   None = 0,

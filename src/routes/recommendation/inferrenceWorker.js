@@ -10,6 +10,7 @@ export const getModelFilename = (modelName) => {
   switch (modelName) {
     case 'model_6k':
     case 'model_6k_smaller':
+    case 'model_6k_smaller_weighted':
       return `file://${DATA_DIR}/tfjs_models/${modelName}/model.json`;
     default:
       throw new Error(`Unimplemented model name: ${modelName}`);

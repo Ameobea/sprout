@@ -25,7 +25,7 @@
 
   let logLines = writable([] as LogLine[]);
   let losses = writable([] as number[]);
-  const iters = 1000;
+  const iters = 1500;
 
   const logger: Logger = (() => {
     function logger(text: string) {
@@ -68,12 +68,14 @@
   onMount(async () => {
     logger('Initializing training...');
     const { trainRecommender } = await import('src/training/trainRecommender');
-    await trainRecommender(iters, logger, (loss) => {
+    const recordLoss = (loss) => {
       losses.update((losses) => {
         losses.push(loss);
         return losses;
       });
-    });
+    };
+    const weightScores = true;
+    await trainRecommender(iters, logger, recordLoss, weightScores);
   });
 </script>
 

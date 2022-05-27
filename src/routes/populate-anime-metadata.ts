@@ -58,7 +58,21 @@ export const post: RequestHandler = async ({ url }) => {
     }
 
     try {
-      await getAnimesByID([idToFetch]);
+      const [metadata] = await getAnimesByID([idToFetch]);
+      if (!metadata) {
+        console.error(`No metadata for anime ID ${idToFetch}`);
+        await new Promise((resolve, reject) => {
+          DbPool.query('DELETE FROM `anime-metadata` WHERE id = ?', [idToFetch], (err) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(undefined);
+            }
+          });
+        });
+        console.log(`Successfully deleted placeholder entry for anime ID ${idToFetch}`);
+        return { status: 200, body: `Successfully deleted placeholder entry for anime ID ${idToFetch}` };
+      }
     } catch (err) {
       if (err instanceof MALAPIError) {
         const statusCode = err.statusCode;

@@ -12,7 +12,7 @@ preview:
 docker-build:
   docker build -t anime-atlas:latest .
 
-deploy:
+deploy-gcs:
   just build
   just docker-build
   docker tag anime-atlas:latest gcr.io/free-tier-164405/anime-atlas:latest
@@ -22,6 +22,14 @@ deploy:
     --platform=managed \
     --region=us-west1 \
     --project=free-tier-164405
+
+deploy:
+  #!/bin/bash
+
+  just build
+  just docker-build
+  docker save anime-atlas:latest | bzip2 > anime-atlas.tar.bz2
+  ameotrack upload -e 1 anime-atlas.tar.bz2
 
 launch-jupyter:
   #!/usr/bin/env zsh

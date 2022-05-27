@@ -3,8 +3,8 @@
 
   const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
     { id: ModelName.Model_6K, text: 'Top 6k Anime v1' },
-    // { id: ModelName.Model_6K_TFLite, text: 'Top 6k TFLite' },
     { id: ModelName.Model_6K_Smaller, text: 'Top 6k Smaller' },
+    { id: ModelName.Model_6K_Smaller_Weighted, text: 'Top 6k Smaller Weighted' },
   ];
 
   const ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS: { id: PopularityAttenuationFactor; text: string }[] = [
@@ -38,7 +38,7 @@
 <svelte:window bind:innerWidth />
 
 <div class="root">
-  <!-- {#if !isMobile}
+  {#if !isMobile}
     <div class="top">
       <div>
         <Dropdown
@@ -49,6 +49,7 @@
             $params.modelName = selected.detail.selectedItem.id;
           }}
           items={ALL_MODEL_OPTIONS}
+          helperText="Each model was trained slightly differently, which impacts the generated recommendations"
         />
       </div>
       <div>
@@ -60,10 +61,11 @@
             $params.popularityAttenuationFactor = selected.detail.selectedItem.id;
           }}
           items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
+          helperText="Higher popularity attenuation factors result in less-popular anime being weighted higher in recommendations"
         />
       </div>
     </div>
-  {/if} -->
+  {/if}
   <div class="toggles">
     <div>
       <Toggle labelText="Extra Seasons" bind:toggled={$params.includeExtraSeasons} />
@@ -149,6 +151,7 @@
     flex-direction: row;
     min-width: 100%;
     gap: 20px;
+    padding: 4px;
   }
 
   .top > div {

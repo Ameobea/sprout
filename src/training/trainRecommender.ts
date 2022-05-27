@@ -8,8 +8,13 @@ const EMBEDDING_NAME = EmbeddingName.PyMDE_3D_40N;
 
 export type Logger = ((msg: string) => void) & { error: (msg: string) => void; warn: (msg: string) => void };
 
-const trainIter = async (data: DataContainer, model: tf.Sequential, dataCount: number): Promise<tf.History> => {
-  const [xTrain, yTrain] = await data.getTrainingData(dataCount);
+const trainIter = async (
+  data: DataContainer,
+  model: tf.Sequential,
+  dataCount: number,
+  weightScores: boolean
+): Promise<tf.History> => {
+  const [xTrain, yTrain] = await data.getTrainingData(dataCount, weightScores);
   const history = await model.fit(xTrain, yTrain, {
     batchSize: 32,
     epochs: 1,
@@ -39,9 +44,9 @@ export const getRecommenderModelCompileParams = (embedding: Embedding) => {
   };
 };
 
-const validateModel = async (data: DataContainer, model: tf.Sequential, log: Logger) => {
+const validateModel = async (data: DataContainer, model: tf.Sequential, log: Logger, weightScores: boolean) => {
   const dataForValidationUser = await fetchTrainingData(['ameo___']);
-  const [xValidate] = data.buildTrainingDataTensors(dataForValidationUser, false);
+  const [xValidate] = data.buildTrainingDataTensors(dataForValidationUser, false, weightScores);
   log(xValidate.dataSync().toString());
   const predsTensor = (await model.predict(xValidate)) as tf.Tensor;
   log(predsTensor.dataSync().toString());
@@ -68,7 +73,12 @@ const validateModel = async (data: DataContainer, model: tf.Sequential, log: Log
   console.log(predictedTopNew);
 };
 
-export const trainRecommender = async (iters: number, log: Logger, recordLoss: (loss: number) => void) => {
+export const trainRecommender = async (
+  iters: number,
+  log: Logger,
+  recordLoss: (loss: number) => void,
+  weightScores: boolean
+) => {
   (window as any).tf = tf;
   const animeMetadata = await loadAnimeMetadata(EMBEDDING_NAME);
   log(`Loaded anime metadata totalling ${animeMetadata.length} items`);
@@ -115,13 +125,13 @@ export const trainRecommender = async (iters: number, log: Logger, recordLoss: (
   const data = new DataContainer(tf, allUsernames, animeMetadata);
 
   for (let i = 0; i < iters; i++) {
-    const history = await trainIter(data, model, 5_000);
+    const history = await trainIter(data, model, 5_000, weightScores);
     log(`Training iter ${i + 1} complete`);
     log(`Train loss: ${history.history.loss[0]}`);
     recordLoss(history.history.loss[0] as number);
   }
 
-  await validateModel(data, model, log);
+  await validateModel(data, model, log, weightScores);
 
   // serialize the model to disk
   await model.save('downloads://model');

@@ -5,7 +5,12 @@ import { performance } from 'perf_hooks';
 import * as t from 'io-ts';
 import { PathReporter } from 'io-ts/lib/PathReporter.js';
 
-import { ModelName, RECOMMENDATION_MODEL_CORPUS_SIZE, validateModelName } from 'src/components/recommendation/conf';
+import {
+  getIsModelScoresWeighted,
+  ModelName,
+  RECOMMENDATION_MODEL_CORPUS_SIZE,
+  validateModelName,
+} from 'src/components/recommendation/conf';
 import { loadEmbedding } from 'src/embedding';
 import {
   AnimeListStatusCode,
@@ -13,6 +18,7 @@ import {
   AnimeRelationType,
   getAnimesByID,
   getUserAnimeList,
+  MALAPIError,
   type AnimeDetails,
   type MALUserAnimeListItem,
 } from 'src/malAPI';
@@ -54,7 +60,25 @@ const fetchUserRankings = tryCatchK(
   },
   (err: Error) => {
     console.error('Failed to fetch user rankings', err);
-    return { status: 500, body: err.message };
+    const body =
+      err instanceof MALAPIError
+        ? (() => {
+            switch (err.statusCode) {
+              case 404:
+                return 'User not found.  Check the username you entered and try again.';
+              default:
+                if (err.statusCode >= 400) {
+                  return 'User profile is private or could not be accessed';
+                } else if (err.statusCode >= 500) {
+                  return 'Error received from MyAnimeList API; their servers are probably overloaded.  Please try again later';
+                } else {
+                  console.error('Unknown error received from MyAnimeList API', err);
+                  return 'An unknown error occurred while fetching user profile';
+                }
+            }
+          })()
+        : 'An internal error occured while fetching user profile from MyAnimeList';
+    return { status: 500, body };
   }
 );
 
@@ -270,6 +294,7 @@ const getEmbeddingMetadata = async (embedding: Embedding): Promise<(AnimeDetails
     return CachedEmbeddingMetadata;
   }
 
+  console.log('Loading embedding metadata for recommendations...');
   const fetched = await getAnimesByID(embedding.map(({ metadata }) => metadata.id));
   CachedEmbeddingMetadata = fetched.map((item, i) => {
     if (!item) {
@@ -278,6 +303,7 @@ const getEmbeddingMetadata = async (embedding: Embedding): Promise<(AnimeDetails
     }
     return item;
   });
+  console.log('Done loading embedding metadata for recommendations.');
   return CachedEmbeddingMetadata;
 };
 
@@ -300,6 +326,124 @@ export const getGenresDB = async (): Promise<Map<number, string>> => {
   }
   CachedGenresDB = genresDB;
   return CachedGenresDB;
+};
+
+const MAX_TRAVERSAL_DEPTH = 18;
+
+const buildSeasonRelationshipsByAnimeID = async (
+  animeIDsToCheck: number[],
+  seasonRelationshipsByAnimeID: Map<number, Set<number>> = new Map(),
+  processedAnimeIDs: Set<number> = new Set(),
+  forceRetainedAnimeIDs: Set<number> = new Set(),
+  depth = 0
+): Promise<{ seasonRelationshipsByAnimeID: Map<number, Set<number>>; forceRetainedAnimeIDs: Set<number> }> => {
+  const metadata = await getAnimesByID(animeIDsToCheck, true);
+
+  let nextAnimeIDsToCheck: number[] = [];
+  for (let i = 0; i < metadata.length; i++) {
+    const datum = metadata[i];
+    processedAnimeIDs.add(animeIDsToCheck[i]);
+    if (!datum) {
+      console.warn(`Could not find metadata for anime ${animeIDsToCheck[i]}`);
+      continue;
+    }
+    if (!datum.related_anime) {
+      continue;
+    }
+    // Movies, music, ONAs, OVAs, and specials are handled by separate filters; don't filter them with extra seasons
+    if (
+      datum.media_type === AnimeMediaType.Movie ||
+      datum.media_type === AnimeMediaType.Music ||
+      datum.media_type === AnimeMediaType.ONA ||
+      datum.media_type === AnimeMediaType.OVA ||
+      datum.media_type === AnimeMediaType.Special
+    ) {
+      forceRetainedAnimeIDs.add(datum.id);
+      // Do not continue so that we can continue crawling relationships from this anime, because for some series
+      // the only link between different seasons is ONAs/OVAs/Movies/etc.
+    }
+
+    const extraSeasonIDs = new Set(
+      datum.related_anime
+        .filter((entry) => {
+          switch (entry.relation_type) {
+            case AnimeRelationType.Sequel:
+            case AnimeRelationType.Prequel:
+            case AnimeRelationType.ParentStory:
+            case AnimeRelationType.SideStory:
+            case AnimeRelationType.Other:
+              return true;
+            default:
+              return false;
+          }
+        })
+        .map((entry) => entry.node.id)
+    );
+    seasonRelationshipsByAnimeID.set(datum.id, extraSeasonIDs);
+    for (const extraSeasonID of extraSeasonIDs) {
+      if (!seasonRelationshipsByAnimeID.has(extraSeasonID)) {
+        seasonRelationshipsByAnimeID.set(extraSeasonID, new Set());
+      }
+      seasonRelationshipsByAnimeID.get(extraSeasonID)!.add(datum.id);
+      nextAnimeIDsToCheck.push(extraSeasonID);
+    }
+  }
+
+  nextAnimeIDsToCheck = [...nextAnimeIDsToCheck].filter((id) => !processedAnimeIDs.has(id));
+  if (depth >= MAX_TRAVERSAL_DEPTH || nextAnimeIDsToCheck.length === 0) {
+    return { forceRetainedAnimeIDs, seasonRelationshipsByAnimeID };
+  }
+
+  return buildSeasonRelationshipsByAnimeID(
+    nextAnimeIDsToCheck,
+    seasonRelationshipsByAnimeID,
+    processedAnimeIDs,
+    forceRetainedAnimeIDs,
+    depth + 1
+  );
+};
+
+const getIsExtraSeasonOfRatedAnime = (
+  allInputAnimeIDs: Set<number>,
+  seasonRelationshipsByAnimeID: Map<number, Set<number>>,
+  animeID: number,
+  checkedIDs: Set<number> = new Set(),
+  depth = 0
+) => {
+  const extraSeasonIDs = seasonRelationshipsByAnimeID.get(animeID);
+  if (!extraSeasonIDs) {
+    return false;
+  }
+
+  for (const extraSeasonAnimeID of extraSeasonIDs) {
+    if (allInputAnimeIDs.has(extraSeasonAnimeID)) {
+      return true;
+    }
+  }
+
+  if (depth >= MAX_TRAVERSAL_DEPTH) {
+    return false;
+  }
+
+  checkedIDs.add(animeID);
+  for (const extraSeasonAnimeID of extraSeasonIDs) {
+    if (checkedIDs.has(extraSeasonAnimeID)) {
+      continue;
+    }
+
+    const childIsRelated = getIsExtraSeasonOfRatedAnime(
+      allInputAnimeIDs,
+      seasonRelationshipsByAnimeID,
+      extraSeasonAnimeID,
+      checkedIDs,
+      depth + 1
+    );
+    if (childIsRelated) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 export const getRecommendations = async ({
@@ -340,7 +484,12 @@ export const getRecommendations = async ({
     }
   }
 
-  const { input, validIndices } = DataContainer.buildModelInput(ratings, RECOMMENDATION_MODEL_CORPUS_SIZE);
+  const weightScores = getIsModelScoresWeighted(modelName);
+  const { input, validIndices } = DataContainer.buildModelInput(
+    ratings,
+    RECOMMENDATION_MODEL_CORPUS_SIZE,
+    weightScores
+  );
 
   console.log(`Running recommendation model for user ${username} with ${validIndices.length} anime in input...`, {
     posRatingCount: input.filter((score) => score > 0).length,
@@ -375,46 +524,12 @@ export const getRecommendations = async ({
   }
 
   let seasonRelationshipsByAnimeID: Map<number, Set<number>> | null = null;
+  let excludedFromSeasonRelationshipExclusionAnimeIDs: Set<number> | null = null;
   if (!includeExtraSeasons) {
-    seasonRelationshipsByAnimeID = new Map();
-    const metadata = await getAnimesByID(
-      profile.map((entry) => entry.node.id),
-      true
-    );
-
-    for (let i = 0; i < metadata.length; i++) {
-      const datum = metadata[i];
-      if (!datum) {
-        console.warn(`Could not find metadata for anime ${profile[i].node.id}`);
-        continue;
-      }
-      if (!datum.related_anime) {
-        continue;
-      }
-
-      const extraSeasonIDs = new Set(
-        datum.related_anime
-          .filter((entry) => {
-            switch (entry.relation_type) {
-              case AnimeRelationType.Sequel:
-              case AnimeRelationType.Prequel:
-              case AnimeRelationType.ParentStory:
-              case AnimeRelationType.SideStory:
-                return true;
-              default:
-                return false;
-            }
-          })
-          .map((entry) => entry.node.id)
-      );
-      seasonRelationshipsByAnimeID.set(datum.id, extraSeasonIDs);
-      for (const extraSeasonID of extraSeasonIDs) {
-        if (!seasonRelationshipsByAnimeID.has(extraSeasonID)) {
-          seasonRelationshipsByAnimeID.set(extraSeasonID, new Set());
-        }
-        seasonRelationshipsByAnimeID.get(extraSeasonID)!.add(datum.id);
-      }
-    }
+    const ratedAnimeIDs = profile.map((entry) => entry.node.id);
+    const res = await buildSeasonRelationshipsByAnimeID(ratedAnimeIDs);
+    seasonRelationshipsByAnimeID = res.seasonRelationshipsByAnimeID;
+    excludedFromSeasonRelationshipExclusionAnimeIDs = res.forceRetainedAnimeIDs;
   }
 
   const embeddingMetadata = excludedGenreIDs.size > 0 ? await getEmbeddingMetadata(embedding) : [];
@@ -435,22 +550,14 @@ export const getRecommendations = async ({
       }
 
       if (seasonRelationshipsByAnimeID) {
-        const extraSeasonIDs = seasonRelationshipsByAnimeID.get(datum.metadata.id);
-        if (extraSeasonIDs) {
-          for (const extraSeasonAnimeID of extraSeasonIDs) {
-            if (allInputAnimeIDs.has(extraSeasonAnimeID)) {
-              return { score: -Infinity, animeIx };
-            }
-
-            // We need to crawl one addition level up the relationship tree to see if the extra season is in the input
-            const extraSeasonIDsForRelation = seasonRelationshipsByAnimeID.get(extraSeasonAnimeID);
-            if (extraSeasonIDsForRelation) {
-              for (const extraSeasonID of extraSeasonIDsForRelation) {
-                if (allInputAnimeIDs.has(extraSeasonID)) {
-                  return { score: -Infinity, animeIx };
-                }
-              }
-            }
+        if (!excludedFromSeasonRelationshipExclusionAnimeIDs?.has(datum.metadata.id)) {
+          const isExtraSeason = getIsExtraSeasonOfRatedAnime(
+            allInputAnimeIDs,
+            seasonRelationshipsByAnimeID,
+            datum.metadata.id
+          );
+          if (isExtraSeason) {
+            return { score: -Infinity, animeIx };
           }
         }
       }
@@ -503,7 +610,7 @@ export const getRecommendations = async ({
       if (contribs) {
         reco.topRatingContributorsIds = contribs.map((contribAnimeID) => {
           const rating = profileAnimeByID.get(contribAnimeID);
-          const isPositive = scoreRating(rating?.list_status.score ?? 10) > 0;
+          const isPositive = scoreRating(rating?.list_status.score ?? 10, weightScores) > 0;
           return isPositive || userIsNonRater ? contribAnimeID : -contribAnimeID;
         });
       }

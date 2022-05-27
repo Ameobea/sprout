@@ -7,27 +7,39 @@ import type { TrainingDatum } from 'src/routes/recommendation/training/trainingD
 import type { EmbeddingName } from 'src/types';
 
 const getHoldoutCount = (validRatingCount: number): number => {
-  // return 0;
   const holdoutCount = Math.floor(validRatingCount * 0.4 * Math.random());
   return holdoutCount;
 };
 
-export const scoreRating = (rating: number): number => {
-  // switch (rating) {
-  //   case 10:
-  //     return 1;
-  //   case 9:
-  //     return 0.95;
-  //   case 8:
-  //     return 0.75;
-  //   case 7:
-  //     return 0.3;
-  //   case 6:
-  //     return 0.1;
-  //   default:
-  //     return 0;
-  // }
-  return rating > 5 ? 1 : -1;
+export const scoreRating = (rating: number, weightScores: boolean): number => {
+  if (!weightScores) {
+    return rating > 5 ? 1 : -1;
+  }
+
+  switch (rating) {
+    case 10:
+      return 1;
+    case 9:
+      return 0.95;
+    case 8:
+      return 0.85;
+    case 7:
+      return 0.6;
+    case 6:
+      return 0.3;
+    case 5:
+      return -0.3;
+    case 4:
+      return -0.8;
+    case 3:
+      return -0.95;
+    case 2:
+      return -1;
+    case 1:
+      return -1;
+    default:
+      return 0;
+  }
 };
 
 export const loadAnimeMetadata = async (embeddingName: EmbeddingName): Promise<Embedding> => {
@@ -68,15 +80,20 @@ export class DataContainer {
     this.tf = tf;
     tf.util.shuffle(allUsernames);
 
-    // Partition username tensors into training and test sets
-    const cutoffIx = Math.floor(allUsernames.length * 0.8);
-    const [trainUsernames, testUsernames] = [allUsernames.slice(0, cutoffIx), allUsernames.slice(cutoffIx)];
+    // // Partition username tensors into training and test sets
+    // const cutoffIx = Math.floor(allUsernames.length * 0.8);
+    // const [trainUsernames, _testUsernames] = [allUsernames.slice(0, cutoffIx), allUsernames.slice(cutoffIx)];
+    const trainUsernames = allUsernames;
 
     this.animeMetadata = animeMetadata;
     this.trainUsernames = trainUsernames;
   }
 
-  public static buildModelInput = (userProfile: TrainingDatum[], corpusSize: number): ModelInput => {
+  public static buildModelInput = (
+    userProfile: TrainingDatum[],
+    corpusSize: number,
+    weightScores: boolean
+  ): ModelInput => {
     const scoreByAnimeIx = new Array<number>(corpusSize).fill(0);
     const validIndices: number[] = [];
     userProfile.forEach((datum, ratingIx) => {
@@ -85,7 +102,7 @@ export class DataContainer {
         return;
       }
       validIndices.push(ratingIx);
-      const score = scoreRating(rating);
+      const score = scoreRating(rating, weightScores);
       scoreByAnimeIx[animeIx] = score;
     });
 
@@ -94,7 +111,8 @@ export class DataContainer {
 
   public buildTrainingDataTensors = (
     trainingData: TrainingDatum[][],
-    holdout = true
+    holdout = true,
+    weightScores: boolean
   ): [tfWeb.Tensor2D, tfWeb.Tensor2D] => {
     const processedTrainingData = trainingData
       .map((userProfile) => {
@@ -109,7 +127,8 @@ export class DataContainer {
 
         const { validIndices, input: yScoreByAnimeIx } = DataContainer.buildModelInput(
           userProfile,
-          this.animeMetadata.length
+          this.animeMetadata.length,
+          weightScores
         );
         if (validIndices.length < 10) {
           return null;
@@ -125,13 +144,13 @@ export class DataContainer {
           if (typeof animeIx !== 'number' || animeIx >= this.animeMetadata.length) {
             return;
           }
-          const score = scoreRating(rating);
+          const score = scoreRating(rating, weightScores);
           xScoreByAnimeIx[animeIx] = score;
         });
 
         return [xScoreByAnimeIx, yScoreByAnimeIx] as const;
       })
-      .filter((x) => x);
+      .filter((x) => x) as (readonly [number[], number[]])[];
 
     const xs = processedTrainingData.map(([xs]) => xs);
     const ys = processedTrainingData.map(([, ys]) => ys);
@@ -144,7 +163,7 @@ export class DataContainer {
    * Retrieves usernames of profiles to fetch data for.
    */
   private getTrainUsernames = (count: number): string[] => {
-    const usernames = [];
+    const usernames: string[] = [];
     for (let i = 0; i < count; i++) {
       usernames.push(this.trainUsernames[this.trainUsernameCounter]);
       this.trainUsernameCounter += 1;
@@ -156,17 +175,17 @@ export class DataContainer {
     return usernames;
   };
 
-  public getTrainingData = async (count: number): Promise<[tfWeb.Tensor2D, tfWeb.Tensor2D]> => {
+  public getTrainingData = async (count: number, weightScores: boolean): Promise<[tfWeb.Tensor2D, tfWeb.Tensor2D]> => {
     if (this.nextTrainingData) {
       const toReturn = this.nextTrainingData;
       const nextTrainUsernames = this.getTrainUsernames(count);
       this.nextTrainingData = fetchTrainingData(nextTrainUsernames);
-      return toReturn.then((trainingData) => this.buildTrainingDataTensors(trainingData));
+      return toReturn.then((trainingData) => this.buildTrainingDataTensors(trainingData, undefined, weightScores));
     }
 
     const trainUsernames = this.getTrainUsernames(count);
     const toReturn = fetchTrainingData(trainUsernames).then((trainingData) =>
-      this.buildTrainingDataTensors(trainingData)
+      this.buildTrainingDataTensors(trainingData, undefined, weightScores)
     );
     const nextTrainUsernames = this.getTrainUsernames(count);
     this.nextTrainingData = fetchTrainingData(nextTrainUsernames);

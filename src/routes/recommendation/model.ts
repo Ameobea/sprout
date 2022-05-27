@@ -12,6 +12,7 @@ export const getModelFilename = (modelName: ModelName): string => {
   switch (modelName) {
     case ModelName.Model_6K:
     case ModelName.Model_6K_Smaller:
+    case ModelName.Model_6K_Smaller_Weighted:
       return `file://${DATA_DIR}/tfjs_models/${modelName}/model.json`;
     case ModelName.Model_6K_TFLite:
       return `${DATA_DIR}/tflite_models/model_6k/model_6k.tflite`;
