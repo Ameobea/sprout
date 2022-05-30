@@ -1,12 +1,12 @@
 import type { RequestHandler } from '@sveltejs/kit';
-import TimedCache from 'timed-cache';
+import NodeCache from 'node-cache';
 
 import { getLocalAnimelistsDB } from './localAnimelistsDB';
 
-const AllUsernamesCache = new TimedCache({ defaultTtl: 60 * 60 * 1000 });
+const AllUsernamesCache = new NodeCache({ stdTTL: 60 * 60 * 1000 });
 
 const getAllUsernames = async (): Promise<string[]> => {
-  const cached = AllUsernamesCache.get('allUsernames');
+  const cached: string[] | undefined = AllUsernamesCache.get('allUsernames');
   if (cached) {
     return cached;
   }
@@ -21,7 +21,7 @@ const getAllUsernames = async (): Promise<string[]> => {
       }
     })
   );
-  AllUsernamesCache.put('allUsernames', [...allUsernames]);
+  AllUsernamesCache.set('allUsernames', [...allUsernames]);
   return allUsernames;
 };
 

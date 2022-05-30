@@ -44,7 +44,7 @@
 {#if initialRecommendations.type === 'ok'}
   <SvelteSeo
     {title}
-    description={'AI-powered personalized anime recommendations, visualizations, and resources'}
+    description="AI-powered anime recommendations, visualizations, and tools"
     openGraph={{
       title: `Anime Recommendations for ${username}`,
       description: buildOpengraphDescription(username, initialRecommendations),

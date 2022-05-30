@@ -35,6 +35,7 @@ export const get: RequestHandler = async ({ url }) => {
       });
       console.log(`Successfully inserted chunk of ${chunkSize} usernames chunk=${chunkIx}`);
     }
+    return { status: 200, body: 'Success' };
   } catch (err) {
     console.error('Error populating usernames', err);
     return { status: 500, body: 'Error populating tbale' };

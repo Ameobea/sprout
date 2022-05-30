@@ -1,76 +1,4 @@
 <script context="module" lang="ts">
-  import {
-    DEFAULT_MODEL_NAME,
-    DEFAULT_POPULARITY_ATTENUATION_FACTOR,
-    ModelName,
-    PopularityAttenuationFactor,
-  } from './conf';
-
-  export interface RecommendationControlParams {
-    modelName: ModelName;
-    excludedRankingAnimeIDs: number[];
-    excludedGenreIDs: number[];
-    includeExtraSeasons: boolean;
-    includeONAsOVAsSpecials: boolean;
-    includeMovies: boolean;
-    includeMusic: boolean;
-    popularityAttenuationFactor: PopularityAttenuationFactor;
-  }
-
-  const getDefaultRecommendationControlParams = (): RecommendationControlParams => {
-    const queryParams = new URLSearchParams(browser ? window.location.search : '');
-    return {
-      modelName: (queryParams.get('model') as any) ?? DEFAULT_MODEL_NAME,
-      excludedRankingAnimeIDs: Array.from(new Set(queryParams.getAll('eid').map((eid) => +eid))),
-      excludedGenreIDs: Array.from(new Set(queryParams.getAll('egid').map((egid) => +egid))),
-      includeExtraSeasons: queryParams.get('exs') === 'true',
-      includeONAsOVAsSpecials: queryParams.get('specials') !== 'false',
-      includeMovies: queryParams.get('movies') !== 'false',
-      includeMusic: queryParams.get('music') === 'true',
-      popularityAttenuationFactor: +(queryParams.get('apops') ?? DEFAULT_POPULARITY_ATTENUATION_FACTOR),
-    };
-  };
-
-  const updateQueryParams = (params: RecommendationControlParams) => {
-    if (!browser) {
-      return;
-    }
-
-    const url = new URL(window.location.toString());
-    url.search = '';
-    const oldSearchParams = new URLSearchParams(window.location.search).toString();
-
-    for (const animeID of new Set(params.excludedRankingAnimeIDs)) {
-      url.searchParams.append('eid', animeID.toString());
-    }
-    for (const genreID of new Set(params.excludedGenreIDs)) {
-      url.searchParams.append('egid', genreID.toString());
-    }
-    if (params.modelName !== DEFAULT_MODEL_NAME) {
-      url.searchParams.set('model', params.modelName);
-    }
-    if (params.includeExtraSeasons) {
-      url.searchParams.set('exs', 'true');
-    }
-    if (!params.includeONAsOVAsSpecials) {
-      url.searchParams.set('specials', 'false');
-    }
-    if (!params.includeMovies) {
-      url.searchParams.set('movies', 'false');
-    }
-    if (params.includeMusic) {
-      url.searchParams.set('music', 'true');
-    }
-    if (params.popularityAttenuationFactor !== DEFAULT_POPULARITY_ATTENUATION_FACTOR) {
-      url.searchParams.set('apops', params.popularityAttenuationFactor.toString());
-    }
-
-    const newSearchParams = url.searchParams.toString();
-    if (newSearchParams !== oldSearchParams) {
-      history.replaceState({}, '', url);
-    }
-  };
-
   const fetchRecommendations = (
     username: string,
     params: RecommendationControlParams,
@@ -79,7 +7,12 @@
   ): Promise<{ recommendations: Recommendation[]; animeData: { [animeID: number]: AnimeDetails } }> =>
     fetch('/recommendation/recommendation', {
       method: 'POST',
-      body: JSON.stringify({ username, availableAnimeMetadataIDs, includeContributors, ...params }),
+      body: JSON.stringify({
+        dataSource: { type: 'username', username },
+        availableAnimeMetadataIDs,
+        includeContributors,
+        ...params,
+      }),
     }).then(async (res) => {
       if (!res.ok) {
         throw await res.text();
@@ -91,14 +24,14 @@
 <script lang="ts">
   import { writable, type Writable } from 'svelte/store';
   import { useQuery } from '@sveltestack/svelte-query';
-  import { browser } from '$app/env';
 
   import RecommendationsList from 'src/components/recommendation/RecommendationsList.svelte';
   import type { AnimeDetails } from 'src/malAPI';
   import type { Recommendation } from 'src/routes/recommendation/recommendation';
   import type { RecommendationsResponse } from 'src/routes/user/[username]/recommendations';
   import RecommendationControls from './RecommendationControls.svelte';
-  import { captureMessage } from 'src/sentry';
+  import { captureMessage, getSentry } from 'src/sentry';
+  import { getDefaultRecommendationControlParams, updateQueryParams, type RecommendationControlParams } from './utils';
 
   export let initialRecommendations: RecommendationsResponse;
   export let username: string;
@@ -154,6 +87,10 @@
     },
     { refetchOnMount: false, refetchOnWindowFocus: false, keepPreviousData: false }
   );
+
+  $: if ($recosRes.isError) {
+    getSentry()?.captureException('Error fetching recommendations', { extra: { params: $params } });
+  }
 
   $: {
     recosRes.updateOptions({

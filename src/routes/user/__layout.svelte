@@ -20,27 +20,43 @@
 
   const getActiveTab = (url: URL) => {
     const pathname = url.pathname;
-    if (pathname.endsWith('/recommendations')) {
+    if (pathname.includes('/recommendations')) {
       return UserTab.Recommendations;
-    } else if (pathname.endsWith('/stats')) {
+    } else if (pathname.includes('/stats')) {
       return UserTab.Stats;
-    } else if (pathname.endsWith('/atlas')) {
+    } else if (pathname.includes('/atlas')) {
       return UserTab.Atlas;
     } else {
       return UserTab.Recommendations;
     }
   };
 
-  const getTabPath = (username: string, tab: UserTab) => {
+  const getProfileSource = (url: URL): ProfileSource => {
+    const queryParams = new URLSearchParams(url.search);
+    const source = queryParams.get('source');
+    switch (source) {
+      case ProfileSource.MyAnimeList:
+      case null:
+        return ProfileSource.MyAnimeList;
+      case ProfileSource.AniList:
+        return ProfileSource.AniList;
+      default:
+        return ProfileSource.MyAnimeList;
+    }
+  };
+
+  const getTabPath = (username: string, tab: UserTab, profileSource: ProfileSource) => {
+    const sourceQuery = profileSource === DEFAULT_PROFILE_SOURCE ? '' : `?source=${profileSource}`;
+
     switch (tab) {
       case UserTab.Recommendations:
-        return `/user/${username}/recommendations`;
+        return `/user/${username}/recommendations${sourceQuery}`;
       case UserTab.Stats:
-        return `/user/${username}/stats`;
+        return `/user/${username}/stats${sourceQuery}`;
       case UserTab.Atlas:
-        return `/user/${username}/atlas`;
+        return `/user/${username}/atlas${sourceQuery}`;
       default:
-        return `/user/${username}/recommendations`;
+        return `/user/${username}/recommendations${sourceQuery}`;
     }
   };
 </script>
@@ -52,8 +68,10 @@
   import { Tabs, Tab } from 'carbon-components-svelte';
 
   import Header from 'src/components/recommendation/Header.svelte';
+  import { DEFAULT_PROFILE_SOURCE, ProfileSource } from 'src/components/recommendation/conf';
 
   $: activeTab = getActiveTab($page.url);
+  $: profileSource = getProfileSource($page.url);
   $: username = $page.params.username;
   $: title = `Anime ${(() => {
     switch (activeTab) {
@@ -71,11 +89,11 @@
   const handleTabSelected = (evt: any) => {
     const newSelectedTab = evt.detail as UserTab;
     captureMessage(`User page tab click: ${formatTabName(newSelectedTab)}`);
-    goto(getTabPath(username, newSelectedTab));
+    goto(getTabPath(username, newSelectedTab, profileSource));
   };
 
   const mkTabPrefetcher = (tab: UserTab) => () => {
-    const path = getTabPath(username, tab);
+    const path = getTabPath(username, tab, profileSource);
     prefetch(path);
   };
 </script>

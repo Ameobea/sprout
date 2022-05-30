@@ -21,10 +21,10 @@
   import { Dropdown, InlineLoading, Tag, Toggle } from 'carbon-components-svelte';
   import type { Writable } from 'svelte/store';
 
-  import type { RecommendationControlParams } from './InteractiveRecommendations.svelte';
   import type { AnimeDetails } from 'src/malAPI';
   import { browser } from '$app/env';
   import { captureMessage } from 'src/sentry';
+  import type { RecommendationControlParams } from './utils';
 
   let innerWidth = browser ? window.innerWidth : 0;
   $: isMobile = innerWidth < 768;
@@ -33,12 +33,13 @@
   export let animeMetadataDatabase: { [animeID: number]: AnimeDetails };
   export let isLoading: boolean;
   export let genresDB: Writable<Map<number, string>>;
+  export let forceHideTopBar: boolean | undefined = false;
 </script>
 
 <svelte:window bind:innerWidth />
 
 <div class="root">
-  {#if !isMobile}
+  {#if !isMobile && !forceHideTopBar}
     <div class="top">
       <div>
         <Dropdown

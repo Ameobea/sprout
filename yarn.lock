@@ -644,6 +644,13 @@ abbrev@1:
   resolved "https://registry.yarnpkg.com/abbrev/-/abbrev-1.1.1.tgz#f8f2c887ad10bf67f634f005b6987fed3179aac8"
   integrity sha512-nne9/IiQ/hzIhY6pdDnbBtz7DjPTKrY00P/zvPSm5pOFkl6xuGrGnXn/VtTNNfNtAfZ9/1RtehkszU9qcTii0Q==
 
+abort-controller@^3.0.0:
+  version "3.0.0"
+  resolved "https://registry.yarnpkg.com/abort-controller/-/abort-controller-3.0.0.tgz#eaf54d53b62bae4138e809ca225c8439a6efb392"
+  integrity sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==
+  dependencies:
+    event-target-shim "^5.0.0"
+
 acorn-globals@^6.0.0:
   version "6.0.0"
   resolved "https://registry.yarnpkg.com/acorn-globals/-/acorn-globals-6.0.0.tgz#46cdd39f0f8ff08a876619b55f5ac8a6dc770b45"
@@ -717,6 +724,14 @@ ajv@^6.10.0, ajv@^6.12.4:
     fast-json-stable-stringify "^2.0.0"
     json-schema-traverse "^0.4.1"
     uri-js "^4.2.2"
+
+anilist-node@^1.12.1:
+  version "1.12.1"
+  resolved "https://registry.yarnpkg.com/anilist-node/-/anilist-node-1.12.1.tgz#02299721360b0770571178c71c92c6306b712017"
+  integrity sha512-z5bKzkw9EirSdZcqNTT705+MIU8wt1HsaOgqNIlk8J7UDzhK1Ect0eIXzD7pHKo4u/Hl5ENUU3ZVOMxh5bOnMQ==
+  dependencies:
+    abort-controller "^3.0.0"
+    node-fetch "^2.6.7"
 
 ansi-regex@^2.0.0:
   version "2.1.1"
@@ -992,6 +1007,11 @@ cliui@^7.0.2:
     string-width "^4.2.0"
     strip-ansi "^6.0.0"
     wrap-ansi "^7.0.0"
+
+clone@2.x:
+  version "2.1.2"
+  resolved "https://registry.yarnpkg.com/clone/-/clone-2.1.2.tgz#1b7f4b9f591f1e8f83670401600345a02887435f"
+  integrity sha512-3Pe/CF1Nn94hyhIYpjtiLhdCoEoz0DqQ+988E9gmeEdQZlojxnOb74wctFyuwWQHzqyf9X7C7MG8juUpqBJT8w==
 
 code-point-at@^1.0.0:
   version "1.1.0"
@@ -1671,6 +1691,11 @@ esutils@^2.0.2:
   version "2.0.3"
   resolved "https://registry.yarnpkg.com/esutils/-/esutils-2.0.3.tgz#74d2eb4de0b8da1293711910d50775b9b710ef64"
   integrity sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g==
+
+event-target-shim@^5.0.0:
+  version "5.0.1"
+  resolved "https://registry.yarnpkg.com/event-target-shim/-/event-target-shim-5.0.1.tgz#5d4d3ebdf9583d63a5333ce2deb7480ab2b05789"
+  integrity sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==
 
 eventemitter3@^3.1.0:
   version "3.1.2"
@@ -2532,6 +2557,13 @@ node-addon-api@^4.2.0:
   resolved "https://registry.yarnpkg.com/node-addon-api/-/node-addon-api-4.3.0.tgz#52a1a0b475193e0928e98e0426a0d1254782b77f"
   integrity sha512-73sE9+3UaLYYFmDsFZnqCInzPyh3MqIwZO9cw58yIqAZhONrrabrYyYe3TuIqtIiOuTXVhsGau8hcrhhwSsDIQ==
 
+node-cache@^5.1.2:
+  version "5.1.2"
+  resolved "https://registry.yarnpkg.com/node-cache/-/node-cache-5.1.2.tgz#f264dc2ccad0a780e76253a694e9fd0ed19c398d"
+  integrity sha512-t1QzWwnk4sjLWaQAS8CHgOJ+RAfmHpxFWmc36IWTiWHQfs0w5JDMBS1b1ZxQteo0vVVuWJvIUKHDkkeK7vIGCg==
+  dependencies:
+    clone "2.x"
+
 node-fetch@^2.6.1, node-fetch@^2.6.7, node-fetch@~2.6.1:
   version "2.6.7"
   resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.6.7.tgz#24de9fba827e3b4ae44dc8b20256a379160052ad"
@@ -3253,11 +3285,6 @@ text-table@^0.2.0:
   version "0.2.0"
   resolved "https://registry.yarnpkg.com/text-table/-/text-table-0.2.0.tgz#7f5ee823ae805207c00af2df4a84ec3fcfa570b4"
   integrity sha1-f17oI66AUgfACvLfSoTsP8+lcLQ=
-
-timed-cache@^1.1.5:
-  version "1.1.5"
-  resolved "https://registry.yarnpkg.com/timed-cache/-/timed-cache-1.1.5.tgz#2f3da24366c588a5f080f72c3579501b08d59439"
-  integrity sha512-+pWNc00bPujFdOufjBqPmX5kYoVR2dLmCrA0ZyoN/qg7vLjaazGqOQu8MaKIOh6sSKairUMwP/gNDcnQPtxryg==
 
 tiny-glob@^0.2.9:
   version "0.2.9"

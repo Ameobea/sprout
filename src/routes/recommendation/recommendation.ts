@@ -1,6 +1,5 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { type Either, isLeft, right } from 'fp-ts/lib/Either.js';
-import { tryCatchK } from 'fp-ts/lib/TaskEither.js';
 import { performance } from 'perf_hooks';
 import * as t from 'io-ts';
 import { PathReporter } from 'io-ts/lib/PathReporter.js';
@@ -8,25 +7,20 @@ import { PathReporter } from 'io-ts/lib/PathReporter.js';
 import {
   getIsModelScoresWeighted,
   ModelName,
+  ProfileSource,
   RECOMMENDATION_MODEL_CORPUS_SIZE,
   validateModelName,
 } from 'src/components/recommendation/conf';
 import { loadEmbedding } from 'src/embedding';
-import {
-  AnimeListStatusCode,
-  AnimeMediaType,
-  AnimeRelationType,
-  getAnimesByID,
-  getUserAnimeList,
-  MALAPIError,
-  type AnimeDetails,
-  type MALUserAnimeListItem,
-} from 'src/malAPI';
+import { AnimeListStatusCode, AnimeMediaType, AnimeRelationType, getAnimesByID, type AnimeDetails } from 'src/malAPI';
 import { DataContainer, scoreRating } from 'src/training/data';
 import { EmbeddingName } from 'src/types';
 import type { Embedding } from '../embedding';
-import { convertMALProfileToTrainingData, type TrainingDatum } from './training/trainingData';
 import { performInferrence } from './inferrenceThreadPool';
+import { convertMALProfileToTrainingData, type TrainingDatum } from './training/trainingData';
+import { fetchUserRankings } from 'src/helpers';
+import type { CompatAnimeListEntry } from 'src/anilistAPI';
+import { typify } from 'src/components/recommendation/utils';
 
 export interface Recommendation {
   id: number;
@@ -44,43 +38,6 @@ interface RecommendationWithIndex extends Recommendation {
 }
 
 const maxK = 3;
-
-const fetchUserRankings = tryCatchK(
-  async (
-    username: string
-  ): Promise<{ profile: MALUserAnimeListItem[]; ratings: TrainingDatum[]; userIsNonRater: boolean }> => {
-    const profile: MALUserAnimeListItem[] = await getUserAnimeList(username);
-    if (!Array.isArray(profile)) {
-      console.error('Unexpected response from /mal-profile', profile);
-      throw new Error('Failed to fetch user profile from MyAnimeList');
-    }
-
-    const { ratings, userIsNonRater } = (await convertMALProfileToTrainingData([profile]))[0];
-    return { profile, ratings, userIsNonRater };
-  },
-  (err: Error) => {
-    console.error('Failed to fetch user rankings', err);
-    const body =
-      err instanceof MALAPIError
-        ? (() => {
-            switch (err.statusCode) {
-              case 404:
-                return 'User not found.  Check the username you entered and try again.';
-              default:
-                if (err.statusCode >= 400) {
-                  return 'User profile is private or could not be accessed';
-                } else if (err.statusCode >= 500) {
-                  return 'Error received from MyAnimeList API; their servers are probably overloaded.  Please try again later';
-                } else {
-                  console.error('Unknown error received from MyAnimeList API', err);
-                  return 'An unknown error occurred while fetching user profile';
-                }
-            }
-          })()
-        : 'An internal error occured while fetching user profile from MyAnimeList';
-    return { status: 500, body };
-  }
-);
 
 const computeRecommendationContributionsInner = async (
   modelName: ModelName,
@@ -119,7 +76,7 @@ const computeRecommendationContributionsInner = async (
     const now = performance.now();
     const batchOutputs = await performInferrence(modelName, batchInputs);
     const elapsed = performance.now() - now;
-    console.log(`Model ran in ${elapsed}ms`);
+    console.log(`Model ran in ${elapsed.toFixed(2)}ms`);
     console.log(`Batch ${batchIx + 1}/${batches} complete`);
 
     if (fastMode) {
@@ -273,7 +230,9 @@ const attenuateRecommendationOutputs = (outputs: Float32Array, boostFactor: numb
 };
 
 interface GetRecommendationsArgs {
-  username: string;
+  dataSource:
+    | { type: 'username'; username: string }
+    | { type: 'rawProfile'; profile: { animeID: number; score: number }[] };
   count: number;
   computeContributions: boolean;
   modelName: ModelName;
@@ -284,12 +243,13 @@ interface GetRecommendationsArgs {
   includeMovies: boolean;
   includeMusic: boolean;
   popularityAttenuationFactor: number;
+  profileSource: ProfileSource;
 }
 
 let CachedEmbeddingMetadata: (AnimeDetails | null)[] | null = null;
 let CachedGenresDB: Map<number, string> | null = null;
 
-const getEmbeddingMetadata = async (embedding: Embedding): Promise<(AnimeDetails | null)[]> => {
+export const getEmbeddingMetadata = async (embedding: Embedding): Promise<(AnimeDetails | null)[]> => {
   if (CachedEmbeddingMetadata) {
     return CachedEmbeddingMetadata;
   }
@@ -447,7 +407,7 @@ const getIsExtraSeasonOfRatedAnime = (
 };
 
 export const getRecommendations = async ({
-  username,
+  dataSource,
   count,
   computeContributions,
   modelName,
@@ -458,14 +418,40 @@ export const getRecommendations = async ({
   includeMovies,
   includeMusic,
   popularityAttenuationFactor,
+  profileSource,
 }: GetRecommendationsArgs): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
   const embedding = (await loadEmbedding(EmbeddingName.PyMDE_3D_40N)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
 
-  const rankingsRes = await fetchUserRankings(username)();
-  if (isLeft(rankingsRes)) {
-    return rankingsRes;
+  let profileData: {
+    profile: CompatAnimeListEntry[];
+    ratings: TrainingDatum[];
+    userIsNonRater: boolean;
+    username: string;
+  };
+  if (dataSource.type === 'username') {
+    const rankingsRes = await fetchUserRankings(dataSource.username, profileSource)();
+    if (isLeft(rankingsRes)) {
+      return rankingsRes;
+    }
+    profileData = { ...rankingsRes.right, username: dataSource.username };
+  } else if (dataSource.type === 'rawProfile') {
+    const profile = dataSource.profile.map(({ animeID, score }) => ({
+      node: { id: animeID },
+      list_status: { status: AnimeListStatusCode.Completed, score },
+    }));
+    const { ratings, userIsNonRater } = (await convertMALProfileToTrainingData([profile]))[0];
+
+    profileData = {
+      profile,
+      ratings,
+      userIsNonRater,
+      username: '<raw profile>',
+    };
+  } else {
+    throw new Error(`Unknown data source type ${(dataSource as any).type}`);
   }
-  const { profile, ratings: rawRatings, userIsNonRater } = rankingsRes.right;
+  const { profile, ratings: rawRatings, userIsNonRater, username } = profileData;
+
   if (excludedRankingAnimeIDs.size > 0) {
     console.log(`Excluding ${excludedRankingAnimeIDs.size} rankings`);
   }
@@ -473,7 +459,7 @@ export const getRecommendations = async ({
     const animeID = embedding[rating.animeIx]?.metadata.id;
     return !!animeID && !excludedRankingAnimeIDs.has(animeID);
   });
-  const profileAnimeByID = new Map<number, MALUserAnimeListItem>();
+  const profileAnimeByID = new Map<number, CompatAnimeListEntry>();
   const planToWatchAnimeIDs = new Set<number>();
   for (const entry of profile) {
     if (entry?.node?.id) {
@@ -498,7 +484,7 @@ export const getRecommendations = async ({
   const now = performance.now();
   let output = await performInferrence(modelName, new Float32Array(input));
   const elapsed = performance.now() - now;
-  console.log(`Model ran in ${elapsed}ms`);
+  console.log(`Model ran in ${elapsed.toFixed(2)}ms`);
 
   if (popularityAttenuationFactor) {
     output = attenuateRecommendationOutputs(output, popularityAttenuationFactor);
@@ -622,9 +608,25 @@ export const getRecommendations = async ({
   );
 };
 
+const AllProfileSources: { [key in ProfileSource]: ProfileSource } = {
+  [ProfileSource.AniList]: ProfileSource.AniList,
+  [ProfileSource.MyAnimeList]: ProfileSource.MyAnimeList,
+};
+
+export const ProfileSourceValidator = t.keyof(AllProfileSources);
+
 const RecommendationRequest = t.type({
   availableAnimeMetadataIDs: t.array(t.number),
-  username: t.string,
+  dataSource: t.union([
+    t.type({
+      type: t.literal('username'),
+      username: t.string,
+    }),
+    t.type({
+      type: t.literal('rawProfile'),
+      profile: t.array(t.type({ animeID: t.number, score: t.number })),
+    }),
+  ]),
   excludedRankingAnimeIDs: t.array(t.number),
   excludedGenreIDs: t.array(t.number),
   modelName: t.string,
@@ -634,6 +636,7 @@ const RecommendationRequest = t.type({
   includeMovies: t.boolean,
   includeMusic: t.boolean,
   popularityAttenuationFactor: t.number,
+  profileSource: ProfileSourceValidator,
 });
 
 export const post: RequestHandler = async ({ request }) => {
@@ -648,11 +651,18 @@ export const post: RequestHandler = async ({ request }) => {
   if (!modelName) {
     return { status: 400, body: 'Invalid modelName' };
   }
-  const { includeExtraSeasons, includeONAsOVAsSpecials, includeMovies, includeMusic, popularityAttenuationFactor } =
-    req;
+  const {
+    dataSource,
+    includeExtraSeasons,
+    includeONAsOVAsSpecials,
+    includeMovies,
+    includeMusic,
+    popularityAttenuationFactor,
+    profileSource,
+  } = req;
 
   const recommendationsRes = await getRecommendations({
-    username: req.username,
+    dataSource,
     count: 20,
     computeContributions: req.includeContributors,
     modelName,
@@ -663,6 +673,7 @@ export const post: RequestHandler = async ({ request }) => {
     includeMovies,
     includeMusic,
     popularityAttenuationFactor,
+    profileSource,
   });
   if (isLeft(recommendationsRes)) {
     return recommendationsRes.left;
@@ -688,5 +699,5 @@ export const post: RequestHandler = async ({ request }) => {
     return acc;
   }, {} as { [id: number]: AnimeDetails });
 
-  return { status: 200, body: { recommendations: recommendationsList, animeData } };
+  return { status: 200, body: { recommendations: typify(recommendationsList), animeData: typify(animeData) } };
 };

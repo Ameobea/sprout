@@ -1,3 +1,7 @@
+:root {
+  color-scheme: dark;
+}
+
 body,
 html {
   margin: 0;
@@ -6,7 +10,7 @@ html {
   box-sizing: border-box;
 }
 
-* {
+/* * {
   scrollbar-color: rgb(27, 27, 27);
 }
 
@@ -22,7 +26,7 @@ html {
 *::-webkit-scrollbar-thumb {
   background: #252425;
   outline: 1px solid #252425;
-}
+} */
 
 input[type=text] {
   border: 1px solid #333;
@@ -37,4 +41,8 @@ b {
 
 i {
   font-style: italic;
+}
+
+.bx--loading__stroke {
+  stroke: #6abe30 !important;
 }

@@ -6,10 +6,17 @@ import { PathReporter } from 'io-ts/lib/PathReporter.js';
 import {
   DEFAULT_MODEL_NAME,
   DEFAULT_POPULARITY_ATTENUATION_FACTOR,
+  DEFAULT_PROFILE_SOURCE,
   validateModelName,
 } from 'src/components/recommendation/conf';
+import { typify } from 'src/components/recommendation/utils';
 import { getAnimesByID, type AnimeDetails } from 'src/malAPI';
-import { getGenresDB, getRecommendations, type Recommendation } from '../../recommendation/recommendation';
+import {
+  getGenresDB,
+  getRecommendations,
+  ProfileSourceValidator,
+  type Recommendation,
+} from '../../recommendation/recommendation';
 
 export type RecommendationsResponse =
   | {
@@ -54,8 +61,8 @@ export const get: RequestHandler = async ({ params, url }) => {
   }
 
   const includeExtraSeasons = url.searchParams.get('exs') === 'true';
-  const includeONAsOVAsSpecials = url.searchParams.get('specials') !== 'false';
-  const includeMovies = url.searchParams.get('movies') !== 'false';
+  const includeONAsOVAsSpecials = url.searchParams.get('specials') === 'true';
+  const includeMovies = url.searchParams.get('movies') === 'true';
   const includeMusic = url.searchParams.get('music') === 'true';
   const popularityAttenuationFactorRaw = url.searchParams.get('apops');
   const popularityAttenuationFactor = popularityAttenuationFactorRaw
@@ -64,6 +71,12 @@ export const get: RequestHandler = async ({ params, url }) => {
   if (isNaN(popularityAttenuationFactor)) {
     return { status: 400, body: 'Invalid popularityAttenuationFactor' };
   }
+  const rawProfileSource = url.searchParams.get('source') ?? DEFAULT_PROFILE_SOURCE;
+  const profileSourceParseRes = ProfileSourceValidator.decode(rawProfileSource);
+  if (isLeft(profileSourceParseRes)) {
+    return { status: 400, body: 'Invalid `source` query param' };
+  }
+  const profileSource = profileSourceParseRes.right;
 
   const excludedRankingAnimeIDsRes = parseExcludedIDs('eid', url);
   if (isLeft(excludedRankingAnimeIDsRes)) {
@@ -78,7 +91,7 @@ export const get: RequestHandler = async ({ params, url }) => {
   const excludedGenreIDs = excludedGenreIDsRes.right;
 
   const recommendationsRes = await getRecommendations({
-    username,
+    dataSource: { type: 'username', username },
     count: 20,
     computeContributions: false,
     modelName,
@@ -89,6 +102,7 @@ export const get: RequestHandler = async ({ params, url }) => {
     includeMovies,
     includeMusic,
     popularityAttenuationFactor,
+    profileSource,
   });
   if (isLeft(recommendationsRes)) {
     return { status: 200, body: { initialRecommendations: { type: 'error', error: recommendationsRes.left.body } } };
@@ -133,6 +147,6 @@ export const get: RequestHandler = async ({ params, url }) => {
 
   return {
     status: 200,
-    body: { initialRecommendations: recommendations, genreNames },
+    body: { initialRecommendations: typify(recommendations), genreNames: typify(genreNames) },
   };
 };

@@ -1,6 +1,6 @@
 import { MAL_API_BASE_URL, MAL_CLIENT_ID } from './conf';
 import { delay } from './util';
-import TimedCache from 'timed-cache';
+import NodeCache from 'node-cache';
 import { DbPool } from './dbUtil';
 import { AsyncSemaphore } from './util/asyncSemaphore';
 
@@ -111,11 +111,11 @@ export interface MALUserMangaListResponse {
 }
 
 // Cache for 5 minutes
-const UserAnimeListCache = new TimedCache({ defaultTtl: 5 * 60 * 1000 });
-const UserMangaListCache = new TimedCache({ defaultTtl: 5 * 60 * 1000 });
+const UserAnimeListCache = new NodeCache({ stdTTL: 5 * 60 * 1000 });
+const UserMangaListCache = new NodeCache({ stdTTL: 5 * 60 * 1000 });
 
 export const getUserAnimeList = async (username: string): Promise<MALUserAnimeListItem[]> => {
-  const cached = UserAnimeListCache.get(username);
+  const cached: MALUserAnimeListItem[] | undefined = UserAnimeListCache.get(username);
   if (cached) {
     console.log('Found cached user anime list for ' + username);
     return cached;
@@ -138,13 +138,13 @@ export const getUserAnimeList = async (username: string): Promise<MALUserAnimeLi
       break;
     }
   }
-  UserAnimeListCache.put(username, data);
+  UserAnimeListCache.set(username, data);
 
   return data;
 };
 
 export const getUserMangaList = async (username: string): Promise<MALUserMangaListItem[]> => {
-  const cached = UserMangaListCache.get(username);
+  const cached: MALUserMangaListItem[] | undefined = UserMangaListCache.get(username);
   if (cached) {
     console.log('Found cached user manga list for ' + username);
     return cached;
@@ -167,7 +167,7 @@ export const getUserMangaList = async (username: string): Promise<MALUserMangaLi
       break;
     }
   }
-  UserMangaListCache.put(username, data);
+  UserMangaListCache.set(username, data);
 
   return data;
 };
@@ -217,7 +217,7 @@ export interface AnimeDetails {
   genres?: Genre[];
 }
 
-const AnimeDetailsCache = new TimedCache({ defaultTtl: 24 * 60 * 60 * 1000 });
+const AnimeDetailsCache = new NodeCache({ stdTTL: 24 * 60 * 60 * 1000 });
 
 export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | null> => {
   const fieldsToFetch = [
@@ -243,7 +243,7 @@ export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | n
     return null;
   }
 
-  AnimeDetailsCache.put(id, details);
+  AnimeDetailsCache.set(id, details);
 
   // Update DB in the background
   DbPool.query(
@@ -332,7 +332,7 @@ export const getAnimesByID = async (
       return datum;
     }
 
-    AnimeDetailsCache.put(datum.id, datum);
+    AnimeDetailsCache.set(datum.id, datum);
 
     datum = { ...datum };
     if (!includeRecommendationsAndRelated) {

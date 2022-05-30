@@ -8,8 +8,9 @@
 
   export let recommendations: Recommendation[];
   export let animeMetadataDatabase: { [animeID: number]: AnimeDetails };
-  export let excludeRanking: (animeID: number) => void;
-  export let excludeGenre: (genreID: number, genreName: string) => void;
+  export let excludeRanking: ((animeID: number) => void) | undefined = undefined;
+  export let excludeGenre: ((genreID: number, genreName: string) => void) | undefined = undefined;
+  export let addRanking: ((animeID: number) => void) | undefined = undefined;
   export let contributorsLoading: boolean;
 
   let expandedAnimeID: number | null = null;
@@ -39,6 +40,7 @@
         planToWatch={planToWatch ?? false}
         {excludeRanking}
         {excludeGenre}
+        {addRanking}
         {contributorsLoading}
       />
     </div>

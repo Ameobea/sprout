@@ -12,7 +12,7 @@
       case '/pymde_4d_100n':
         return EmbeddingName.PyMDE_4D_100N;
       default:
-        console.error('Unknown embedding name:', window.location.pathname);
+        // console.error('Unknown embedding name:', window.location.pathname);
         return EmbeddingName.PyMDE_3D_40N;
     }
   };

@@ -1,38 +1,62 @@
 <script lang="ts">
   import Fuse from 'fuse.js';
 
-  import type { Embedding } from '../routes/embedding';
-
-  export let embedding: Embedding;
-  export let onSubmit: (id: number) => void;
+  export let embedding: { metadata: { id: number; title: string; title_english: string } }[];
+  export let onSubmit: (id: number, title: string, titleEnglish: string) => void;
+  export let style: string | undefined = undefined;
+  export let inputStyle: string | undefined = undefined;
+  export let suggestionsStyle: string | undefined = undefined;
+  export let blurredValue: string | undefined = undefined;
 
   let value = '';
   const fuse = new Fuse(embedding, {
     keys: ['metadata.title', 'metadata.title_english'],
   });
 
-  let suggestionsVisible = true;
-  $: suggestions = value && suggestionsVisible ? fuse.search(value, { limit: 8 }) : [];
+  let isFocused = false;
+  $: suggestions = value && isFocused ? fuse.search(value, { limit: 8 }) : [];
+
+  const handleInputChange = (evt: any) => {
+    value = evt.target.value;
+  };
 </script>
 
-<div class="root">
+<div class="root" {style}>
   <input
+    style={inputStyle}
     type="text"
-    placeholder="Search for Anime"
-    bind:value
+    placeholder={isFocused ? undefined : 'Search for Anime'}
+    value={isFocused ? value : blurredValue || value}
+    on:input={handleInputChange}
     on:blur={() => {
-      suggestionsVisible = false;
+      isFocused = false;
     }}
     on:focus={() => {
-      suggestionsVisible = true;
+      isFocused = true;
     }}
   />
 
-  {#each suggestions as suggestion (suggestion.item.metadata.id)}
-    <div role="button" tabindex={0} class="suggestion" on:mousedown={() => onSubmit(suggestion.item.metadata.id)}>
-      {suggestion.item.metadata.title_english || suggestion.item.metadata.title}
+  {#if suggestions.length > 0}
+    <div class="suggestions-container" style={suggestionsStyle}>
+      {#each suggestions as suggestion (suggestion.item.metadata.id)}
+        <div
+          role="button"
+          tabindex={0}
+          class="suggestion"
+          on:mousedown={() => {
+            onSubmit(
+              suggestion.item.metadata.id,
+              suggestion.item.metadata.title,
+              suggestion.item.metadata.title_english
+            );
+            value = '';
+          }}
+        >
+          {suggestion.item.metadata.title_english || suggestion.item.metadata.title}
+        </div>
+      {/each}
     </div>
-  {/each}
+  {/if}
 </div>
 
 <style lang="css">
@@ -58,6 +82,12 @@
     box-sizing: border-box;
     width: 100%;
     height: 30px;
+  }
+
+  .suggestions-container {
+    position: absolute;
+    top: 36px;
+    width: 100%;
   }
 
   .suggestion {

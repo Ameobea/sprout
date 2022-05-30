@@ -1,12 +1,13 @@
 <script lang="ts">
   import { browser } from '$app/env';
-  import type { EmbeddingName } from 'src/types';
 
   import { onMount } from 'svelte';
 
+  import type { EmbeddingName } from 'src/types';
   import type { Embedding } from '../routes/embedding';
   import AnimeDetails from './AnimeDetails.svelte';
   import { AtlasViz, ColorBy, getDefaultColorBy } from './AtlasViz';
+  import { DEFAULT_PROFILE_SOURCE, ProfileSource } from './recommendation/conf';
   import Search from './Search.svelte';
   import VizControls from './VizControls.svelte';
 
@@ -16,6 +17,7 @@
   export let maxWidth: number | undefined;
   export let disableEmbeddingSelection: boolean = false;
   export let disableUsernameSearch: boolean = false;
+  export let profileSource: ProfileSource = DEFAULT_PROFILE_SOURCE;
 
   let viz: AtlasViz | null = null;
   let selectedAnimeID: number | null = null;
@@ -36,7 +38,7 @@
       console.error('Tried to load MAL profile before Atlas viz was loaded.');
       return;
     }
-    fetch(`/mal-profile?username=${username}`)
+    fetch(`/${profileSource}-profile?username=${username}`)
       .then((res) => res.json())
       .then((profile) => {
         viz?.displayMALUser(profile);
@@ -46,7 +48,7 @@
   onMount(() => {
     const usernameToLoad = username ?? new URLSearchParams(window.location.search).get('username');
     const userProfilePromise =
-      usernameToLoad && fetch(`/mal-profile?username=${usernameToLoad}`).then((res) => res.json());
+      usernameToLoad && fetch(`/${profileSource}-profile?username=${usernameToLoad}`).then((res) => res.json());
     const neighborsPromise: Promise<{ neighbors: number[][] }> = fetch(`/neighbors?embedding=${embeddingName}`).then(
       (res) => res.json()
     );

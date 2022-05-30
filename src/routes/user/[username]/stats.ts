@@ -1,15 +1,13 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import * as R from 'ramda';
+import { isLeft } from 'fp-ts/lib/Either.js';
+import { fetchUserRankings } from 'src/helpers';
 
-import {
-  AnimeListStatusCode,
-  getUserAnimeList,
-  MALAPIError,
-  type AnimeBasicDetails,
-  type AnimeListStatus,
-  type MALUserAnimeListItem,
-} from 'src/malAPI';
+import { AnimeListStatusCode, type AnimeBasicDetails, type AnimeListStatus } from 'src/malAPI';
 import { getOfflineMetadataDB, type OfflineAnimeMetadatum } from 'src/offlineMetadataDB';
+import { DEFAULT_PROFILE_SOURCE } from 'src/components/recommendation/conf';
+import { ProfileSourceValidator } from 'src/routes/recommendation/recommendation';
+import { typify, type Typify } from 'src/components/recommendation/utils';
 
 export type PartialStatsAnimeMetadatum = Pick<OfflineAnimeMetadatum, 'tags'>;
 export interface PartialStatsMALUserAnimeListItem {
@@ -19,35 +17,29 @@ export interface PartialStatsMALUserAnimeListItem {
 
 export type UserStatsLoadProps = {
   animeData: { [id: number]: PartialStatsAnimeMetadatum };
-  profileRes: { type: 'ok'; profile: PartialStatsMALUserAnimeListItem[] } | { type: 'error'; error: string };
+  profileRes: { type: 'ok'; profile: Typify<PartialStatsMALUserAnimeListItem[]> } | { type: 'error'; error: string };
 };
 
-export const get: RequestHandler = async ({ params }): Promise<{ status: number; body: UserStatsLoadProps }> => {
-  let userProfile: MALUserAnimeListItem[] = [];
-  try {
-    userProfile = await getUserAnimeList(params.username);
-  } catch (err) {
-    console.error('Error fetching user animelist: ', err);
-    let errMessage: string;
-    if (err instanceof MALAPIError) {
-      switch (err.statusCode) {
-        case 404:
-          errMessage = 'User not found; double-check the username';
-          break;
-        case 403:
-          errMessage = "User's anime list is not public";
-          break;
-        default:
-          if (err.statusCode >= 500) {
-            errMessage = 'MyAnimeList API is having trouble; try again later';
-          } else {
-            errMessage = 'An unknown error occurred fetching MyAnimeList profile';
-          }
-      }
-    }
-
-    return { status: 200, body: { animeData: {}, profileRes: { type: 'error', error: errMessage } } };
+export const get: RequestHandler = async ({ params, url }): Promise<{ status: number; body: UserStatsLoadProps }> => {
+  const username = params.username;
+  const rawProfileSource = url.searchParams.get('source') ?? DEFAULT_PROFILE_SOURCE;
+  const profileSourceParseRes = ProfileSourceValidator.decode(rawProfileSource);
+  if (isLeft(profileSourceParseRes)) {
+    return {
+      status: 200,
+      body: { animeData: {}, profileRes: { type: 'error' as const, error: 'Invalid `source` query param' } },
+    };
   }
+  const profileSource = profileSourceParseRes.right;
+
+  const rankingsRes = await fetchUserRankings(username, profileSource)();
+  if (isLeft(rankingsRes)) {
+    return {
+      status: 200,
+      body: { animeData: {}, profileRes: { type: 'error' as const, error: typify(rankingsRes.left.body) } },
+    };
+  }
+  const { profile: userProfile } = rankingsRes.right;
 
   const animeIdsNeedingMetadata = new Set(userProfile.map((item) => item.node.id));
 
@@ -82,5 +74,5 @@ export const get: RequestHandler = async ({ params }): Promise<{ status: number;
       list_status: R.pick(['score'], item.list_status),
     }));
 
-  return { status: 200, body: { animeData, profileRes: { type: 'ok', profile } } };
+  return { status: 200, body: { animeData: typify(animeData), profileRes: { type: 'ok', profile: typify(profile) } } };
 };

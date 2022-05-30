@@ -1,5 +1,7 @@
 import type { RequestHandler } from '@sveltejs/kit';
 
+import type { CompatAnimeListEntry } from 'src/anilistAPI';
+import { typify } from 'src/components/recommendation/utils';
 import { getUserAnimeList } from '../malAPI';
 
 export const get: RequestHandler = async ({ url }) => {
@@ -10,7 +12,11 @@ export const get: RequestHandler = async ({ url }) => {
 
   try {
     const profile = await getUserAnimeList(username);
-    return { body: profile };
+    const compatProfile: CompatAnimeListEntry[] = profile.map((entry) => ({
+      node: { id: entry.node.id },
+      list_status: { status: entry.list_status.status, score: entry.list_status.score },
+    }));
+    return { body: typify(compatProfile) };
   } catch (err) {
     return { status: 500, body: 'Unable to fetch profile due to internal error' };
   }

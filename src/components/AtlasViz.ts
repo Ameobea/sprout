@@ -1,11 +1,11 @@
 import type { Viewport } from 'pixi-viewport';
 
-import type { MALUserAnimeListItem } from '../malAPI';
 import type { EmbeddedPoint, Embedding } from '../routes/embedding';
 import ColorLegend from './ColorLegend';
 import * as d3 from '../d3';
 import type * as PIXI from '../pixi';
 import { captureMessage } from 'src/sentry';
+import type { CompatAnimeListEntry } from 'src/anilistAPI';
 
 const WORLD_SIZE = 1;
 const BASE_LABEL_FONT_SIZE = 48;
@@ -251,7 +251,7 @@ export class AtlasViz {
     return sprite;
   };
 
-  public displayMALUser(allMALData: MALUserAnimeListItem[]) {
+  public displayMALUser(allMALData: CompatAnimeListEntry[]) {
     const malData = allMALData.filter((d) => d.list_status.status !== 'plan_to_watch');
 
     this.renderedMALNodeIDs.clear();
@@ -281,7 +281,7 @@ export class AtlasViz {
       const color = MAL_NODE_COLOR;
       const datum = this.embeddedPointByID.get(+item.node.id);
       if (!datum) {
-        console.warn(`Could not find embedded point for MAL data point ${item.node.id} (${item.node.title})`);
+        console.warn(`Could not find embedded point for MAL data point ${item.node.id}`);
         return;
       }
 

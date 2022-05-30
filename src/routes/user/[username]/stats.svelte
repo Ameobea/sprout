@@ -1,11 +1,35 @@
+<script context="module" lang="ts">
+  const DESCRIPTION = 'AI-powered anime recommendations, visualizations, and tools';
+</script>
+
 <script lang="ts">
+  import { page } from '$app/stores';
+  import SvelteSeo from 'svelte-seo';
+
   import GenresBarChart from 'src/components/profileStats/GenresBarChart.svelte';
   import RatingDistributionChart from 'src/components/profileStats/RatingDistributionChart.svelte';
   import type { UserStatsLoadProps } from './stats';
 
+  $: username = $page.params.username;
+  $: title = `Anime Profile Stats for ${username}`;
+
   export let animeData: UserStatsLoadProps['animeData'];
   export let profileRes: UserStatsLoadProps['profileRes'];
 </script>
+
+<SvelteSeo
+  {title}
+  description={DESCRIPTION}
+  openGraph={{
+    title,
+    description: DESCRIPTION,
+  }}
+  twitter={{
+    card: 'summary',
+    title,
+    description: DESCRIPTION,
+  }}
+/>
 
 <div class="root">
   {#if profileRes.type === 'error'}

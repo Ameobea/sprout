@@ -1,39 +1,43 @@
 <script lang="ts" context="module">
+  import { DEFAULT_PROFILE_SOURCE, ProfileSource } from 'src/components/recommendation/conf';
+
   export const prerender = true;
 
-  const SITE_TITLE = 'Anime Recommendations, Stats, MAL Profile Analysis';
+  const SITE_TITLE = 'Sprout Anime Recommender, Stats, and Visualizations';
   const SITE_DESCRIPTION =
-    'Personalized AI-powered anime recommendations based your MyAnimeList profile. Find new shows, visualize your watch history, and explore the world of anime!';
+    'Personalized AI-powered anime recommendations based your MyAnimeList or AniList profile. Find new shows, visualize your watch history, and find your next favorite show!';
 
-  const buildRecommendationsURL = (username: string) => `/user/${username}/recommendations`;
+  const buildRecommendationsURL = (username: string, profileSource: ProfileSource) =>
+    `/user/${username}/recommendations${profileSource !== DEFAULT_PROFILE_SOURCE ? `?source=${profileSource}` : ''}`;
 </script>
 
 <script lang="ts">
   import { goto, prefetch } from '$app/navigation';
-  import { InlineLoading, Tag } from 'carbon-components-svelte';
+  import { InlineLoading } from 'carbon-components-svelte';
   import { Search } from 'carbon-icons-svelte';
   import { onMount } from 'svelte';
   import SvelteSeo from 'svelte-seo';
 
+  import SproutLogo from 'src/components/SproutLogo.svelte';
+
+  let selectedProfileSource = DEFAULT_PROFILE_SOURCE;
   let searchValue = '';
   let searchFocused = false;
   let isLoading = false;
 
   onMount(() => prefetch('/user/_/recommendations'));
 
-  const handleRecommendationsButtonClick = () => {
+  const handleRecommendationsButtonClick = async () => {
     if (!searchValue || isLoading) {
       return;
     }
 
     isLoading = true;
-    goto(buildRecommendationsURL(searchValue))
-      .then(() => {
-        isLoading = false;
-      })
-      .catch(() => {
-        isLoading = false;
-      });
+    try {
+      await goto(buildRecommendationsURL(searchValue, selectedProfileSource));
+    } finally {
+      isLoading = false;
+    }
   };
 
   const handleSearchKeyDown = (event: KeyboardEvent) => {
@@ -42,7 +46,7 @@
     }
   };
 
-  const prefetchRecommendations = () => prefetch(buildRecommendationsURL(searchValue));
+  const prefetchRecommendations = () => prefetch(buildRecommendationsURL(searchValue, selectedProfileSource));
 </script>
 
 <SvelteSeo
@@ -52,20 +56,29 @@
     title: SITE_TITLE,
     description: SITE_DESCRIPTION,
     images: [
-      // TODO
+      {
+        url: 'https://anime.ameo.dev/sprout-big.png',
+        alt: 'Sprout logo, a small green leafy pixel art plant sprouting out of a pot',
+        height: 128,
+        width: 128,
+      },
     ],
   }}
   twitter={{
     card: 'summary',
     title: SITE_TITLE,
-    // TODO: image
+    image: 'https://anime.ameo.dev/sprout-big.png',
+    imageAlt: 'Sprout logo, a small green leafy pixel art plant sprouting out of a pot',
     description: SITE_DESCRIPTION,
   }}
 />
 
 <div class="root">
   <div class="top">
-    <h1>Ameo's To-Be-Named Anime Recommendation Site</h1>
+    <h1 style="display: inline; justify-content: center; align-items: center">
+      <SproutLogo />
+      Sprout Anime Recommender
+    </h1>
 
     <div class="search-container">
       <input
@@ -78,7 +91,9 @@
         on:blur={() => {
           searchFocused = false;
         }}
-        placeholder={searchFocused ? undefined : 'Enter MyAnimeList Username'}
+        placeholder={searchFocused
+          ? undefined
+          : `Enter ${selectedProfileSource === ProfileSource.MyAnimeList ? 'MyAnimeList' : 'AniList'} Username`}
         on:keydown={handleSearchKeyDown}
       />
       <button
@@ -94,20 +109,62 @@
         {/if}
       </button>
     </div>
+
+    <div class="profile-source-switcher">
+      <div
+        aria-selected={selectedProfileSource === ProfileSource.MyAnimeList}
+        role="option"
+        class="profile-switcher-option"
+        on:click={() => {
+          selectedProfileSource = ProfileSource.MyAnimeList;
+        }}
+        on:keydown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            selectedProfileSource = ProfileSource.MyAnimeList;
+            event.preventDefault();
+          }
+        }}
+        tabindex="0"
+      >
+        MyAnimeList
+      </div>
+      <div
+        aria-selected={selectedProfileSource === ProfileSource.AniList}
+        role="option"
+        class="profile-switcher-option"
+        on:click={() => {
+          selectedProfileSource = ProfileSource.AniList;
+        }}
+        on:keydown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            selectedProfileSource = ProfileSource.AniList;
+            event.preventDefault();
+          }
+        }}
+        tabindex="0"
+      >
+        AniList
+      </div>
+    </div>
+
+    <i style="color: #b6b6b6; margin-top: 24px; font-size: 12.5px;">Don't have an account to load from?</i>
+    <a style="margin-top: 5px; font-size: 16px" sveltekit:prefetch href="/interactive-recommender">
+      Try the Interactive Recommender
+    </a>
   </div>
 
   <div class="bottom">
     <div class="about">
       <div>
-        <h2>About This Site</h2>
+        <h2>About Sprout</h2>
         <p>
-          This site's main function is an interactive anime recommendation engine. It uses a machine learning model to
-          generate tailored recommendations based on your watch history and ratings. It also provides a variety of
-          filters and options for narrowing the results.
+          Sprout is an interactive anime recommendation engine. It uses a machine learning model to generate tailored
+          recommendations based on your watch history and ratings from MyAnimeList or AniList. It also provides a
+          variety of filters and options for narrowing the results.
         </p>
         <p>
-          In addition to recommendation, this site also provides a growing variety of stats and visualizations of both
-          your personal anime watch history and preferences as well as the entire world of anime via the <a
+          In addition to recommendation, Sprout also provides a growing variety of stats and visualizations of both your
+          personal anime watch history and preferences as well as the entire world of anime via the <a
             sveltekit:prefetch
             href="/pymde_4d_40n"
           >
@@ -115,7 +172,7 @@
           </a>.
         </p>
         <p>
-          <i>This site is still in active development</i>. This is an alpha version, but all currently existing features
+          <i>This site is still in active development</i>. This is a beta version, but all currently existing features
           are expected to work.
         </p>
         <p>
@@ -125,23 +182,31 @@
             Email Me
           </a>
           or DM me on Twitter <a href="https://twitter.com/ameobea10">@ameobea10</a>. I'm particularly interested in
-          feedback about the recommendations - please do let me know what you think. I'm interested in making this site
-          as good + useful as it can be!
+          feedback about the recommendations - please do let me know what you think. I'm interested in making Sprout as
+          good + useful as it can be!
         </p>
       </div>
       <div>
         <h2>About the Recommendations</h2>
         <p>
-          This site loads your anime list from your MyAnimeList profile <span style="color: #bbb; font-size: 13px;">
-            (Anilist support coming soon!)
-          </span> and uses it to generate a list of recommendations of animes that you are likely to also like. It takes
-          your ratings into account as well — low ratings are treated as negatives for the model.
+          Sprout loads your anime list from your MyAnimeList or AniList profile and uses it to generate a list of
+          recommendations of animes that you are likely to also like. It takes your ratings into account as well — low
+          ratings are treated as negatives for the model.
         </p>
         <p>
           In order to do this, it uses a neural network that is trained using data from other MyAnimeList users. Unlike
           some other recommendation strategies that generate recommendations on a rating-by-rating basis, this model has
           the advantage of being able to consider your entire anime list at once. This allows it to make use of complex
           relationships between anime + ratings to produce higher-quality recommendations.
+        </p>
+        <p>
+          If you don't have a MyAnimeList or AniList account, you can use the <a
+            sveltekit:prefetch
+            href="/interactive-recommender"
+          >
+            interactive recommender
+          </a>
+          or check out some <a sveltekit:prefetch href="/user/ameo___/recommendations">sample recommendations</a>.
         </p>
       </div>
       <div>
@@ -189,10 +254,9 @@
   .search-container {
     display: flex;
     flex-direction: row;
-    margin-top: 40px;
+    margin-top: 30px;
     max-width: calc(min(800px, 100vw - 40px));
     width: 100%;
-    margin-bottom: 21.2vh;
   }
 
   .main-search {
@@ -200,7 +264,7 @@
     box-sizing: border-box;
     width: 100%;
     height: 50px;
-    border: 1px solid #141414;
+    border: 1px solid #323232;
     border-radius: 6px 0px 0px 6px;
     margin-left: auto;
     margin-right: auto;
@@ -212,9 +276,16 @@
     .main-search {
       font-size: 20px;
     }
+
+    h1 {
+      font-size: 30px;
+    }
+
+    .top {
+      margin-top: -40px;
+    }
   }
 
-  /* placeholder color */
   .main-search::-webkit-input-placeholder,
   .main-search::placeholder {
     color: #aaa;
@@ -224,7 +295,7 @@
     height: 50px;
     width: 58px;
     border-radius: 0px 6px 6px 0px;
-    border: 1px solid #141414;
+    border: 1px solid #323232;
     border-left: none;
     padding: 0 10px;
     background-color: #050505;
@@ -239,17 +310,54 @@
   }
 
   .search-container button:not(:disabled) {
-    background-color: #0f62fe;
+    background-color: #488d19;
     transition: background-color 0.15s ease-in-out;
   }
 
   .search-container button:not(:disabled):active {
-    background-color: #002d9c !important;
+    background-color: #23420e !important;
   }
 
   .search-container button:not(:disabled):hover {
-    background-color: #0353e9;
+    background-color: #346413;
     transition: background-color 0.1s ease-in-out;
+  }
+
+  .profile-source-switcher {
+    width: 300px;
+    display: flex;
+    flex-direction: row;
+    margin-top: 10px;
+    height: 35px;
+  }
+
+  .profile-source-switcher .profile-switcher-option {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-top: 1px solid #323232;
+    border-bottom: 1px solid #323232;
+    border-left: 1px solid #323232;
+    user-select: none;
+  }
+
+  .profile-source-switcher .profile-switcher-option:first-of-type {
+    border-radius: 5px 0px 0px 5px;
+  }
+
+  .profile-source-switcher .profile-switcher-option:last-of-type {
+    border-radius: 0px 5px 5px 0px;
+    border-right: 1px solid #323232;
+  }
+
+  .profile-source-switcher .profile-switcher-option[aria-selected='false']:hover {
+    background-color: #8de53d20;
+  }
+
+  .profile-source-switcher .profile-switcher-option[aria-selected='true'] {
+    background-color: #8de53d59;
   }
 
   p {
@@ -282,12 +390,12 @@
   }
 
   .about > div {
-    padding-left: 6px;
-    padding-right: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
     display: flex;
     flex: 1;
     flex-direction: column;
-    min-width: 400px;
+    min-width: calc(min(100vw - 10px, 400px));
     max-width: 750px;
   }
 

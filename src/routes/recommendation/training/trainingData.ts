@@ -4,6 +4,7 @@ import { getLocalAnimelistsDB } from './localAnimelistsDB';
 import { loadEmbedding } from 'src/embedding';
 import { AnimeListStatusCode, type MALUserAnimeListItem } from 'src/malAPI';
 import { EmbeddingName } from 'src/types';
+import type { CompatAnimeListEntry } from 'src/anilistAPI';
 
 export interface TrainingDatum {
   animeIx: number;
@@ -22,7 +23,7 @@ const getAnimeIxByID = async (): Promise<Map<number, number>> => {
 };
 
 export const convertMALProfileToTrainingData = async (
-  rawData: MALUserAnimeListItem[][]
+  rawData: CompatAnimeListEntry[][]
 ): Promise<{ ratings: TrainingDatum[]; userIsNonRater: boolean }[]> => {
   const AnimeIxByID = await getAnimeIxByID();
 
@@ -41,7 +42,7 @@ export const convertMALProfileToTrainingData = async (
         unratedCount += 1;
       }
     }
-    const userIsNonRater = unratedCount / userProfileAnime.length > 0.5;
+    const userIsNonRater = unratedCount / validRatings.length > 0.2;
     if (userIsNonRater) {
       console.log({ userIsNonRater });
     }

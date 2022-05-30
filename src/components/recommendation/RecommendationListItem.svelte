@@ -9,8 +9,9 @@
   export let animeMetadata: AnimeDetails;
   export let expanded: boolean;
   export let toggleExpanded: () => void;
-  export let excludeRanking: (animeID: number) => void;
-  export let excludeGenre: (genreID: number, genreName: string) => void;
+  export let excludeRanking: ((animeID: number) => void) | undefined;
+  export let excludeGenre: ((genreID: number, genreName: string) => void) | undefined;
+  export let addRanking: ((animeID: number) => void) | undefined;
   export let topRatingContributors: { datum: AnimeDetails; positiveRating: boolean }[] | undefined;
   export let planToWatch: boolean;
   export let contributorsLoading: boolean;
@@ -42,6 +43,20 @@
     </div>
     {#if planToWatch && !expanded}
       <div class="tag"><Tag style="color: white" type="green">Plan To Watch</Tag></div>
+    {:else if addRanking && !expanded}
+      <div class="tag">
+        <Tag
+          style="color: white"
+          type="outline"
+          interactive
+          on:click={(evt) => {
+            evt.stopPropagation();
+            addRanking?.(animeMetadata.id);
+          }}
+        >
+          Already Watched
+        </Tag>
+      </div>
     {/if}
   </div>
   <div class="expander" on:click={toggleExpanded}>
@@ -56,10 +71,10 @@
       {#each animeMetadata.genres ?? [] as genre, i (genre)}
         <Tag
           style={i === 0 ? 'margin-left: 0' : undefined}
-          filter
           size="sm"
           type="cool-gray"
-          on:close={() => excludeGenre(genre.id, genre.name)}
+          filter={!!excludeGenre}
+          on:close={() => excludeGenre?.(genre.id, genre.name)}
         >
           {genre.name}
         </Tag>
@@ -77,9 +92,9 @@
           {#each topRatingContributors as { datum, positiveRating } (datum.id)}
             <Tag
               style="color: white;"
-              filter={!contributorsLoading}
+              filter={!contributorsLoading && !!excludeRanking}
               skeleton={contributorsLoading}
-              on:close={() => excludeRanking(datum.id)}
+              on:close={() => excludeRanking?.(datum.id)}
               type={positiveRating ? 'green' : 'red'}
             >
               You {positiveRating ? 'liked' : 'disliked'}:
@@ -176,6 +191,7 @@
 
   .recommendation[data-expanded='false'] .title .tag {
     display: flex;
+    justify-content: center;
     flex: 0;
     padding: 4px 4px;
   }

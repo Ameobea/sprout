@@ -41,5 +41,12 @@ export enum PopularityAttenuationFactor {
   Medium = 0.0008,
   High = 0.004,
   VeryHigh = 0.01,
+  Extreme = 0.1,
 }
 export const DEFAULT_POPULARITY_ATTENUATION_FACTOR: PopularityAttenuationFactor = PopularityAttenuationFactor.High;
+
+export enum ProfileSource {
+  MyAnimeList = 'mal',
+  AniList = 'anilist',
+}
+export const DEFAULT_PROFILE_SOURCE = ProfileSource.MyAnimeList;

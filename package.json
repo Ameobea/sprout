@@ -58,6 +58,7 @@
     "@tensorflow/tfjs": "^3.18.0",
     "@tensorflow/tfjs-node": "^3.18.0",
     "@types/ramda": "^0.28.13",
+    "anilist-node": "^1.12.1",
     "aws-sdk": "^2.1144.0",
     "broadcast-channel": "^4.12.0",
     "csv-parse": "^5.1.0",
@@ -78,11 +79,11 @@
     "mock-aws-s3": "^4.0.2",
     "mysql": "^2.18.1",
     "nock": "^13.2.4",
+    "node-cache": "^5.1.2",
     "pixi-viewport": "^4.34.4",
     "ramda": "^0.28.0",
     "sqlite3": "^5.0.8",
     "svelte-seo": "^1.4.0",
-    "timed-cache": "^1.1.5",
     "uplot": "^1.6.20"
   }
 }
