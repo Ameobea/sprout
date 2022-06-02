@@ -13,8 +13,8 @@
 
   export let embeddingName: EmbeddingName;
   export let embedding: Embedding;
-  export let username: string | undefined;
-  export let maxWidth: number | undefined;
+  export let username: string | undefined = undefined;
+  export let maxWidth: number | undefined = undefined;
   export let disableEmbeddingSelection: boolean = false;
   export let disableUsernameSearch: boolean = false;
   export let profileSource: ProfileSource = DEFAULT_PROFILE_SOURCE;
@@ -85,7 +85,7 @@
   <canvas id="viz" />
 </div>
 {#if viz}
-  <Search {embedding} onSubmit={(id) => viz?.flyTo(id)} />
+  <Search {embedding} onSubmit={(id) => viz?.flyTo(id)} suggestionsStyle="top: 30px;" />
   <VizControls {colorBy} {setColorBy} {loadMALProfile} {disableEmbeddingSelection} {disableUsernameSearch} />
 {/if}
 <div id="atlas-viz-legend" />

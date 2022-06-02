@@ -789,7 +789,7 @@ export class AtlasViz {
     this.renderLegend();
   }
 
-  public flyTo(id: number) {
+  public flyTo = (id: number) => {
     captureMessage('Fly to anime in atlas', { id, title: this.embeddedPointByID.get(id)?.metadata.title });
     this.setSelectedAnimeID(id);
     const { x, y } = this.embedding.find((p) => p.metadata.id === id)!.vector;
@@ -805,7 +805,7 @@ export class AtlasViz {
       },
       callbackOnComplete: () => this.updateLabels(),
     });
-  }
+  };
 
   private getTextScale = () => {
     const currentScale = this.container.scale.x;

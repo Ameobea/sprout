@@ -88,6 +88,7 @@
     position: absolute;
     top: 36px;
     width: 100%;
+    z-index: 2;
   }
 
   .suggestion {
