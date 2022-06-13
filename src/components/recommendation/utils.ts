@@ -75,8 +75,8 @@ export const updateQueryParams = (params: RecommendationControlParams) => {
   if (params.includeONAsOVAsSpecials) {
     url.searchParams.set('specials', 'true');
   }
-  if (!params.includeMovies) {
-    url.searchParams.set('movies', 'false');
+  if (params.includeMovies) {
+    url.searchParams.set('movies', 'true');
   }
   if (params.includeMusic) {
     url.searchParams.set('music', 'true');
