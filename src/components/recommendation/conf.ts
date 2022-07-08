@@ -1,18 +1,20 @@
 /**
  * Take only this many items from the embedding, taking more popular items first
  */
-export const RECOMMENDATION_MODEL_CORPUS_SIZE = 6000;
+export const RECOMMENDATION_MODEL_CORPUS_SIZE = 6500;
 
 export enum ModelName {
   Model_6K = 'model_6k',
   Model_6K_TFLite = 'model_6k_tflite',
   Model_6K_Smaller = 'model_6k_smaller',
   Model_6K_Smaller_Weighted = 'model_6k_smaller_weighted',
+  Model_6_5K_New = 'model_6-5k_new',
 }
 
 export const getIsModelScoresWeighted = (modelName: ModelName): boolean => {
   switch (modelName) {
     case ModelName.Model_6K_Smaller_Weighted:
+    case ModelName.Model_6_5K_New:
       return true;
     default:
       return false;
@@ -25,6 +27,7 @@ export const validateModelName = (name: string): ModelName | null => {
     case ModelName.Model_6K_TFLite:
     case ModelName.Model_6K_Smaller:
     case ModelName.Model_6K_Smaller_Weighted:
+    case ModelName.Model_6_5K_New:
       return name as ModelName;
     default:
       console.error('Invalid model name: ' + name);
@@ -32,7 +35,7 @@ export const validateModelName = (name: string): ModelName | null => {
   }
 };
 
-export const DEFAULT_MODEL_NAME = ModelName.Model_6K_Smaller_Weighted;
+export const DEFAULT_MODEL_NAME = ModelName.Model_6_5K_New;
 
 export enum PopularityAttenuationFactor {
   None = 0,
@@ -43,7 +46,7 @@ export enum PopularityAttenuationFactor {
   VeryHigh = 0.01,
   Extreme = 0.1,
 }
-export const DEFAULT_POPULARITY_ATTENUATION_FACTOR: PopularityAttenuationFactor = PopularityAttenuationFactor.High;
+export const DEFAULT_POPULARITY_ATTENUATION_FACTOR: PopularityAttenuationFactor = PopularityAttenuationFactor.Medium;
 
 export enum ProfileSource {
   MyAnimeList = 'mal',

@@ -2,7 +2,7 @@ import * as tf from '@tensorflow/tfjs-node';
 import { parentPort } from 'node:worker_threads';
 
 const DATA_DIR = process.env['DATA_DIR'];
-const RECOMMENDATION_MODEL_CORPUS_SIZE = 6000;
+const RECOMMENDATION_MODEL_CORPUS_SIZE = 6500;
 
 const ModelsCache = new Map();
 
@@ -11,6 +11,7 @@ export const getModelFilename = (modelName) => {
     case 'model_6k':
     case 'model_6k_smaller':
     case 'model_6k_smaller_weighted':
+    case 'model_6-5k_new':
       return `file://${DATA_DIR}/tfjs_models/${modelName}/model.json`;
     default:
       throw new Error(`Unimplemented model name: ${modelName}`);

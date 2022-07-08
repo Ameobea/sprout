@@ -2,9 +2,10 @@
   import { ModelName, PopularityAttenuationFactor } from './conf';
 
   const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
-    { id: ModelName.Model_6K, text: 'Top 6k Anime v1' },
-    { id: ModelName.Model_6K_Smaller, text: 'Top 6k Smaller' },
-    { id: ModelName.Model_6K_Smaller_Weighted, text: 'Top 6k Smaller Weighted' },
+    // { id: ModelName.Model_6K, text: 'Top 6k Anime v1' },
+    // { id: ModelName.Model_6K_Smaller, text: 'Top 6k Smaller' },
+    // { id: ModelName.Model_6K_Smaller_Weighted, text: 'Top 6k Smaller Weighted' },
+    { id: ModelName.Model_6_5K_New, text: 'Top 6.5K Weighted Updated' },
   ];
 
   const ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS: { id: PopularityAttenuationFactor; text: string }[] = [
@@ -44,18 +45,6 @@
       <div>
         <Dropdown
           style="width: 100%;"
-          titleText="Model"
-          selectedId={$params.modelName}
-          on:select={(selected) => {
-            $params.modelName = selected.detail.selectedItem.id;
-          }}
-          items={ALL_MODEL_OPTIONS}
-          helperText="Each model was trained slightly differently, which impacts the generated recommendations"
-        />
-      </div>
-      <div>
-        <Dropdown
-          style="width: 100%;"
           titleText="Popularity Attenuation Factor"
           selectedId={$params.popularityAttenuationFactor}
           on:select={(selected) => {
@@ -64,6 +53,18 @@
           items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
           helperText="Higher popularity attenuation factors result in less-popular anime being weighted higher in recommendations"
         />
+      </div>
+      <div>
+        <!-- <Dropdown
+          style="width: 100%;"
+          titleText="Model"
+          selectedId={$params.modelName}
+          on:select={(selected) => {
+            $params.modelName = selected.detail.selectedItem.id;
+          }}
+          items={ALL_MODEL_OPTIONS}
+          helperText="Each model was trained slightly differently, which impacts the generated recommendations"
+        /> -->
       </div>
     </div>
   {/if}

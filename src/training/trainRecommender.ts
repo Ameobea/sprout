@@ -11,16 +11,26 @@ export type Logger = ((msg: string) => void) & { error: (msg: string) => void; w
 const trainIter = async (
   data: DataContainer,
   model: tf.Sequential,
-  dataCount: number,
+  trainDataCount: number,
+  // testDataCount: number,
   weightScores: boolean
+  // loss: (yTrue: tf.Tensor, yPred: tf.Tensor) => tf.Scalar
 ): Promise<tf.History> => {
-  const [xTrain, yTrain] = await data.getTrainingData(dataCount, weightScores);
+  const [xTrain, yTrain] = await data.getTrainingData(trainDataCount, weightScores);
+  // const testDataPromise = data.getTestData(testDataCount, weightScores);
   const history = await model.fit(xTrain, yTrain, {
     batchSize: 32,
     epochs: 1,
     validationSplit: 0, // validation handled manually
   });
   tf.dispose([xTrain, yTrain]);
+
+  // const [xTest, yTest] = await testDataPromise;
+  // const testPreds = (await model.predict(xTest)) as tf.Tensor;
+  // const testLossTensor = loss(yTest, testPreds);
+  // const testLoss = testLossTensor.dataSync()[0];
+  // tf.dispose([xTest, yTest, testPreds, testLossTensor]);
+
   return history;
 };
 
@@ -33,12 +43,14 @@ export const getRecommenderModelCompileParams = (embedding: Embedding) => {
   classWeights.print();
 
   return {
-    optimizer: tf.train.sgd(0.25),
-    loss: (yTrue, yPred) => {
+    optimizer: tf.train.sgd(0.2),
+    loss: (yTrue: tf.Tensor, yPred: tf.Tensor) => {
       // Construct a mask for the non-zero entries in the yTrue tensor
       const nonZeroMask = yTrue.notEqual(0).asType('float32');
       const lossWeights = tf.mul(nonZeroMask.mul(8).add(1), classWeights);
-      return tf.losses.meanSquaredError(yTrue, yPred, lossWeights);
+      const loss = tf.losses.meanSquaredError(yTrue, yPred, lossWeights) as tf.Scalar;
+      tf.dispose([nonZeroMask, lossWeights]);
+      return loss;
     },
     metrics: ['accuracy'],
   };
@@ -76,7 +88,7 @@ const validateModel = async (data: DataContainer, model: tf.Sequential, log: Log
 export const trainRecommender = async (
   iters: number,
   log: Logger,
-  recordLoss: (loss: number) => void,
+  recordLoss: (trainLoss: number) => void,
   weightScores: boolean
 ) => {
   (window as any).tf = tf;
@@ -87,7 +99,7 @@ export const trainRecommender = async (
   model.add(
     tf.layers.dense({
       inputShape: [animeMetadata.length],
-      units: 6000,
+      units: animeMetadata.length,
       activation: 'tanh',
       useBias: true,
       kernelInitializer: 'glorotNormal',
@@ -95,7 +107,7 @@ export const trainRecommender = async (
   );
   model.add(
     tf.layers.dense({
-      units: 6000,
+      units: animeMetadata.length,
       activation: 'tanh',
       useBias: true,
       kernelInitializer: 'glorotNormal',
@@ -119,7 +131,8 @@ export const trainRecommender = async (
   );
   log('\nBuilt model:');
   model.summary(undefined, undefined, log);
-  model.compile(getRecommenderModelCompileParams(animeMetadata));
+  const compileParams = getRecommenderModelCompileParams(animeMetadata);
+  model.compile(compileParams);
 
   const allUsernames = await fetchAllUsernames();
   const data = new DataContainer(tf, allUsernames, animeMetadata);

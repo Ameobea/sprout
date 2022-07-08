@@ -127,7 +127,46 @@ const getTrainingDataFromRawTable = async (usernames: string[]): Promise<Trainin
   return parsedAnimeLists;
 };
 
+let didInit = false;
+
+const initOnce = () => {
+  getLocalAnimelistsDB().exec(
+    'CREATE TABLE IF NOT EXISTS `processed-training-data` (username TEXT, processed_animelist TEXT)',
+    (err) => {
+      if (err) {
+        console.error('Error creating processed-training-data table', err);
+        throw err;
+      }
+
+      getLocalAnimelistsDB().exec(
+        'CREATE INDEX IF NOT EXISTS `processed-training-data-username-index` ON `processed-training-data` (username)',
+        (err) => {
+          if (err) {
+            console.error('Error creating processed-training-data-username-index index', err);
+            throw err;
+          }
+        }
+      );
+    }
+  );
+
+  getLocalAnimelistsDB().exec(
+    'CREATE INDEX IF NOT EXISTS `mal-user-animelists-username-index` ON `mal-user-animelists` (username)',
+    (err) => {
+      if (err) {
+        console.error('Error creating mal-user-animelists-username-index index', err);
+        throw err;
+      }
+    }
+  );
+};
+
 export const post: RequestHandler = async ({ request }) => {
+  if (!didInit) {
+    initOnce();
+    didInit = true;
+  }
+
   const allUsernames = await request.json();
   if (!Array.isArray(allUsernames)) {
     return { status: 400, body: 'Invalid body; must be an array of usernames' };

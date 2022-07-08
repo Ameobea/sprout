@@ -1,7 +1,7 @@
 1. Download CSV exports from the DB for user anime profiles and move it into `./work/data/mal-user-animelists.csv`
 2. Run `process-collected-profiles` to convert it into individual rankings and filter it.  This also generates `all-anime-ids.json`
 3. Use `curl -X POST http://localhost:3080/populate-anime-metadata\?populateNulls\=true\&token\=asdf` to fill metadata table with placeholders
-4. Use `while true; do curl -X POST http://localhost/populate-anime-metadata\?token\=j23k4sidjkl234785348348348348 && echo ""; done` to fill in missing metadata from MAL API
+4. Use `while true; do curl -X POST http://localhost:3080/populate-anime-metadata\?token\=j23k4sidjkl234785348348348348 && echo ""; done` to fill in missing metadata from MAL API
 5. Download metadata table as CSV and move to `./work/data/anime-metadata.csv`
 6. Run `process-collected-metadata` script to convert metadata to `./work/data/processed-metadata.csv`
 7. Run `embedding_gen` script to build cooccurrence matrices and produce the `cooccurrence_matrix_wextra.npy` output file

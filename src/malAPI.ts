@@ -235,6 +235,14 @@ export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | n
   console.log('Fetching anime...', url);
   const details = (await makeMALRequest(url).catch((err) => {
     if (err instanceof MALAPIError && err.statusCode === 404) {
+      // Don't delete entry from the database if it's there, but do mark it as having been updated to prevent the refresher
+      // from trying to fetch it again.
+      DbPool.query('UPDATE `anime-metadata` SET update_timestamp = NOW() WHERE id = ?', [id], (err) => {
+        if (err) {
+          console.error('Failed to update update_timestamp for anime that 404s from MAL API:', id, err);
+        }
+      });
+
       return null;
     }
     throw err;
@@ -247,7 +255,7 @@ export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | n
 
   // Update DB in the background
   DbPool.query(
-    'INSERT INTO `anime-metadata` (id, metadata) VALUES (?, ?) ON DUPLICATE KEY UPDATE metadata = VALUES(metadata)',
+    'INSERT INTO `anime-metadata` (id, metadata) VALUES (?, ?) ON DUPLICATE KEY UPDATE metadata = VALUES(metadata), update_timestamp = NOW()',
     [id, JSON.stringify(details)],
     (err) => {
       if (err) {

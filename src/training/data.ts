@@ -73,6 +73,7 @@ export class DataContainer {
   public animeMetadata: Embedding;
   private tf: typeof tfWeb | typeof tfNode;
   private readonly trainUsernames: string[];
+  private testUsernames: string[] = [];
   private trainUsernameCounter = 0;
   private nextTrainingData: Promise<TrainingDatum[][]> | null = null;
 
@@ -87,6 +88,7 @@ export class DataContainer {
 
     this.animeMetadata = animeMetadata;
     this.trainUsernames = trainUsernames;
+    // this.testUsernames = testUsernames;
   }
 
   public static buildModelInput = (
@@ -190,5 +192,12 @@ export class DataContainer {
     const nextTrainUsernames = this.getTrainUsernames(count);
     this.nextTrainingData = fetchTrainingData(nextTrainUsernames);
     return toReturn;
+  };
+
+  public getTestData = async (count: number, weightScores: boolean): Promise<[tfWeb.Tensor2D, tfWeb.Tensor2D]> => {
+    this.tf.util.shuffle(this.testUsernames);
+    const testUsernames = this.testUsernames.slice(0, count);
+    const testData = await fetchTrainingData(testUsernames);
+    return this.buildTrainingDataTensors(testData, false, weightScores);
   };
 }
