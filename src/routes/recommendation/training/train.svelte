@@ -74,7 +74,7 @@
         return losses;
       });
     };
-    const weightScores = true;
+    const weightScores = false;
     await trainRecommender(iters, logger, recordLoss, weightScores);
   });
 </script>

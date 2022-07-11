@@ -1,13 +1,16 @@
 set dotenv-load := true
 
 run:
-  yarn dev --port 3080
+  bun run dev --port 3080
+
+yarn-build:
+  yarn run build
 
 build:
-  yarn build
+  bun run build
 
 preview:
-  yarn preview --port 3080 --host 0.0.0.0
+  bun run preview --port 3080 --host 0.0.0.0
 
 docker-build:
   docker build -t anime-atlas:latest .

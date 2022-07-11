@@ -9,12 +9,14 @@ export enum ModelName {
   Model_6K_Smaller = 'model_6k_smaller',
   Model_6K_Smaller_Weighted = 'model_6k_smaller_weighted',
   Model_6_5K_New = 'model_6-5k_new',
+  Model_6_5K_Unweighted = 'model_6-5k_unweighted',
 }
 
 export const getIsModelScoresWeighted = (modelName: ModelName): boolean => {
   switch (modelName) {
     case ModelName.Model_6K_Smaller_Weighted:
     case ModelName.Model_6_5K_New:
+    case ModelName.Model_6_5K_Unweighted:
       return true;
     default:
       return false;
@@ -28,6 +30,7 @@ export const validateModelName = (name: string): ModelName | null => {
     case ModelName.Model_6K_Smaller:
     case ModelName.Model_6K_Smaller_Weighted:
     case ModelName.Model_6_5K_New:
+    case ModelName.Model_6_5K_Unweighted:
       return name as ModelName;
     default:
       console.error('Invalid model name: ' + name);

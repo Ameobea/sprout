@@ -6,6 +6,7 @@
     // { id: ModelName.Model_6K_Smaller, text: 'Top 6k Smaller' },
     // { id: ModelName.Model_6K_Smaller_Weighted, text: 'Top 6k Smaller Weighted' },
     { id: ModelName.Model_6_5K_New, text: 'Top 6.5K Weighted Updated' },
+    { id: ModelName.Model_6_5K_Unweighted, text: 'Top 6.5K Unweighted Updated' },
   ];
 
   const ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS: { id: PopularityAttenuationFactor; text: string }[] = [
@@ -19,13 +20,15 @@
 </script>
 
 <script lang="ts">
-  import { Dropdown, InlineLoading, Tag, Toggle } from 'carbon-components-svelte';
+  import { Dropdown, InlineLoading, Tag, Toggle, ExpandableTile } from 'carbon-components-svelte';
   import type { Writable } from 'svelte/store';
 
   import type { AnimeDetails } from 'src/malAPI';
   import { browser } from '$app/env';
   import { captureMessage } from 'src/sentry';
   import type { RecommendationControlParams } from './utils';
+  import type { SvelteComponentTyped } from 'svelte';
+  import type { ExpandableTileProps } from 'carbon-components-svelte/types/Tile/ExpandableTile.svelte';
 
   let innerWidth = browser ? window.innerWidth : 0;
   $: isMobile = innerWidth < 768;
@@ -40,34 +43,6 @@
 <svelte:window bind:innerWidth />
 
 <div class="root">
-  {#if !isMobile && !forceHideTopBar}
-    <div class="top">
-      <div>
-        <Dropdown
-          style="width: 100%;"
-          titleText="Popularity Attenuation Factor"
-          selectedId={$params.popularityAttenuationFactor}
-          on:select={(selected) => {
-            $params.popularityAttenuationFactor = selected.detail.selectedItem.id;
-          }}
-          items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
-          helperText="Higher popularity attenuation factors result in less-popular anime being weighted higher in recommendations"
-        />
-      </div>
-      <div>
-        <!-- <Dropdown
-          style="width: 100%;"
-          titleText="Model"
-          selectedId={$params.modelName}
-          on:select={(selected) => {
-            $params.modelName = selected.detail.selectedItem.id;
-          }}
-          items={ALL_MODEL_OPTIONS}
-          helperText="Each model was trained slightly differently, which impacts the generated recommendations"
-        /> -->
-      </div>
-    </div>
-  {/if}
   <div class="toggles">
     <div>
       <Toggle labelText="Extra Seasons" bind:toggled={$params.includeExtraSeasons} />
@@ -90,6 +65,37 @@
       <InlineLoading style="flex: 0; margin-left: 10px;" />
     {/if}
   </div>
+  {#if !isMobile && !forceHideTopBar}
+    <ExpandableTile style="min-height: 10px">
+      <div slot="above">Advanced Options</div>
+      <div class="top" slot="below">
+        <div on:click={(e) => e.stopPropagation()}>
+          <Dropdown
+            style="width: 100%;"
+            titleText="Popularity Attenuation Factor"
+            selectedId={$params.popularityAttenuationFactor}
+            on:select={(selected) => {
+              $params.popularityAttenuationFactor = selected.detail.selectedItem.id;
+            }}
+            items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
+            helperText="Higher popularity attenuation factors result in less-popular anime being weighted higher in recommendations"
+          />
+        </div>
+        <div on:click={(e) => e.stopPropagation()}>
+          <Dropdown
+            style="width: 100%;"
+            titleText="Model"
+            selectedId={$params.modelName}
+            on:select={(selected) => {
+              $params.modelName = selected.detail.selectedItem.id;
+            }}
+            items={ALL_MODEL_OPTIONS}
+            helperText="Each model was trained slightly differently, which impacts the generated recommendations"
+          />
+        </div>
+      </div>
+    </ExpandableTile>
+  {/if}
   {#if $params.excludedRankingAnimeIDs.length > 0}
     <div>
       <label for="tags-container" class="bx--label">Excluded Rankings</label>
@@ -193,5 +199,21 @@
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  :global(.bx--tile--expandable) {
+    background: #242424 !important;
+  }
+
+  :global(.bx--tile--expandable:focus) {
+    outline: none !important;
+  }
+
+  :global(.bx--tile--expandable:hover[aria-expanded='false']) {
+    background: #2b2b2b !important;
+  }
+
+  :global(.bx--tile--is-expanded.bx--tile--expandable) {
+    background: #202020 !important;
   }
 </style>
