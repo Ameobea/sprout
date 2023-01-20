@@ -11,7 +11,9 @@
 
 Now, we train the recommendation model.  The embedding is used as the corpus of anime to recommend from.  Currently, whenever the embedding is changed, the model needs to be re-trained from scratch since the indices of the model's output correspond to the indices of the embedding.
 
-1. Clear out the processed metadata table from the `raw_animelists.db` sqlite database in the data directory because it stores indices that reference the old embedding
-2. Pull up `http://localhost:3080/recommendation/training/train` and let it run until the model is downloaded at the end.
-3. Rename the model + copy into the `data/tfj_models/your_model_name` directory
-4. Update `ModelName` enum in the code and places the enum is used
+1. Clear out the `raw_animelists.db` sqlite database in the data directory because it stores indices that reference the old embedding
+2. `CREATE TABLE "mal-user-animelists"(username, animelist_json);`
+3. Import the `converted-mal-user-animelists.csv` created by the last step of the `process-collected-profiles` notebook into that table
+4. Pull up `http://localhost:3080/recommendation/training/train` and let it run until the model is downloaded at the end.
+5. Rename the model + copy into the `data/tfj_models/your_model_name` directory
+6. Update `ModelName` enum in the code and places the enum is used
