@@ -663,7 +663,7 @@ export const post: RequestHandler = async ({ request }) => {
 
   const recommendationsRes = await getRecommendations({
     dataSource,
-    count: 20,
+    count: 50,
     computeContributions: req.includeContributors,
     modelName,
     excludedRankingAnimeIDs: new Set(req.excludedRankingAnimeIDs),

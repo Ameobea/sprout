@@ -39,9 +39,7 @@ export const get: RequestHandler = async ({ url }) => {
   try {
     const username: string | null = await new Promise((resolve, reject) =>
       DbPool.query(
-        `SELECT username FROM \`usernames-to-collect\` as t1
-          JOIN (SELECT id FROM \`usernames-to-collect\` WHERE ${collectedStatusColumnName} = 0 ORDER BY RAND() LIMIT 1) as t2
-          ON t1.id=t2.id`,
+        `SELECT username FROM \`usernames-to-collect\` WHERE ${collectedStatusColumnName} = 0 LIMIT 100`,
         (err, results) => {
           if (err) {
             reject(err);
@@ -49,7 +47,9 @@ export const get: RequestHandler = async ({ url }) => {
             if (results.length === 0) {
               resolve(null);
             } else {
-              resolve(results[0].username);
+              // pick random one
+              const randomIndex = Math.floor(Math.random() * results.length);
+              resolve(results[randomIndex].username);
             }
           }
         }
@@ -78,6 +78,7 @@ export const get: RequestHandler = async ({ url }) => {
           }
         );
       });
+      console.log('Successfully wrote anime list to DB');
 
       await new Promise((resolve, reject) => {
         DbPool.query(

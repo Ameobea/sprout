@@ -7,3 +7,4 @@ notebooks
 *.tar.bz2
 Justfile
 README.md
+queue-receiver

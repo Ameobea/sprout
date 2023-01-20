@@ -34,6 +34,8 @@ const trainIter = async (
   return history;
 };
 
+const INITIAL_LEARNING_RATE = 0.2;
+
 export const getRecommenderModelCompileParams = (embedding: Embedding) => {
   const nClasses = embedding.length;
   const totalRatingCount = embedding.reduce((acc, datum) => acc + datum.metadata.rating_count, 0);
@@ -43,7 +45,7 @@ export const getRecommenderModelCompileParams = (embedding: Embedding) => {
   classWeights.print();
 
   return {
-    optimizer: tf.train.sgd(0.2),
+    optimizer: tf.train.sgd(INITIAL_LEARNING_RATE),
     loss: (yTrue: tf.Tensor, yPred: tf.Tensor) => {
       // Construct a mask for the non-zero entries in the yTrue tensor
       const nonZeroMask = yTrue.notEqual(0).asType('float32');
@@ -124,7 +126,7 @@ export const trainRecommender = async (
   model.add(
     tf.layers.dense({
       units: animeMetadata.length,
-      activation: 'tanh',
+      activation: 'linear',
       useBias: true,
       kernelInitializer: 'glorotNormal',
     })
@@ -138,6 +140,14 @@ export const trainRecommender = async (
   const data = new DataContainer(tf, allUsernames, animeMetadata);
 
   for (let i = 0; i < iters; i++) {
+    if (i > 1000) {
+      (model.optimizer as tf.SGDOptimizer).setLearningRate(INITIAL_LEARNING_RATE / 2);
+    } else if (i > 1250) {
+      (model.optimizer as tf.SGDOptimizer).setLearningRate(INITIAL_LEARNING_RATE / 4);
+    } else if (i > 1400) {
+      (model.optimizer as tf.SGDOptimizer).setLearningRate(INITIAL_LEARNING_RATE / 8);
+    }
+
     const history = await trainIter(data, model, 5_000, weightScores);
     log(`Training iter ${i + 1} complete`);
     log(`Train loss: ${history.history.loss[0]}`);

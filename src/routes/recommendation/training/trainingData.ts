@@ -43,9 +43,6 @@ export const convertMALProfileToTrainingData = async (
       }
     }
     const userIsNonRater = unratedCount / validRatings.length > 0.2;
-    if (userIsNonRater) {
-      console.log({ userIsNonRater });
-    }
 
     const ratings = validRatings
       .filter((datum) => userIsNonRater || datum.list_status?.score > 0)
