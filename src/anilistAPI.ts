@@ -57,10 +57,12 @@ const convertAniListAnimeListToMALFormat = (entries: anilist.ListEntry[]): Compa
   // const scoreDivisor = entries.some((entry) => entry.score > 10) ? 10 : 1;
   const scoreDivisor = (() => {
     const maxScore = Math.max(...entries.map((entry) => entry.score || 0));
-    if (maxScore > 10) {
+    if (maxScore === 0) {
+      return 1;
+    } else if (maxScore > 10) {
       return 10;
-    } else if (maxScore === 5) {
-      return 0.5;
+    } else if (maxScore <= 5) {
+      return 10 / maxScore;
     }
     return 1;
   })();
