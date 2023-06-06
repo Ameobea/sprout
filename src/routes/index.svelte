@@ -172,8 +172,8 @@
           </a>.
         </p>
         <p>
-          <i>This site is still in active development</i>. This is a beta version, but all currently existing features
-          are expected to work.
+          Sprout is fully <a href="https://github.com/ameobea/sprout">Open Source</a>. This includes the full website
+          code as well as the recommendation model and data collection scripts.
         </p>
         <p>
           If you encounter any issues or have any other feedback, please feel free to <a
@@ -206,7 +206,8 @@
           >
             interactive recommender
           </a>
-          or check out some <a sveltekit:prefetch href="/user/ameo___/recommendations">sample recommendations</a>.
+          or check out some
+          <a sveltekit:prefetch href="/user/ameo___/recommendations">sample recommendations</a>.
         </p>
       </div>
       <div>

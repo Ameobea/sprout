@@ -38,18 +38,33 @@ export const convertMALProfileToTrainingData = async (
     );
     let unratedCount = 0;
     for (const rating of validRatings) {
-      if (!rating?.list_status?.score) {
+      if (
+        !rating?.list_status ||
+        (!rating.list_status.score && rating.list_status.status !== AnimeListStatusCode.Dropped)
+      ) {
         unratedCount += 1;
       }
     }
     const userIsNonRater = unratedCount / validRatings.length > 0.2;
 
     const ratings = validRatings
-      .filter((datum) => userIsNonRater || datum.list_status?.score > 0)
-      .map((datum) => ({
-        animeIx: AnimeIxByID.get(datum.node.id)!,
-        rating: userIsNonRater && datum.list_status.score === 0 ? 7 : datum.list_status.score,
-      }));
+      .filter(
+        (datum) =>
+          userIsNonRater || datum.list_status?.score > 0 || datum.list_status.status === AnimeListStatusCode.Dropped
+      )
+      .map((datum) => {
+        let rating = datum.list_status.score;
+        if (rating === 0 && datum.list_status.status === AnimeListStatusCode.Dropped) {
+          rating = 4;
+        } else if (userIsNonRater && rating === 0) {
+          rating = 7;
+        }
+
+        return {
+          animeIx: AnimeIxByID.get(datum.node.id)!,
+          rating,
+        };
+      });
     return { ratings, userIsNonRater };
   });
 };

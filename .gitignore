@@ -10,3 +10,4 @@ node_modules
 data/*
 !data/.gitkeep
 */.ipynb_checkpoints
+*.tar.bz2
