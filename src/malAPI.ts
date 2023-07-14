@@ -111,8 +111,8 @@ export interface MALUserMangaListResponse {
 }
 
 // Cache for 5 minutes
-const UserAnimeListCache = new NodeCache({ stdTTL: 5 * 60 * 1000 });
-const UserMangaListCache = new NodeCache({ stdTTL: 5 * 60 * 1000 });
+const UserAnimeListCache = new NodeCache({ stdTTL: 60 });
+const UserMangaListCache = new NodeCache({ stdTTL: 60 });
 
 export const getUserAnimeList = async (username: string): Promise<MALUserAnimeListItem[]> => {
   const cached: MALUserAnimeListItem[] | undefined = UserAnimeListCache.get(username);
