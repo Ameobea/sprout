@@ -3,7 +3,10 @@ import { tryCatchK } from 'fp-ts/lib/TaskEither.js';
 import { getAnilistUserAnimeList, type CompatAnimeListEntry } from './anilistAPI';
 import { getUserAnimeList as getUserMALAnimeList, MALAPIError } from 'src/malAPI';
 import { ProfileSource } from './components/recommendation/conf';
-import { convertMALProfileToTrainingData, type TrainingDatum } from './routes/recommendation/training/trainingData';
+import {
+  convertMALProfileToTrainingData,
+  type TrainingDatum,
+} from './routes/recommendation/training/trainingData/trainingData';
 
 export const fetchUserRankings = tryCatchK(
   async (

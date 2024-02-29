@@ -24,13 +24,19 @@
   }
 </script>
 
+<!-- svelte-ignore a11y-click-events-have-key-events -->
+<!-- svelte-ignore a11y-no-static-element-interactions -->
 <div class="recommendation" data-plan-to-watch={planToWatch.toString()} data-expanded={expanded.toString()} in:slide>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
   <img
     on:click={expanded ? undefined : toggleExpanded}
     src={animeMetadata.main_picture.medium}
     alt={animeMetadata.alternative_titles.en || animeMetadata.title}
     loading="lazy"
   />
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div on:click={toggleExpanded} class="title">
     <div class="title-text">
       {#if expanded}
@@ -59,6 +65,8 @@
       </div>
     {/if}
   </div>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="expander" on:click={toggleExpanded}>
     {#if expanded}
       <ChevronUp size={24} aria-label="Expand anime details" />
@@ -81,6 +89,7 @@
       {/each}
     </div>
   {/if}
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div on:click={expanded ? undefined : toggleExpanded} class="synopsis" bind:this={synopsisElem}>
     {animeMetadata.synopsis}
   </div>

@@ -2,8 +2,8 @@ import type * as tfWeb from '@tensorflow/tfjs';
 import type * as tfNode from '@tensorflow/tfjs-node';
 
 import { RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/components/recommendation/conf';
-import type { Embedding } from 'src/routes/embedding';
-import type { TrainingDatum } from 'src/routes/recommendation/training/trainingData';
+import type { Embedding } from 'src/routes/embedding/+server';
+import type { TrainingDatum } from 'src/routes/recommendation/training/trainingData/trainingData';
 import type { EmbeddingName } from 'src/types';
 
 const getHoldoutCount = (validRatingCount: number): number => {

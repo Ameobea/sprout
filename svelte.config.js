@@ -16,31 +16,33 @@ const config = {
     adapter: adapter({
       precompress: true,
     }),
-    vite: {
-      plugins: [
-        // production && optimizeCss({ safelist: { deep: [/.*data-*$/] } }),
-        icons(),
-        elements(),
-      ],
-      resolve: {
-        alias: {
-          src: resolve('./src'),
-        },
-      },
-      build: {
-        sourcemap: true,
-      },
-      optimizeDeps: {
-        include: ['@carbon/charts'],
-      },
-      ssr: {
-        noExternal: [production && '@carbon/charts'].filter(Boolean),
-      },
-    },
     prerender: {
       concurrency: 6,
     },
-    floc: true,
+    alias: {
+      'src/*': './src/*',
+    },
+  },
+  viteOptions: {
+    plugins: [
+      // production && optimizeCss({ safelist: { deep: [/.*data-*$/] } }),
+      icons(),
+      elements(),
+    ],
+    resolve: {
+      alias: {
+        src: resolve('./src'),
+      },
+    },
+    build: {
+      sourcemap: true,
+    },
+    optimizeDeps: {
+      include: ['@carbon/charts'],
+    },
+    ssr: {
+      noExternal: process.env.NODE_ENV === 'production' ? ['@carbon/charts'] : [],
+    },
   },
   experimental: {
     inspector: {

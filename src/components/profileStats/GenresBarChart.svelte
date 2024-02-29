@@ -31,10 +31,12 @@
 </script>
 
 <script lang="ts">
-  import '@carbon/charts/styles-g100.min.css';
+  import '@carbon/charts-svelte/styles.css';
   import { BarChartSimple } from '@carbon/charts-svelte';
-
-  import type { PartialStatsAnimeMetadatum, PartialStatsMALUserAnimeListItem } from 'src/routes/user/[username]/stats';
+  import type {
+    PartialStatsAnimeMetadatum,
+    PartialStatsMALUserAnimeListItem,
+  } from 'src/routes/user/[username]/stats/+page.server';
 
   export let profile: PartialStatsMALUserAnimeListItem[];
   export let animeData: { [animeID: number]: PartialStatsAnimeMetadatum };
@@ -51,6 +53,7 @@
       enabled: false,
     },
     style: {},
+    theme: 'g90',
   };
 </script>
 

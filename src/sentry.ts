@@ -1,4 +1,4 @@
-import { browser } from '$app/env';
+import { browser } from '$app/environment';
 import * as Sentry from '@sentry/browser';
 import { Integrations } from '@sentry/tracing';
 

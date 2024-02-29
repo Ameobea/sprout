@@ -26,11 +26,9 @@
   import type { Writable } from 'svelte/store';
 
   import type { AnimeDetails } from 'src/malAPI';
-  import { browser } from '$app/env';
+  import { browser } from '$app/environment';
   import { captureMessage } from 'src/sentry';
   import type { RecommendationControlParams } from './utils';
-  import type { SvelteComponentTyped } from 'svelte';
-  import type { ExpandableTileProps } from 'carbon-components-svelte/types/Tile/ExpandableTile.svelte';
 
   let innerWidth = browser ? window.innerWidth : 0;
   $: isMobile = innerWidth < 768;
@@ -71,6 +69,8 @@
     <ExpandableTile style="min-height: 10px">
       <div slot="above">Advanced Options</div>
       <div class="top" slot="below">
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div on:click={(e) => e.stopPropagation()}>
           <Dropdown
             style="width: 100%;"
@@ -83,6 +83,8 @@
             helperText="Higher popularity attenuation factors result in less-popular anime being weighted higher in recommendations"
           />
         </div>
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div on:click={(e) => e.stopPropagation()}>
           <Dropdown
             style="width: 100%;"

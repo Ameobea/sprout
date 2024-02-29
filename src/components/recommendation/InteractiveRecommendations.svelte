@@ -23,15 +23,16 @@
 
 <script lang="ts">
   import { writable, type Writable } from 'svelte/store';
-  import { useQuery } from '@sveltestack/svelte-query';
+  import { createQuery, QueryClient } from '@tanstack/svelte-query';
 
   import RecommendationsList from 'src/components/recommendation/RecommendationsList.svelte';
   import type { AnimeDetails } from 'src/malAPI';
-  import type { Recommendation } from 'src/routes/recommendation/recommendation';
-  import type { RecommendationsResponse } from 'src/routes/user/[username]/recommendations';
+  import type { Recommendation } from 'src/routes/recommendation/recommendation/recommendation';
+  import type { RecommendationsResponse } from 'src/routes/user/[username]/recommendations/+page.server';
   import RecommendationControls from './RecommendationControls.svelte';
   import { captureMessage, getSentry } from 'src/sentry';
   import { getDefaultRecommendationControlParams, updateQueryParams, type RecommendationControlParams } from './utils';
+  import { browser } from '$app/environment';
 
   export let initialRecommendations: RecommendationsResponse;
   export let username: string;
@@ -56,58 +57,85 @@
   let usedInitialData = false;
   const initialData = initialRecommendations.type === 'ok' ? initialRecommendations : undefined;
 
-  const recosRes = useQuery(
-    ['recommendations', username, $params] as const,
-    () =>
-      fetchRecommendations(
-        username,
-        $params,
-        Object.keys($animeMetadataDatabase).map((x) => +x),
-        false
-      ),
+  const queryClient = new QueryClient({});
+
+  let lastRecosRes:
+    | {
+        recommendations: {
+          id: number;
+          score: number;
+        }[];
+        animeData: {
+          [animeID: number]: AnimeDetails;
+        };
+      }
+    | undefined = undefined;
+  $: recosRes = createQuery<
+    { recommendations: Recommendation[]; animeData: { [animeID: number]: AnimeDetails } } | undefined
+  >(
     {
+      queryKey: ['recommendations', username, $params] as const,
+      queryFn: async () => {
+        if (!usedInitialData) {
+          usedInitialData = true;
+          return initialData;
+        }
+        return fetchRecommendations(
+          username,
+          $params,
+          Object.keys($animeMetadataDatabase).map((x) => +x),
+          false
+        );
+      },
       refetchOnMount: false,
       refetchOnWindowFocus: false,
-      initialData,
-      keepPreviousData: true,
-    }
-  );
-  const recoContributorsRes = useQuery(
-    ['recommendations_contributors', username, $params] as const,
-    () => {
-      const availableMetadataAnimeIDs = Object.keys($animeMetadataDatabase).map((x) => +x);
-      return fetchRecommendations(
-        username,
-        $params,
-        availableMetadataAnimeIDs.length === 0 && initialRecommendations.type === 'ok'
-          ? Object.keys(initialRecommendations.animeData).map((n) => +n)
-          : availableMetadataAnimeIDs,
-        true
-      );
     },
-    { refetchOnMount: false, refetchOnWindowFocus: false, keepPreviousData: false }
+    queryClient
   );
+  $: if (!$recosRes.isLoading && $recosRes.data) {
+    lastRecosRes = $recosRes.data;
+  }
+
+  $: recoContributorsRes = createQuery(
+    {
+      queryKey: ['recommendations_contributors', username, $params] as const,
+      queryFn: () => {
+        if (!browser) {
+          return null;
+        }
+        const availableMetadataAnimeIDs = Object.keys($animeMetadataDatabase).map((x) => +x);
+        return fetchRecommendations(
+          username,
+          $params,
+          availableMetadataAnimeIDs.length === 0 && initialRecommendations.type === 'ok'
+            ? Object.keys(initialRecommendations.animeData).map((n) => +n)
+            : availableMetadataAnimeIDs,
+          true
+        );
+      },
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+    },
+    queryClient
+  );
+
+  $: recosData = $recosRes.data ?? lastRecosRes;
+  $: if (recosData) {
+    updateAnimeDB(recosData.animeData);
+  }
+  $: if ($recoContributorsRes.data) {
+    updateAnimeDB($recoContributorsRes.data.animeData);
+  }
 
   $: if ($recosRes.isError) {
     getSentry()?.captureException('Error fetching recommendations', { extra: { params: $params } });
-  }
-
-  $: {
-    recosRes.updateOptions({
-      queryKey: ['recommendations', username, $params] as const,
-      initialData: usedInitialData ? undefined : initialData,
-    });
-    recoContributorsRes.updateOptions({
-      queryKey: ['recommendations_contributors', username, $params] as const,
-    });
-    usedInitialData = true;
   }
 
   $: recommendations = (() => {
     if ($recoContributorsRes.data) {
       return $recoContributorsRes.data;
     }
-    return $recosRes.data ? $recosRes.data : null;
+    return recosData ? recosData : null;
   })();
 
   const updateAnimeDB = (animeData: { [animeID: number]: AnimeDetails }) =>
@@ -117,14 +145,6 @@
       });
       return db;
     });
-  $: {
-    if ($recosRes.data) {
-      updateAnimeDB($recosRes.data.animeData);
-    }
-    if ($recoContributorsRes.data) {
-      updateAnimeDB($recoContributorsRes.data.animeData);
-    }
-  }
 
   const excludedRankingAnimeIDs = (animeID: number) =>
     params.update((state) => {

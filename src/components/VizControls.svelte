@@ -31,7 +31,7 @@
 </script>
 
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, pushState } from '$app/navigation';
 
   import { ColorBy } from './AtlasViz';
   import { captureMessage } from 'src/sentry';
@@ -49,7 +49,7 @@
     // Set query param
     const queryParams = new URLSearchParams(window.location.search);
     queryParams.set('colorBy', newColorBy);
-    window.history.pushState({}, '', `?${queryParams.toString()}`);
+    pushState(`?${queryParams.toString()}`, {});
   };
 
   let embeddingName = getCurrentEmbeddingName();
@@ -73,7 +73,7 @@
     // Set search params
     const queryParams = new URLSearchParams(window.location.search);
     queryParams.set('username', malUsername);
-    window.history.pushState({}, '', `?${queryParams.toString()}`);
+    pushState(`?${queryParams.toString()}`, {});
   };
 
   let malUsername = '';
@@ -84,6 +84,8 @@
     <div class="label">Color By</div>
     <div class="tabs">
       {#each AllColorBys as { label, value } (value)}
+        <!-- svelte-ignore a11y-interactive-supports-focus -->
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
         <div class="tab" role="button" data-selected={colorBy == value} on:click={() => handleColorByChange(value)}>
           {label}
         </div>
@@ -95,6 +97,8 @@
       <div class="label">Embedding</div>
       <div class="tabs">
         {#each AllEmbeddingNames as { label, value } (value)}
+          <!-- svelte-ignore a11y-interactive-supports-focus -->
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
           <div
             class="tab"
             role="button"

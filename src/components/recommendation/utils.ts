@@ -1,4 +1,5 @@
-import { browser } from '$app/env';
+import { browser } from '$app/environment';
+import { replaceState } from '$app/navigation';
 
 /**
  * This is a workaround for an annoying SvelteKit/TypeScript issue:
@@ -87,7 +88,7 @@ export const updateQueryParams = (params: RecommendationControlParams) => {
 
   const newSearchParams = url.searchParams.toString();
   if (newSearchParams !== oldSearchParams) {
-    history.replaceState({}, '', url);
+    replaceState(url, {});
   }
 };
 

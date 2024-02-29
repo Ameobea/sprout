@@ -1,8 +1,8 @@
 import * as tf from '@tensorflow/tfjs';
-import type { Embedding } from 'src/routes/embedding';
 
 import { EmbeddingName } from '../types';
 import { DataContainer, fetchAllUsernames, fetchTrainingData, loadAnimeMetadata } from './data';
+import type { Embedding } from 'src/routes/embedding/+server';
 
 const EMBEDDING_NAME = EmbeddingName.PyMDE_3D_40N;
 

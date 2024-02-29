@@ -4,20 +4,20 @@ import * as tf from '@tensorflow/tfjs-node';
 import { ModelName, RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/components/recommendation/conf';
 import { DATA_DIR } from 'src/conf';
 import { getRecommenderModelCompileParams } from 'src/training/trainRecommender';
-import type { Embedding } from '../embedding';
+import type { Embedding } from '../embedding/+server';
 
 const ModelsCache: Map<ModelName, TFJSInferrenceWrapper /* | TFLiteInferrenceWrapper */> = new Map();
 
 export const getModelFilename = (modelName: ModelName): string => {
   switch (modelName) {
-    case ModelName.Model_6K:
-    case ModelName.Model_6K_Smaller:
-    case ModelName.Model_6K_Smaller_Weighted:
-    case ModelName.Model_6_5K_New:
-    case ModelName.Model_6_5K_Unweighted:
-      return `file://${DATA_DIR}/tfjs_models/${modelName}/model.json`;
-    case ModelName.Model_6K_TFLite:
-      return `${DATA_DIR}/tflite_models/model_6k/model_6k.tflite`;
+    // case ModelName.Model_6K:
+    // case ModelName.Model_6K_Smaller:
+    // case ModelName.Model_6K_Smaller_Weighted:
+    // case ModelName.Model_6_5K_New:
+    // case ModelName.Model_6_5K_Unweighted:
+    // return `file://${DATA_DIR}/tfjs_models/${modelName}/model.json`;
+    // case ModelName.Model_6K_TFLite:
+    //   return `${DATA_DIR}/tflite_models/model_6k/model_6k.tflite`;
     default:
       return `file://${DATA_DIR}/tfjs_models/${modelName}/${modelName}.json`;
   }
