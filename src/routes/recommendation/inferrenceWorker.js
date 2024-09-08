@@ -15,6 +15,8 @@ export const getModelFilename = (modelName) => {
     case 'model_6-5k_unweighted':
     case 'model_6-5k_new2':
     case 'model_6-5k_new2-alt':
+    case '2024-07':
+    case '2024-07-alt':
       return `file://${DATA_DIR}/tfjs_models/${modelName}/model.json`;
     default:
       throw new Error(`Unimplemented model name: ${modelName}`);

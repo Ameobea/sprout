@@ -13,11 +13,23 @@ const getTrainingDataFromProcessedTable = async (
       .join(',')})`
   );
   return new Promise<{ username: string; trainingData: TrainingDatum[] }[]>((resolve, reject) => {
-    stmt.all<{ username: string; processed_animelist: string }>(usernames, (err, rows) => {
+    stmt.all<{ username: string; processed_animelist: string }>(usernames, (err, rows: any[]) => {
       if (err) {
         reject(err);
       } else {
-        resolve(rows.map((row) => ({ username: row.username, trainingData: JSON.parse(row.processed_animelist) })));
+        resolve(
+          rows
+            .map((row): { username: string; trainingData: any } => {
+              let trainingData;
+              try {
+                trainingData = JSON.parse(row.processed_animelist);
+              } catch (e) {
+                console.error(`Error parsing processed animelist for ${row.username}:`, e);
+              }
+              return { username: row.username, trainingData };
+            })
+            .filter((r) => !!r.trainingData)
+        );
       }
     });
   });
@@ -34,10 +46,17 @@ const getTrainingDataFromRawTable = async (usernames: string[]): Promise<Trainin
         reject(err);
       } else {
         resolve(
-          rows.map((row) => ({
-            username: row.username,
-            animelist: JSON.parse(row.animelist_json),
-          }))
+          rows
+            .map((row) => {
+              let animelist;
+              try {
+                animelist = JSON.parse(row.animelist_json);
+              } catch (e) {
+                console.error(`Error parsing animelist for ${row.username}:`, e);
+              }
+              return { username: row.username, animelist };
+            })
+            .filter((r) => !!r.animelist)
         );
       }
     });

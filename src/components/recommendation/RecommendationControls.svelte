@@ -7,8 +7,10 @@
     // { id: ModelName.Model_6K_Smaller_Weighted, text: 'Top 6k Smaller Weighted' },
     // { id: ModelName.Model_6_5K_New, text: 'Top 6.5K Weighted Updated' },
     // { id: ModelName.Model_6_5K_Unweighted, text: 'Top 6.5K Unweighted Updated' },
-    { id: ModelName.Model_6_5k_New2, text: 'Top 6.5K Weighted Jan. 2023' },
-    { id: ModelName.Model_6_5k_New2_Alt, text: 'Top 6.5K Weighted Alt. Jan. 2023' },
+    // { id: ModelName.Model_6_5k_New2, text: 'Top 6.5K Weighted Jan. 2023' },
+    // { id: ModelName.Model_6_5k_New2_Alt, text: 'Top 6.5K Weighted Alt. Jan. 2023' },
+    { id: ModelName.Model_2024_07, text: 'Top 6.5k Jul. 2024' },
+    { id: ModelName.Model_2024_07_alt, text: 'Top 6.5k Jul. 2024 Alt.' },
   ];
 
   const ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS: { id: PopularityAttenuationFactor; text: string }[] = [
@@ -17,7 +19,8 @@
     { id: PopularityAttenuationFactor.Low, text: 'Low' },
     { id: PopularityAttenuationFactor.Medium, text: 'Medium' },
     { id: PopularityAttenuationFactor.High, text: 'High' },
-    { id: PopularityAttenuationFactor.VeryHigh, text: 'VeryHigh' },
+    { id: PopularityAttenuationFactor.VeryHigh, text: 'Very High' },
+    { id: PopularityAttenuationFactor.Extreme, text: 'Extreme' },
   ];
 </script>
 

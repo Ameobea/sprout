@@ -1,8 +1,8 @@
-import sqlite3Mod, { Database } from 'sqlite3';
+import * as sqlite3Mod from 'sqlite3';
 
-const sqlite3 = sqlite3Mod.verbose();
+const sqlite3 = sqlite3Mod.default.verbose();
 
-let LocalAnimelistsDB: Database | null = null;
+let LocalAnimelistsDB: sqlite3Mod.default.Database | null = null;
 
 export const getLocalAnimelistsDB = () => {
   if (LocalAnimelistsDB) {

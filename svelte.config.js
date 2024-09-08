@@ -1,7 +1,7 @@
 import adapter from '@sveltejs/adapter-node';
 import preprocess from 'svelte-preprocess';
 import { resolve } from 'path';
-import { optimizeImports, optimizeCss, icons, elements } from 'carbon-preprocess-svelte';
+import { optimizeImports, optimizeCss } from 'carbon-preprocess-svelte';
 
 const production = process.env.NODE_ENV === 'production';
 
@@ -26,8 +26,6 @@ const config = {
   viteOptions: {
     plugins: [
       // production && optimizeCss({ safelist: { deep: [/.*data-*$/] } }),
-      icons(),
-      elements(),
     ],
     resolve: {
       alias: {

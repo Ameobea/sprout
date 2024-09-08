@@ -64,7 +64,7 @@ export const loadMetadata = async () => {
 
 const EmbeddingFilenameByName: { [K in EmbeddingName]: string } = {
   [EmbeddingName.PyMDE_3D_40N]: 'projected_embedding_pymde_3d_40n.json',
-  [EmbeddingName.GGVec_10D_40N_Order2]: 'projected_embedding_ggvec_top40_10d_order2.json',
+  // [EmbeddingName.GGVec_10D_40N_Order2]: 'projected_embedding_ggvec_top40_10d_order2.json',
   [EmbeddingName.PyMDE_4D_40N]: 'projected_embedding_pymde_4d_40n.json',
   [EmbeddingName.PyMDE_4D_100N]: 'projected_embedding_pymde_4d_100n.json',
 };

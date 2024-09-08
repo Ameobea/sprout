@@ -8,3 +8,4 @@ notebooks
 Justfile
 README.md
 queue-receiver
+node_modules

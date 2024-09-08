@@ -11,7 +11,9 @@ const getAllUsernames = async (): Promise<string[]> => {
     return cached;
   }
 
-  const stmt = getLocalAnimelistsDB().prepare('SELECT username FROM `mal-user-animelists`');
+  const stmt = getLocalAnimelistsDB().prepare(
+    'SELECT username FROM `mal-user-animelists` WHERE json_array_length(animelist_json) > 8'
+  );
   const allUsernames = await new Promise<string[]>((resolve, reject) =>
     stmt.all<{ username: string }>((err, rows) => {
       if (err) {

@@ -2,6 +2,5 @@
   "printWidth": 120,
   "singleQuote": true,
   "proseWrap": "preserve",
-  "trailingComma": "es5",
-  "prettierPath": "/usr/local/bin/"
+  "trailingComma": "es5"
 }

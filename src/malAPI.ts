@@ -286,10 +286,13 @@ const fetchAnimesFromDB = async (ids: number[]): Promise<(AnimeDetails | null)[]
     });
   });
 
-  const entriesByID = entries.reduce((acc, entry) => {
-    acc[entry.id] = entry;
-    return acc;
-  }, {} as { [id: number]: { id: number; metadata: string; update_timestamp: string } });
+  const entriesByID = entries.reduce(
+    (acc, entry) => {
+      acc[entry.id] = entry;
+      return acc;
+    },
+    {} as { [id: number]: { id: number; metadata: string; update_timestamp: string } }
+  );
   return ids.map((id) => {
     const entry = entriesByID[id];
     if (entry) {
