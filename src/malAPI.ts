@@ -126,7 +126,7 @@ export const getUserAnimeList = async (username: string): Promise<MALUserAnimeLi
   let i = 0;
   const pageSize = 1000;
   for (;;) {
-    const url = `${MAL_API_BASE_URL}/users/${username}/animelist?offset=${
+    const url = `${MAL_API_BASE_URL}/users/${username}/animelist?nsfw=true&offset=${
       i * pageSize
     }&limit=${pageSize}&fields=list_status`;
     i += 1;
@@ -155,7 +155,7 @@ export const getUserMangaList = async (username: string): Promise<MALUserMangaLi
   let i = 0;
   const pageSize = 1000;
   for (;;) {
-    const url = `${MAL_API_BASE_URL}/users/${username}/mangalist?offset=${
+    const url = `${MAL_API_BASE_URL}/users/${username}/mangalist?nsfw=true&offset=${
       i * pageSize
     }&limit=${pageSize}&fields=list_status`;
     i += 1;
@@ -231,7 +231,7 @@ export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | n
     'related_anime',
     'media_type',
   ];
-  const url = `${MAL_API_BASE_URL}/anime/${id}?fields=${fieldsToFetch.join(',')}`;
+  const url = `${MAL_API_BASE_URL}/anime/${id}?nsfw=true&fields=${fieldsToFetch.join(',')}`;
   console.log('Fetching anime...', url);
   const details = (await makeMALRequest(url).catch((err) => {
     if (err instanceof MALAPIError && err.statusCode === 404) {
