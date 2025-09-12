@@ -46,7 +46,7 @@ const loadRawOfflineMetadataDB = async (): Promise<RawOfflineMetadataDB> => {
   // If not found, download from github
   console.log('Local offline anime database not found; downloading database from GH...');
   const url =
-    'https://github.com/manami-project/anime-offline-database/raw/master/anime-offline-database-minified.json';
+    'https://github.com/manami-project/anime-offline-database/releases/download/latest/anime-offline-database-minified.json';
   const rawOfflineMetadataDB: RawOfflineMetadataDB = await fetch(url).then((res) => res.json());
   return rawOfflineMetadataDB;
 };
