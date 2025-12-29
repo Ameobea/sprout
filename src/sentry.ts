@@ -5,7 +5,7 @@ const sentryEnabled = () => browser && !window.location.href.includes('localhost
 
 export const maybeInitSentry = () => {
   if (sentryEnabled()) {
-    Sentry.init({ dsn: '0cbd7f7ac2ca48fe8fcc17cd8ba73c1d' });
+    Sentry.init({ dsn: 'https://e0edc2ad30c53e2b98f380341d285871@sentry.ameo.design/12' });
   }
 };
 

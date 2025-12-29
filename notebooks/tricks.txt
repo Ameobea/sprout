@@ -1,0 +1,188 @@
+## previous version
+
+ * currently deployed live at https://anime.ameo.dev/ but will probably be replaced with the new version by the time this blog post is released
+ * de-noising autoencoder, but without the bottleneck.  Extremely simple model architecture (2 hidden layers with tanh, all layers the same size (6500)).
+ * using simple mean-squared-error loss, but weighting the loss much more heavily on elements that are actually part of the full (non-held-out) input profile
+ * used additional loss weighting to weight less-popular shows higher while training to help get them to come through better in the outputs
+ * despite that, less-popular shows still struggled to come through on results.  I added quite aggressive "popularity attenuation" - applying pretty heavy-handed score reduction to more popular shows in the results
+ * these approaches worked pretty well and ended up producing a model that users often found useful and interesting
+ * one of the biggest requests I got was to apply some level of normalization to user ratings.  I was using a manually-derived mapping from the 1-10 rating scale to -1,1 with a value of 0 at 6.5 stars or so.  MAL and other rating sites don't impose any rules on how users rank their shows, and there's a surprising amount of variety in the way users end up doing that.  It didn't help that I'd show things like "recommended X because: you disliked Y" in the UI.
+ * another issue was that there wasn't much difference from the model's perspective between the user rating something a 6 and the user not watching something.
+ * another issue was that I implemented the whole thing with TensorFlow.JS.  I did this because I was a noob with AI frameworks at the time, and I had bad luck getting things to work on my Linux desktop with AMD GPU at the time. It was trained in the browser even which worked surprisingly well, but it was very slow to train and had very bad memory leaks in production which I never could figure out (I think it was related to some pre-loading scheme that was throwing errors internally and causing input tensors to get leaked)
+ * I tried training a new version of that model with the same architecture, just with a new set of more recently-collected training data.  I had very bad results; the model seemed to just be recommending popular shows.  Turning up popularity attenuation factor helped a bit, but it was still very bad.  I was trying out some other potential fixes and tweaks, but it felt like I was just heaping hacks on top of hacks.  This is what prompted me to start fresh with a completely new model.
+
+## new model architecture overview + tricks developed
+
+ * also a de-noising autoencoder, but this one has an actual bottleneck layer of size 512
+
+Might just include this code (or a condensed version of it) in the post since it's so simple:
+
+```py
+class Recommender(nn.Module):
+    """
+    Autoencoder with two decoder heads:
+      - item_logits: used for multinomial / implicit feedback (presence)
+      - rating_pred: used for explicit feedback regression (hybrid scaled ratings)
+    """
+
+    hidden_dim: int = CONF["hidden_dim"]
+    bottleneck_dim: int = CONF["bottleneck_dim"]
+    output_dim: int = CONF["corpus_size"]
+
+    @nn.compact
+    def __call__(self, x, training: bool = False):
+        # --- Encoder ---
+
+        h = nn.Dense(self.hidden_dim)(x)
+        h = nn.swish(h)
+
+        bottleneck = nn.Dense(self.bottleneck_dim, name="bottleneck")(h)
+
+        if training:
+            rng = self.make_rng("noise")
+            noise = (
+                random.normal(rng, shape=bottleneck.shape) * CONF["latent_noise_scale"]
+            )
+            z = bottleneck + noise
+        else:
+            z = bottleneck
+
+        # decoder head 1: predicts entity presence
+        d1 = nn.Dense(self.hidden_dim // 2, name="dec_item_up1")(z)
+        d1 = nn.swish(d1)
+        d1 = nn.Dense(self.hidden_dim, name="dec_item_up2")(d1)
+        d1 = nn.swish(d1)
+        item_logits = nn.Dense(self.output_dim, name="item_logits")(d1)
+
+        # decoder head 2: predicts per-entity ratings (regression)
+        d2 = nn.Dense(self.hidden_dim // 2, name="dec_rating_up1")(z)
+        d2 = nn.swish(d2)
+        d2 = nn.Dense(self.hidden_dim, name="dec_rating_up2")(d2)
+        d2 = nn.swish(d2)
+        rating_pred = nn.Dense(self.output_dim, name="rating_pred")(d2)
+
+        # learnable log variances for uncertainty weighting
+        log_var_presence = self.param("log_var_presence", nn.initializers.zeros, (1,))
+        log_var_rating = self.param("log_var_rating", nn.initializers.zeros, (1,))
+
+        return item_logits, rating_pred, log_var_presence, log_var_rating
+```
+
+ * TODO: create + include one or two Tikz diagrams of the model architecture and/or things like the input/output vector format and data flow
+
+ * including both user ratings as well as presence flags (in profile/not in profile) in the input layer for the model
+   * allows the model to differentiate between a neutral rating which encodes close to zero and the fact that a show actually isn't in the profile
+   * doesn't impact the param count as much as I was expecting.  The new model is actually significantly smaller than the old one despite performing way better.
+ * multi-head decoder that predicts both presence of each anime in a user's profile as well as estimates rating
+   * uses uncertainty weighting to learn good weights for the losses of each objective (https://arxiv.org/abs/1705.07115)
+     * I'd like to explain this nicely in simple terms:  Allows the model to determine good coefficients for the loss of each of the target objectives.  This mix both smooths over differences in magnitude between the losses as well as allows it to tone down the loss from objectives with higher inherent noise/uncertainty.  This helps the gradients from that loss from dominating during training (since the gradients from both objectives flow upwards through the same internal representation/bottleneck layer and all higher encoder layers).
+     * I experimented with changing the initial values for those learnable params closer to where they settle after training, but the results were worse actually.  This might be a coincidence where training dynamics just work out better that way, or might be that the model benefits from focusing more on the noisy loss earlier in training before it gets toned down so it ends up at a better place at the end.
+   * huber loss for the rating head, handling larger degree of noise and the fact that going from 6 -> 7 stars might have a big jump in normalized rating magnitude if the user has a low rating variance
+   * multinomial likelihood for presence head (https://arxiv.org/pdf/1802.05814)
+     * "Multinomial Negative Log-Likelihood"
+     * it's actually pretty simple.  We just apply softmax to the logits, which forces the model to the liklihood of each item showing up wrt. all the other items - not just in an absolute sense for each item.  Then, we take -log of each of the softmax outputs, mask to only include those for which were true (actually in the user's profile), and take the average and use that as the loss.  -log is a mathematical trick which turns lower probability -> higher loss; makes sense since all of these are true and we should penalize the model for giving them low probability.  Average is taken to create a similar-magnitude gradient update no matter how large the user's profile is; otherwise users with many items will create comparatively bigger losses which would cause issues.
+   * Using two separate output heads instead of sharing weights between them actually is quite beneficial for thise case.  This could be an interaction with the uncertainty weighting where the shared weights are set to match one of the objectives more heavily during early training, and then it never recovers, or something else.  Using separate heads means that each head is only impacted by gradients from a single task, so they don't have to compete.  Bottleneck + encoder have gradients from both objectives still, though.
+ * mask off the loss for the rating head for unrated items that we infer ratings for (items that a user marked as watched/watching but hasn't yet rated)
+ * changed from tanh -> swish activation function.  Seems to be a drop-in solution with no other changes necessary that has no visible downsides
+ * manual noise injection to the bottleneck layer during training using simple normal distribution with 0.1 std dev.
+   * this is in addition to the dropout applied to the input profile during ratings
+   * Slows down training a bit, but doesn't seem to hurt training loss too much at all (the noise is pretty light ig)
+   * TODO: an apples-to-apples comparison of how it impacts loss and recommendation results
+ * originally tried out a proper VAE implementation with KL divergence and the reparameterization trick, but dropped it entirely.
+   * my experience was that the KL penalty was almost universally harmful to training performance and experiential recommendation quality, even with annealing or extremely low coefficients.
+   * it turns out that the statistics of the bottleneck layer are pretty good despite explicit normalization
+     * TODO: include exact stats from a collection of different profiles
+ * aggressive dropout during training (baseline 40%) with per-profile variance of the dropout amount +- 40% of that 40%
+   * surprisingly, seems to improve quality of recommendations while also having a limited impact on loss
+   * TODO: I should do a head-to-head comparison of different dropout amounts (both effect on loss and experiential recommendation quality).  iirc it made the model recommend specials/ONAs/second seasons much more when dropout was lower, but I'm not sure.
+ * automatic learning rate scheduling based on average of recent loss (jax-builtin; `contrib.reduce_on_plateau`)
+ * custom transformation for user ratings, combining z-score and a scale similar to the original one.
+   * I'm pretty proud of this; I spent a good amount of time experimenting here and tweaked it quite a bit before settling on the final algorithm
+   * Goal is to normalize a bit across different user rating patterns while also preserving the signal of "high rating" vs "low rating" (otherwise, sometimes even 7 or 8 star ratings would appear as negative z-scores).  Changes the mix depending on the variance of user ratings.
+   * I do the usual filtering for watch status, filter out profiles with low rating count (currently filtering < 30)
+   * I set dropped shows without a rating to 2 stars (TODO: should probably revisit this and set them to a low score wrt. the user's rating distribution....)
+   * I set unrated shows to the user's mean rating (not super happy about this and would love to find a better solution)
+ * custom algorithm for converting model outputs (probability, estimated_rating) and turning it into a score for ranking recommendations.  Geometric mean with a configurable mix factor to weight rating or presence higher.
+ * storing profiles as efficient sparse representations (u16s for indices) to allow loading the whole training corpus into memory, simplifying data loading and making shuffling data during training as easy as just shuffling indices
+ * added a few different knobs for users to tweak under an "advanced options" menu:
+   * slider to control the mix between presence and rating when computing a unified score to rank recommendations.  Defaults to ~0.2 (0 is all rating, 1 is all presence).
+   * toggle to filter items that are already in a user's plan to watch list (the model tends to do a very good job of finding these)
+   * slider to control a "niche boost" factor, 0-1, defaulting 0
+     * this is kind of an evolved version of the popularity attenuation from before.
+     * instead of just applying a raw boost to less-popular items, it instead uses the popularity distribution derived from the model's presence output logits and boosts items based on how much more probable the model thinks a given item is than its global popularity would indicate
+     * computes a "log surprise" and uses that as a multiplier to boost rating scores used to order recommendation output
+ * I collected a large amount of training data for this - over 1.5 million user profiles.  That's the number after filtering as well; I only retained profiles that have rated something in the past 5 years and had some minimum number of ratings (I think I put it at like 20 or something, I forget the exact number).
+   * I was worried that my data had a bad distribution or something which was leading to the issues with my previous re-training runs on the old architecture, but it seems that the issue was the old architecture instead.
+
+## results
+
+ * simpler seems to be better wrt. model architecture
+   * I originally had a second layer between the input and the bottleneck with a size 1024 (so 6k -> 2k -> 1k -> 512 (bottleneck)) but removing that layer improved results significantly with no apparent downsides.  Might be related to learning rate/batch size/training dynamics rather than something about the architecture itself.
+
+MY PROFILE HOLDOUT TESTING RESULTS:
+
+--- Rating Prediction Stats --- (note: these are in terms of the special hybrid relative/absolute score feature I created)
+  Mean absolute error:  0.4686
+  Std dev:              0.4936
+  Min error:            0.0050
+  Max error:            2.2650
+
+--- Presence Probability Stats ---
+  Mean probability:     0.4933%
+  Std dev:              0.4635%
+  Min probability:      0.0006%
+  Max probability:      1.5755%
+
+================================================================================
+EVALUATION SET HOLDOUT VALIDATION (200 profiles)
+================================================================================
+
+--- Per-Item Rating Prediction Stats ---
+  Mean absolute error:  0.3959
+  Std dev:              0.4270
+  Min error:            0.0000
+  Max error:            3.8477
+  Median error:         0.2734
+
+--- Per-Item Presence Probability Stats ---
+  Mean probability:     0.2916%
+  Std dev:              0.2610%
+  Min probability:      0.0000%
+  Max probability:      2.7852%
+  Median probability:   0.2360%
+
+--- Per-Profile Aggregated Stats ---
+  Mean of profile mean errors:  0.3984
+  Std dev of profile mean errors: 0.1491
+  Mean of profile mean probs:   0.3451%
+  Std dev of profile mean probs: 0.1572%
+
+ * overall: the model does a very good job producing recommendations and it seems like a big improvement overall for all cases I've tested.
+   * It works well without any manual popularity attenuation - which is one of the biggest signals to me that it's working much better compared to the old version
+   * much of this is probably due to the improved loss scheme (using softmax instead of MSE)
+
+TODO: should embed an iframe with the interactive recommender.  The UI is quite simple and it should fit no problem.
+
+## other notes
+
+ * JAX was great to work with overall.
+   * It doesn't really have anything that made me feel it was way better (or even better tbh) than alternatives, but it was solid, easy to work with, had few weird quirks or unexpected problems, and good docs (and LLMs knew about it well :p)
+   * Worked surprisingly well with my AMD GPU for training with the Docker container method recommended
+     * only one crash when I tried to boot Factorio while training lol
+     * waaaay better than my original experiences with training or inference on AMD GPUs (frequent hangs and crashes, horrific setup with installing ROCM on the bare system, etc.)
+   * My model architecture didn't deviate too far from common patterns for the most part, so I didn't really push limits, but everything I needed was readily available and easy to use.
+   * The CPU serving was jank; probably not what JAX was designed for.  That being said, I was able to get it working no problem (although it seems to be slower than the old one, but that might actually be the extra stuff I'm doing in Python tbh - I've not benchmarked at all).
+   * I feel like if you stay on their happy path and build a model fully with JAX and deploy on a TPU, it will be the best way to build + serve a world-class model in December 2025.
+ * very low learning rate seemed to work best, not sure why (starting at 0.0005 and then scaling down even further with LR schedule)
+   * This model seems to be extremely sensitive to hyperparams (learning rate especially) for some reason
+   * could be due to the aggressive loss masking we do, causing gradients to intensify on a few neurons. or could be due to the uncertainty weighting.
+   * batch size is important potentially because it changes the rate at which the learnable uncertainty weighting variables change during training wrt. how much of the data has been processed through so far
+ * I trained 50k batches; ~8-9 epochs
+   * Overfitting is not much of an issue due to the aggressive dropout, small model size, user-specific rating normalization, and injected noise during training
+ * I had to do some manual setup for data sharding in order to get parallelization when serving on the CPU.  TensorFlow.JS actually handled this all automatically out of the box.  Once I got it set up right, though, it seems to work well.
+   * It's very fast when running just a single user's profile, but it gets slow when doing holdout analysis since it has to run the model `n` times where `n` is the number of items in the user profile
+ * this use case allowing a relatively small and static corpus size of 6000 makes things much easier and allows for this kind of model architecture.  To extend to significantly large corpus sizes and new items getting added, a fundamental architecture shift would likely be required that operates with embeddings rather than having one (or two in this case) dedicated indices in the input vector
+
+## conclusion/takeaways
+
+ * Although it's definitely important to having a strong model architecture at the core, I feel like it's equally important to have the supporting pieces (especially things like the custom hybrid rating score feature, custom algorithm for computing unified scores from separate presence+rating outputs, and user-exposed knobs like the niche boost feature).  Kind of equivalent to pre-training vs RL for chat tuning, tone, etc. in LLMs.

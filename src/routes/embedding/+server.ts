@@ -1,12 +1,6 @@
 import { error, json, type RequestHandler } from '@sveltejs/kit';
 
-import { loadEmbedding, type Metadatum, validateEmbeddingName } from '../../embedding';
-
-export interface EmbeddedPoint {
-  vector: { x: number; y: number };
-  metadata: Metadatum;
-}
-export type Embedding = EmbeddedPoint[];
+import { loadEmbedding, validateEmbeddingName } from '../../embedding';
 
 export const GET: RequestHandler<Record<string, never>> = async ({ url }) => {
   const embeddingName = validateEmbeddingName(url.searchParams.get('embedding'));

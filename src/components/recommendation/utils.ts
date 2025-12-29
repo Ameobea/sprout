@@ -13,14 +13,7 @@ export type Typify<T> = { [K in keyof T]: Typify<T[K]> };
  */
 export const typify = <T>(obj: T): Typify<T> => obj;
 
-import {
-  DEFAULT_MODEL_NAME,
-  DEFAULT_POPULARITY_ATTENUATION_FACTOR,
-  DEFAULT_PROFILE_SOURCE,
-  ModelName,
-  PopularityAttenuationFactor,
-  ProfileSource,
-} from './conf';
+import { DEFAULT_MODEL_NAME, DEFAULT_PROFILE_SOURCE, ModelName, ProfileSource } from './conf';
 
 export interface RecommendationControlParams {
   modelName: ModelName;
@@ -30,8 +23,10 @@ export interface RecommendationControlParams {
   includeONAsOVAsSpecials: boolean;
   includeMovies: boolean;
   includeMusic: boolean;
-  popularityAttenuationFactor: PopularityAttenuationFactor;
   profileSource: ProfileSource;
+  filterPlanToWatch: boolean;
+  logitWeight: number;
+  nicheBoostFactor: number;
 }
 
 export const getDefaultRecommendationControlParams = (): RecommendationControlParams => {
@@ -44,8 +39,10 @@ export const getDefaultRecommendationControlParams = (): RecommendationControlPa
     includeONAsOVAsSpecials: queryParams.get('specials') === 'true',
     includeMovies: queryParams.get('movies') === 'true',
     includeMusic: queryParams.get('music') === 'true',
-    popularityAttenuationFactor: +(queryParams.get('apops') ?? DEFAULT_POPULARITY_ATTENUATION_FACTOR),
     profileSource: (queryParams.get('source') as ProfileSource | null) ?? ProfileSource.MyAnimeList,
+    filterPlanToWatch: queryParams.get('fptw') === 'true',
+    logitWeight: Math.max(0, Math.min(1, parseFloat(queryParams.get('lw') ?? '0.4'))),
+    nicheBoostFactor: Math.max(0, Math.min(1, parseFloat(queryParams.get('nb') ?? '0'))),
   };
 };
 
@@ -82,8 +79,14 @@ export const updateQueryParams = (params: RecommendationControlParams) => {
   if (params.includeMusic) {
     url.searchParams.set('music', 'true');
   }
-  if (params.popularityAttenuationFactor !== DEFAULT_POPULARITY_ATTENUATION_FACTOR) {
-    url.searchParams.set('apops', params.popularityAttenuationFactor.toString());
+  if (params.filterPlanToWatch) {
+    url.searchParams.set('fptw', 'true');
+  }
+  if (params.logitWeight !== 0.4) {
+    url.searchParams.set('lw', params.logitWeight.toFixed(1));
+  }
+  if (params.nicheBoostFactor !== 0) {
+    url.searchParams.set('nb', params.nicheBoostFactor.toFixed(1));
   }
 
   const newSearchParams = url.searchParams.toString();

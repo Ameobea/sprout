@@ -3,12 +3,7 @@ import { type Either, isLeft, mapLeft } from 'fp-ts/lib/Either.js';
 import * as t from 'io-ts';
 import { PathReporter } from 'io-ts/lib/PathReporter.js';
 
-import {
-  DEFAULT_MODEL_NAME,
-  DEFAULT_POPULARITY_ATTENUATION_FACTOR,
-  DEFAULT_PROFILE_SOURCE,
-  validateModelName,
-} from 'src/components/recommendation/conf';
+import { DEFAULT_MODEL_NAME, DEFAULT_PROFILE_SOURCE, validateModelName } from 'src/components/recommendation/conf';
 import { typify } from 'src/components/recommendation/utils';
 import { getAnimesByID, type AnimeDetails } from 'src/malAPI';
 import {
@@ -62,13 +57,8 @@ export const load: PageServerLoad = async ({ params, url }) => {
   const includeONAsOVAsSpecials = url.searchParams.get('specials') === 'true';
   const includeMovies = url.searchParams.get('movies') === 'true';
   const includeMusic = url.searchParams.get('music') === 'true';
-  const popularityAttenuationFactorRaw = url.searchParams.get('apops');
-  const popularityAttenuationFactor = popularityAttenuationFactorRaw
-    ? +popularityAttenuationFactorRaw
-    : DEFAULT_POPULARITY_ATTENUATION_FACTOR;
-  if (isNaN(popularityAttenuationFactor)) {
-    error(400, 'Invalid popularityAttenuationFactor');
-  }
+  const filterPlanToWatch = url.searchParams.get('fptw') === 'true';
+  const logitWeight = Math.max(0, Math.min(1, parseFloat(url.searchParams.get('lw') ?? '0.4')));
   const rawProfileSource = url.searchParams.get('source') ?? DEFAULT_PROFILE_SOURCE;
   const profileSourceParseRes = ProfileSourceValidator.decode(rawProfileSource);
   if (isLeft(profileSourceParseRes)) {
@@ -90,7 +80,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 
   const recommendationsRes = await getRecommendations({
     dataSource: { type: 'username', username },
-    count: 20,
+    count: 50,
     computeContributions: false,
     modelName,
     excludedRankingAnimeIDs: new Set(excludedRankingAnimeIDs),
@@ -99,8 +89,9 @@ export const load: PageServerLoad = async ({ params, url }) => {
     includeONAsOVAsSpecials,
     includeMovies,
     includeMusic,
-    popularityAttenuationFactor,
     profileSource,
+    filterPlanToWatch,
+    logitWeight,
   });
   if (isLeft(recommendationsRes)) {
     return { initialRecommendations: { type: 'error', error: recommendationsRes.left.body } };

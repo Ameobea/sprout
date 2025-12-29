@@ -28,8 +28,10 @@ const RecommendationRequest = t.type({
   includeONAsOVAsSpecials: t.boolean,
   includeMovies: t.boolean,
   includeMusic: t.boolean,
-  popularityAttenuationFactor: t.number,
   profileSource: ProfileSourceValidator,
+  filterPlanToWatch: t.boolean,
+  logitWeight: t.number,
+  nicheBoostFactor: t.number,
 });
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -50,8 +52,10 @@ export const POST: RequestHandler = async ({ request }) => {
     includeONAsOVAsSpecials,
     includeMovies,
     includeMusic,
-    popularityAttenuationFactor,
     profileSource,
+    filterPlanToWatch,
+    logitWeight,
+    nicheBoostFactor,
   } = req;
 
   const recommendationsRes = await getRecommendations({
@@ -65,8 +69,10 @@ export const POST: RequestHandler = async ({ request }) => {
     includeONAsOVAsSpecials,
     includeMovies,
     includeMusic,
-    popularityAttenuationFactor,
     profileSource,
+    filterPlanToWatch,
+    logitWeight: Math.max(0, Math.min(1, logitWeight)),
+    nicheBoostFactor: Math.max(0, Math.min(1, nicheBoostFactor)),
   });
   if (isLeft(recommendationsRes)) {
     return error(recommendationsRes.left.status, recommendationsRes.left.body);

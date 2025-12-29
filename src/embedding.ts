@@ -20,13 +20,14 @@ export interface Metadatum {
   average_rating: number;
   aired_from_year: number;
   media_type: AnimeMediaType;
+  rating: string;
 }
 
 const CachedRawEmbeddings: Map<EmbeddingName, RawEmbedding> = new Map();
 const CachedEmbeddings: Map<EmbeddingName, Embedding> = new Map();
 const CachedNeighbors: Map<EmbeddingName, number[][]> = new Map();
 
-// HEADERS: 'id', 'title', 'title_english', 'related_anime', 'recommendations', 'aired_from_year', 'rating_count', 'average_rating', 'media_type
+// HEADERS: 'id', 'title', 'title_english', 'related_anime', 'recommendations', 'aired_from_year', 'rating_count', 'average_rating', 'media_type', 'rating'
 const METADATA_FILE_NAME = `${DATA_DIR}/processed-metadata.csv`;
 
 export const loadMetadata = async () => {
@@ -53,6 +54,7 @@ export const loadMetadata = async () => {
           average_rating: +row[7],
           aired_from_year: +row[5],
           media_type: row[8] as AnimeMediaType,
+          rating: row[9],
         });
       })
       .on('end', () => {
@@ -63,10 +65,7 @@ export const loadMetadata = async () => {
 };
 
 const EmbeddingFilenameByName: { [K in EmbeddingName]: string } = {
-  [EmbeddingName.PyMDE_3D_40N]: 'projected_embedding_pymde_3d_40n.json',
-  // [EmbeddingName.GGVec_10D_40N_Order2]: 'projected_embedding_ggvec_top40_10d_order2.json',
-  [EmbeddingName.PyMDE_4D_40N]: 'projected_embedding_pymde_4d_40n.json',
-  [EmbeddingName.PyMDE_4D_100N]: 'projected_embedding_pymde_4d_100n.json',
+  [EmbeddingName.Model]: 'projected_model_embedding.json',
 };
 
 const AllValidEmbeddingNames = new Set(Object.keys(EmbeddingFilenameByName) as EmbeddingName[]);
@@ -75,6 +74,10 @@ export const validateEmbeddingName = (name: string | null | undefined): Embeddin
   AllValidEmbeddingNames.has(name as EmbeddingName) ? (name as EmbeddingName) : null;
 
 const loadRawEmbedding = async (embeddingName: EmbeddingName): Promise<RawEmbedding> => {
+  if (!EmbeddingFilenameByName[embeddingName]) {
+    embeddingName = EmbeddingName.Model;
+  }
+
   const cached = CachedRawEmbeddings.get(embeddingName);
   if (cached) {
     return cached;
@@ -108,6 +111,7 @@ const buildDummyMetadatum = (id: number): Metadatum => ({
   average_rating: 0,
   aired_from_year: 0,
   media_type: AnimeMediaType.Unknown,
+  rating: '',
 });
 
 export const loadEmbedding = async (embeddingName: EmbeddingName): Promise<Embedding> => {
@@ -135,14 +139,26 @@ export const loadEmbedding = async (embeddingName: EmbeddingName): Promise<Embed
         } else {
           throw new Error('Missing metadata for id and it is not fetched from MAL');
         }
-      } catch (e) {
+      } catch (_e) {
         console.error(`Failed to fetch metadata for id ${id}; embedding probably needs to be updated`);
         metadatum = buildDummyMetadatum(id);
       }
     }
 
+    const { centerX, centerY } = (() => {
+      let sumX = 0;
+      let sumY = 0;
+      let count = 0;
+      for (const otherPoint of Object.values(rawEmbedding.points)) {
+        sumX += otherPoint.x;
+        sumY += otherPoint.y;
+        count++;
+      }
+      return { centerX: sumX / count, centerY: sumY / count };
+    })();
+
     embedding.push({
-      vector: { x: point.x * 2.5, y: point.y * 2.5 },
+      vector: { x: (point.x - centerX) * 80.5, y: (point.y - centerY) * 80.5 },
       metadata: metadatum!,
     });
   }

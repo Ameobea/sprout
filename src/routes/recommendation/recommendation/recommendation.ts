@@ -1,25 +1,14 @@
 import { type Either, isLeft, right } from 'fp-ts/lib/Either.js';
-import { performance } from 'perf_hooks';
 import * as t from 'io-ts';
 
-import {
-  getIsModelScoresWeighted,
-  ModelName,
-  ProfileSource,
-  RECOMMENDATION_MODEL_CORPUS_SIZE,
-} from 'src/components/recommendation/conf';
+import { ModelName, ProfileSource, RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/components/recommendation/conf';
 import { loadEmbedding } from 'src/embedding';
 import { AnimeListStatusCode, AnimeMediaType, AnimeRelationType, getAnimesByID, type AnimeDetails } from 'src/malAPI';
-import { DataContainer, scoreRating } from 'src/training/data';
 import { EmbeddingName } from 'src/types';
-import type { Embedding } from 'src/routes/embedding/+server';
-import { performInferrence } from '../inferrenceThreadPool';
-import {
-  convertMALProfileToTrainingData,
-  type TrainingDatum,
-} from 'src/routes/recommendation/training/trainingData/trainingData.ts';
+import type { Embedding } from 'src/routes/embedding';
 import { fetchUserRankings } from 'src/helpers';
 import type { CompatAnimeListEntry } from 'src/anilistAPI';
+import { MODEL_SERVER_URL } from 'src/conf';
 
 export interface Recommendation {
   id: number;
@@ -31,202 +20,6 @@ export interface Recommendation {
   topRatingContributorsIds?: number[];
   planToWatch?: boolean;
 }
-
-interface RecommendationWithIndex extends Recommendation {
-  animeIx: number;
-}
-
-const maxK = 3;
-
-const computeRecommendationContributionsInner = async (
-  modelName: ModelName,
-  combosToCheck: number[][],
-  minOutputByRecommendationIx: number[],
-  minComboByRecommendationIx: (number[] | null)[],
-  input: number[],
-  recommendations: RecommendationWithIndex[],
-  validRatings: TrainingDatum[],
-  fastMode: boolean
-) => {
-  const outputs: Float32Array[] = [];
-
-  const batchSize = 1024 * 16;
-  const batches = Math.ceil(combosToCheck.length / batchSize);
-  for (let batchIx = 0; batchIx < batches; batchIx++) {
-    const start = batchIx * batchSize;
-    const end = Math.min(start + batchSize, combosToCheck.length);
-    const batchCombos = combosToCheck.slice(start, end);
-
-    const batchInputs = new Float32Array(batchCombos.length * RECOMMENDATION_MODEL_CORPUS_SIZE);
-    for (let comboIx = 0; comboIx < batchCombos.length; comboIx++) {
-      const combo = batchCombos[comboIx];
-      for (let i = 0; i < RECOMMENDATION_MODEL_CORPUS_SIZE; i++) {
-        batchInputs[comboIx * RECOMMENDATION_MODEL_CORPUS_SIZE + i] = input[i];
-      }
-
-      // Hold out ratings according to the combo
-      combo.forEach((ratingIx) => {
-        const animeIx = validRatings[ratingIx].animeIx;
-        batchInputs[comboIx * RECOMMENDATION_MODEL_CORPUS_SIZE + animeIx] = 0;
-      });
-    }
-
-    console.log(`Running batch ${batchIx + 1}/${batches} with ${batchCombos.length} inputs...`);
-    const now = performance.now();
-    const batchOutputs = await performInferrence(modelName, batchInputs);
-    const elapsed = performance.now() - now;
-    console.log(`Model ran in ${elapsed.toFixed(2)}ms`);
-    console.log(`Batch ${batchIx + 1}/${batches} complete`);
-
-    if (fastMode) {
-      outputs.push(batchOutputs);
-    } else {
-      for (let comboIx = 0; comboIx < batchCombos.length; comboIx++) {
-        const combo = batchCombos[comboIx];
-        const output = batchOutputs.subarray(
-          comboIx * RECOMMENDATION_MODEL_CORPUS_SIZE,
-          (comboIx + 1) * RECOMMENDATION_MODEL_CORPUS_SIZE
-        );
-
-        recommendations.forEach(({ animeIx }, recommendationIx) => {
-          const animeOutput = output[animeIx];
-          if (animeOutput < minOutputByRecommendationIx[recommendationIx]) {
-            minOutputByRecommendationIx[recommendationIx] = animeOutput;
-            minComboByRecommendationIx[recommendationIx] = combo;
-          }
-        });
-      }
-    }
-  }
-
-  if (fastMode) {
-    recommendations.forEach(({ animeIx }, recommendationIx) => {
-      const outputsForRecommendation = outputs
-        .flatMap((batchOutputs) => {
-          const batchSize = batchOutputs.length / RECOMMENDATION_MODEL_CORPUS_SIZE;
-          // make sure batchSize is an integer as a sanity check
-          if (batchSize % 1 !== 0) {
-            throw new Error('Unexpected batch size');
-          }
-
-          const outputsForRecommendation: number[] = [];
-          for (let predIx = 0; predIx < batchSize; predIx++) {
-            const output = batchOutputs[predIx * RECOMMENDATION_MODEL_CORPUS_SIZE + animeIx];
-            outputsForRecommendation.push(output);
-          }
-          return outputsForRecommendation;
-        })
-        .map((output, comboIx) => ({ output, comboIx }));
-
-      // Find `maxK` combos which produced lowest outputs for this recommendation
-      const topK = outputsForRecommendation.sort((a, b) => a.output - b.output).slice(0, maxK);
-      const combo = topK.map(({ comboIx }) => {
-        const combo = combosToCheck[comboIx];
-        if (combo.length !== 1) {
-          throw new Error('Unexpected combo length');
-        }
-        return combo[0];
-      });
-      minComboByRecommendationIx[recommendationIx] = combo;
-      minOutputByRecommendationIx[recommendationIx] = topK[0].output;
-    });
-  }
-};
-
-/**
- * For each recommended anime, find the top k ratings from the user's anime list that contribute the most to it.
- * This is accomplished by re-running the recommendation model on the user's anime list and holding out all sets
- * of `k` ratings from the user's anime list and finding which ratings contribute the most to the predicted rating.
- */
-const computeRecommendationContributions = async (
-  modelName: ModelName,
-  embedding: Embedding,
-  input: number[],
-  recommendations: RecommendationWithIndex[],
-  validRatings: TrainingDatum[],
-  fastMode: boolean
-) => {
-  if (recommendations.length === 0 || validRatings.length < 3) {
-    return;
-  }
-
-  // Run once with single-rating combos.  Although it's technically possible for the lowest score for a k-item combo
-  // to not include the rating from the the lowest 1-item combo, it is unlikely and the performance cost is too high
-  // to check them all.
-  const firstRoundCombos = new Array(validRatings.length).fill(null).map((_, i) => [i]);
-
-  const minOutputByRecommendationIx: number[] = new Array(recommendations.length).fill(1);
-  const minComboByRecommendationIx: (number[] | null)[] = new Array(recommendations.length).fill(null);
-
-  await computeRecommendationContributionsInner(
-    modelName,
-    firstRoundCombos,
-    minOutputByRecommendationIx,
-    minComboByRecommendationIx,
-    input,
-    recommendations,
-    validRatings,
-    fastMode
-  );
-
-  if (!fastMode) {
-    for (let k = 2; k <= maxK; k++) {
-      const hashCombo = (combo: number[]): string => combo.join('-');
-      const combosToCheck: number[][] = [];
-      const allComboHashes: Set<string> = new Set();
-
-      for (const minCombo of minComboByRecommendationIx) {
-        if (!minCombo) {
-          continue;
-        }
-
-        validRatings.forEach((_rating, ratingIx) => {
-          if (minCombo.includes(ratingIx)) {
-            return;
-          }
-          const newCombo = [...minCombo, ratingIx];
-          const comboHash = hashCombo(newCombo);
-          if (allComboHashes.has(comboHash)) {
-            return;
-          }
-          allComboHashes.add(comboHash);
-          combosToCheck.push(newCombo);
-        });
-      }
-
-      await computeRecommendationContributionsInner(
-        modelName,
-        combosToCheck,
-        minOutputByRecommendationIx,
-        minComboByRecommendationIx,
-        input,
-        recommendations,
-        validRatings,
-        false
-      );
-    }
-  }
-
-  return recommendations.map((_, recoIx) => {
-    const minCombo = minComboByRecommendationIx[recoIx];
-    if (!minCombo) {
-      return [];
-    }
-    return minCombo.map((ratingIx) => embedding[validRatings[ratingIx].animeIx].metadata.id);
-  });
-};
-
-/**
- * Weights ratings of less-popular anime more heavily.
- */
-const attenuateRecommendationOutputs = (outputs: Float32Array, boostFactor: number): Float32Array => {
-  for (let i = 0; i < outputs.length; i++) {
-    // May need to tweak this.
-    const boost = Math.log(Math.E + i * boostFactor);
-    outputs[i] *= boost;
-  }
-  return outputs;
-};
 
 interface GetRecommendationsArgs {
   dataSource:
@@ -241,8 +34,17 @@ interface GetRecommendationsArgs {
   includeONAsOVAsSpecials: boolean;
   includeMovies: boolean;
   includeMusic: boolean;
-  popularityAttenuationFactor: number;
   profileSource: ProfileSource;
+  filterPlanToWatch: boolean;
+  /**
+   * Controls how the recommendation score is computed from both the presence probability
+   * and the predicted rating (0.0 = only ratings, 1.0 = only presence probability, default = 0.4)
+   */
+  logitWeight: number;
+  /**
+   * Controls how much to boost less popular shows in the rankings (0.0 = no boost, 1.0 = maximum boost)
+   */
+  nicheBoostFactor: number;
 }
 
 let CachedEmbeddingMetadata: (AnimeDetails | null)[] | null = null;
@@ -271,7 +73,7 @@ export const getGenresDB = async (): Promise<Map<number, string>> => {
     return CachedGenresDB;
   }
 
-  const embedding = (await loadEmbedding(EmbeddingName.PyMDE_3D_40N)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
+  const embedding = (await loadEmbedding(EmbeddingName.Model)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
   const embeddingMetadata = await getEmbeddingMetadata(embedding);
   const genresDB = new Map<number, string>();
   for (const metadatum of embeddingMetadata) {
@@ -363,7 +165,9 @@ const buildSeasonRelationshipsByAnimeID = async (
 };
 
 const getIsExtraSeasonOfRatedAnime = (
-  allInputAnimeIDs: Set<number>,
+  embedding: Embedding,
+  animeIdToEmbeddingIndex: Map<number, number>,
+  allWatchedAnimeIDs: Set<number>,
   seasonRelationshipsByAnimeID: Map<number, Set<number>>,
   animeID: number,
   checkedIDs: Set<number> = new Set(),
@@ -374,8 +178,21 @@ const getIsExtraSeasonOfRatedAnime = (
     return false;
   }
 
+  const embeddingIx = animeIdToEmbeddingIndex.get(animeID);
+  const metadatum = typeof embeddingIx === 'number' ? embedding[embeddingIx].metadata : null;
+  if (
+    !metadatum ||
+    metadatum.media_type === AnimeMediaType.Movie ||
+    metadatum.media_type === AnimeMediaType.Music ||
+    metadatum.media_type === AnimeMediaType.ONA ||
+    metadatum.media_type === AnimeMediaType.OVA ||
+    metadatum.media_type === AnimeMediaType.Special
+  ) {
+    return false;
+  }
+
   for (const extraSeasonAnimeID of extraSeasonIDs) {
-    if (allInputAnimeIDs.has(extraSeasonAnimeID)) {
+    if (allWatchedAnimeIDs.has(extraSeasonAnimeID)) {
       return true;
     }
   }
@@ -391,7 +208,9 @@ const getIsExtraSeasonOfRatedAnime = (
     }
 
     const childIsRelated = getIsExtraSeasonOfRatedAnime(
-      allInputAnimeIDs,
+      embedding,
+      animeIdToEmbeddingIndex,
+      allWatchedAnimeIDs,
       seasonRelationshipsByAnimeID,
       extraSeasonAnimeID,
       checkedIDs,
@@ -405,6 +224,153 @@ const getIsExtraSeasonOfRatedAnime = (
   return false;
 };
 
+export interface ModelServerInput {
+  profile: {
+    anime_id: number;
+    rating: number;
+    watch_status: string;
+  }[];
+  top_k: number;
+  /**
+   * Controls how the recommendation score is computed from both the presence probability
+   * and the predicted rating (0.0 = only ratings, 1.0 = only presence probability, default = 0.4)
+   */
+  logit_weight?: number;
+  include_profile_holdout: boolean;
+  include_contribution_analysis: boolean;
+  /**
+   * Number of top contributors to return per recommendation (if contribution analysis is enabled).
+   *
+   * Defaults to 3.
+   */
+  top_contributors?: number;
+  /**
+   * Defaults to false; this is pretty much obsolete and a failed experiment
+   */
+  use_alt_ranking?: boolean;
+  /**
+   * Optional number in [0, 1] to boost less popular shows in the rankings.  It compares the absolute
+   * popularity of a show to the probability distribution from the model output and boosts shows that
+   * the model favors more than their popularity would suggest.
+   *
+   * Defaults to 0 (no boost).
+   */
+  niche_boost_factor?: number;
+}
+
+export interface ModelServerOutput {
+  recommendations: ModelServerRecommendation[];
+  profile_holdout?: ProfileHoldout;
+  normalization_stats: NormalizationStats;
+}
+
+export interface ModelServerRecommendation {
+  anime_id: number;
+  corpus_idx: number;
+  score: number;
+  probability: number;
+  predicted_rating: number;
+  top_contributors?: TopContributor[];
+}
+
+export interface TopContributor {
+  anime_id: number;
+  corpus_idx: number;
+  score_contribution: number;
+}
+
+export interface ProfileHoldout {
+  items: HoldoutItem[];
+  mean_rating_error: number;
+  std_rating_error: number;
+  mean_presence_prob: number;
+  std_presence_prob: number;
+}
+
+export interface HoldoutItem {
+  anime_id: number;
+  corpus_idx: number;
+  true_rating: number;
+  true_normalized_rating: number;
+  predicted_rating: number;
+  rating_error: number;
+  presence_probability: number;
+  /**
+   * Weighted recommendation score (using `logit_weight` from root request) for this item if it
+   * were not in the profile
+   */
+  recommendation_score: number;
+  /**
+   * Sum of absolute score changes for top-50 when this item is held out
+   */
+  impact_score: number;
+}
+
+export interface NormalizationStats {
+  mu: number;
+  sigma: number;
+  alpha: number;
+  zscore_norm: number[];
+  absolute_norm: number[];
+}
+
+const performInferrence = async ({
+  modelName: _modelName,
+  profile,
+  count,
+  computeContributions,
+  logitWeight,
+  nicheBoostFactor,
+}: {
+  modelName: ModelName;
+  profile: CompatAnimeListEntry[];
+  count: number;
+  computeContributions: boolean;
+  logitWeight: number;
+  nicheBoostFactor: number;
+}): Promise<ModelServerOutput> => {
+  // Request extra recommendations to account for filtering later
+  const requestCount = count * 3;
+
+  const useAltRanking = false; // TODO: testing
+  if (!useAltRanking) {
+    // since the original rating system works with presence probabilities after passing them
+    // through softmax, this makes the lower values more extreme, while compressing the higher values.
+    const before = logitWeight;
+    logitWeight = logitWeight * logitWeight * logitWeight * (2 / 3) + (1 / 3) * logitWeight + 0.01;
+    console.log(`logit weight ${before} -> ${logitWeight}`);
+  }
+
+  const requestBody: ModelServerInput = {
+    profile: profile.map((entry) => ({
+      anime_id: entry.node.id,
+      rating: entry.list_status.score,
+      watch_status: entry.list_status.status,
+    })),
+    top_k: requestCount,
+    logit_weight: logitWeight,
+    include_profile_holdout: false,
+    include_contribution_analysis: computeContributions,
+    use_alt_ranking: useAltRanking,
+    niche_boost_factor: nicheBoostFactor,
+  };
+
+  const response = await fetch(`${MODEL_SERVER_URL}/recommend`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Model server request failed with status ${response.status}: ${errorText}`);
+  }
+
+  return response.json();
+};
+
 export const getRecommendations = async ({
   dataSource,
   count,
@@ -416,15 +382,15 @@ export const getRecommendations = async ({
   includeONAsOVAsSpecials,
   includeMovies,
   includeMusic,
-  popularityAttenuationFactor,
   profileSource,
+  filterPlanToWatch,
+  logitWeight,
+  nicheBoostFactor,
 }: GetRecommendationsArgs): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
-  const embedding = (await loadEmbedding(EmbeddingName.PyMDE_3D_40N)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
+  const embedding = (await loadEmbedding(EmbeddingName.Model)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
 
   let profileData: {
     profile: CompatAnimeListEntry[];
-    ratings: TrainingDatum[];
-    userIsNonRater: boolean;
     username: string;
   };
   if (dataSource.type === 'username') {
@@ -438,61 +404,37 @@ export const getRecommendations = async ({
       node: { id: animeID },
       list_status: { status: AnimeListStatusCode.Completed, score },
     }));
-    const { ratings, userIsNonRater } = (await convertMALProfileToTrainingData([profile]))[0];
 
     profileData = {
       profile,
-      ratings,
-      userIsNonRater,
       username: '<raw profile>',
     };
   } else {
     throw new Error(`Unknown data source type ${(dataSource as any).type}`);
   }
-  const { profile, ratings: rawRatings, userIsNonRater, username } = profileData;
+  const { profile, username } = profileData;
 
   if (excludedRankingAnimeIDs.size > 0) {
     console.log(`Excluding ${excludedRankingAnimeIDs.size} rankings`);
   }
-  const ratings = rawRatings.filter((rating) => {
-    const animeID = embedding[rating.animeIx]?.metadata.id;
-    return !!animeID && !excludedRankingAnimeIDs.has(animeID);
+
+  console.log(`Generating recommendations for user ${username} with ${profile.length} profile entries...`);
+  const output = await performInferrence({
+    modelName,
+    profile: profile.filter((entry) => !excludedRankingAnimeIDs.has(entry.node.id)),
+    count,
+    computeContributions,
+    logitWeight,
+    nicheBoostFactor,
   });
-  const profileAnimeByID = new Map<number, CompatAnimeListEntry>();
-  const planToWatchAnimeIDs = new Set<number>();
-  for (const entry of profile) {
-    if (entry?.node?.id) {
-      profileAnimeByID.set(entry.node.id, entry);
-    }
-    if (entry?.list_status.status === AnimeListStatusCode.PlanToWatch) {
-      planToWatchAnimeIDs.add(entry.node.id);
-    }
+
+  // Build a map from anime_id to embedding index for filtering
+  const animeIdToEmbeddingIndex = new Map<number, number>();
+  for (let i = 0; i < embedding.length; i++) {
+    animeIdToEmbeddingIndex.set(embedding[i].metadata.id, i);
   }
 
-  const weightScores = getIsModelScoresWeighted(modelName);
-  const { input, validIndices } = DataContainer.buildModelInput(
-    ratings,
-    RECOMMENDATION_MODEL_CORPUS_SIZE,
-    weightScores
-  );
-
-  console.log(`Running recommendation model for user ${username} with ${validIndices.length} anime in input...`, {
-    posRatingCount: input.filter((score) => score > 0).length,
-    negRatingCount: input.filter((score) => score < 0).length,
-  });
-  const now = performance.now();
-  let output = await performInferrence(modelName, new Float32Array(input));
-  const elapsed = performance.now() - now;
-  console.log(`Model ran in ${elapsed.toFixed(2)}ms`);
-
-  if (popularityAttenuationFactor) {
-    output = attenuateRecommendationOutputs(output, popularityAttenuationFactor);
-  }
-
-  const allInputAnimeIndices = new Set(validIndices.map((ixIx) => ratings[ixIx].animeIx));
-  const allInputAnimeIDs = new Set(validIndices.map((ixIx) => embedding[ratings[ixIx].animeIx].metadata.id));
-
-  // Sort output by indices of top recommendations from highest to lowest
+  // Build valid media types set for filtering
   const validAnimeMediaTypes = new Set<AnimeMediaType>();
   validAnimeMediaTypes.add(AnimeMediaType.TV);
   validAnimeMediaTypes.add(AnimeMediaType.Unknown);
@@ -519,89 +461,84 @@ export const getRecommendations = async ({
 
   const embeddingMetadata = excludedGenreIDs.size > 0 ? await getEmbeddingMetadata(embedding) : [];
 
-  const sortedOutput = [...output]
-    .map((score, animeIx) => {
-      const datum = embedding[animeIx];
-      const animeMediaType = datum.metadata.media_type;
-      if (animeMediaType && !validAnimeMediaTypes.has(animeMediaType)) {
-        return { score: -Infinity, animeIx };
-      }
+  const allWatchedAnimeIDs = new Set(
+    profile
+      .filter((entry) => entry.list_status.status !== AnimeListStatusCode.PlanToWatch)
+      .map((entry) => entry.node.id)
+  );
+  const planToWatchAnimeIDs = new Set(
+    profile
+      .filter((entry) => entry.list_status.status === AnimeListStatusCode.PlanToWatch)
+      .map((entry) => entry.node.id)
+  );
 
-      if (excludedGenreIDs.size > 0) {
-        const metadatum = embeddingMetadata[animeIx];
-        if (metadatum && metadatum.genres?.some((genre) => excludedGenreIDs.has(genre.id))) {
-          return { score: -Infinity, animeIx };
+  // Filter recommendations based on media type, genre exclusion, and season relationships
+  const filteredRecommendations = output.recommendations.filter((rec) => {
+    const embeddingIndex = animeIdToEmbeddingIndex.get(rec.anime_id);
+    if (embeddingIndex === undefined) {
+      return false;
+    }
+
+    // Filter out plan to watch items if requested
+    if (filterPlanToWatch && planToWatchAnimeIDs.has(rec.anime_id)) {
+      return false;
+    }
+
+    const datum = embedding[embeddingIndex];
+    const animeMediaType = datum.metadata.media_type;
+    if (animeMediaType && !validAnimeMediaTypes.has(animeMediaType)) {
+      return false;
+    }
+
+    if (excludedGenreIDs.size > 0) {
+      const metadatum = embeddingMetadata[embeddingIndex];
+      if (metadatum && metadatum.genres?.some((genre) => excludedGenreIDs.has(genre.id))) {
+        return false;
+      }
+    }
+
+    if (seasonRelationshipsByAnimeID) {
+      if (!excludedFromSeasonRelationshipExclusionAnimeIDs?.has(datum.metadata.id)) {
+        const isExtraSeason = getIsExtraSeasonOfRatedAnime(
+          embedding,
+          animeIdToEmbeddingIndex,
+          allWatchedAnimeIDs,
+          seasonRelationshipsByAnimeID,
+          datum.metadata.id
+        );
+        if (isExtraSeason) {
+          return false;
         }
       }
+    }
 
-      if (seasonRelationshipsByAnimeID) {
-        if (!excludedFromSeasonRelationshipExclusionAnimeIDs?.has(datum.metadata.id)) {
-          const isExtraSeason = getIsExtraSeasonOfRatedAnime(
-            allInputAnimeIDs,
-            seasonRelationshipsByAnimeID,
-            datum.metadata.id
-          );
-          if (isExtraSeason) {
-            return { score: -Infinity, animeIx };
-          }
-        }
-      }
+    return true;
+  });
 
-      return { score, animeIx };
-    })
-    .sort((a, b) => b.score - a.score);
+  // Build a map of profile entries by anime ID for contributor sign determination
+  const profileAnimeByID = new Map(profile.map((entry) => [entry.node.id, entry]));
 
-  const recommendations: RecommendationWithIndex[] = sortedOutput
-    .filter(({ animeIx, score }) => !allInputAnimeIndices.has(animeIx) && score > 0)
-    .map(({ animeIx, score }) => ({ animeIx, id: embedding[animeIx].metadata.id, score: +score.toFixed(3) }))
-    .filter(({ id }) => {
-      const entry = profileAnimeByID.get(id);
-      if (!entry) {
-        return true;
-      }
-      const watchStatus = entry.list_status.status;
-      switch (watchStatus) {
-        case AnimeListStatusCode.Completed:
-        case AnimeListStatusCode.Dropped:
-        case AnimeListStatusCode.Watching:
-          return false;
-        case AnimeListStatusCode.OnHold:
-        case AnimeListStatusCode.PlanToWatch:
-          return true;
-        default:
-          console.error(`Unknown watch status ${watchStatus}`);
-          return false;
-      }
-    })
-    .slice(0, count);
-
-  let contributions: number[][] = [];
-  if (computeContributions) {
-    contributions =
-      (await computeRecommendationContributions(
-        modelName,
-        embedding,
-        input,
-        recommendations,
-        validIndices.map((ratingIx) => ratings[ratingIx]),
-        true
-      )) ?? [];
-  }
+  // Determine if user is a non-rater (most scores are 0)
+  const ratedCount = profile.filter((entry) => entry.list_status.score > 0).length;
+  const userIsNonRater = ratedCount < profile.length * 0.5;
 
   return right(
-    recommendations.map(({ score, id }, i) => {
-      const reco: Recommendation = { id, score };
-      const contribs = contributions[i];
-      if (contribs) {
-        reco.topRatingContributorsIds = contribs.map((contribAnimeID) => {
-          const rating = profileAnimeByID.get(contribAnimeID);
-          const isPositive = scoreRating(rating?.list_status.score ?? 10, weightScores) > 0;
-          return isPositive || userIsNonRater ? contribAnimeID : -contribAnimeID;
+    filteredRecommendations.slice(0, count).map((rec) => {
+      const reco: Recommendation = { id: rec.anime_id, score: rec.score };
+
+      if (rec.top_contributors) {
+        reco.topRatingContributorsIds = rec.top_contributors.map((contrib) => {
+          const rating = profileAnimeByID.get(contrib.anime_id);
+          // Positive contribution if score >= 6, or if user is a non-rater
+          const isPositive = (rating?.list_status.score ?? 10) >= 6;
+          return isPositive || userIsNonRater ? contrib.anime_id : -contrib.anime_id;
         });
       }
-      if (planToWatchAnimeIDs.has(id)) {
+
+      if (planToWatchAnimeIDs.has(rec.anime_id)) {
         reco.planToWatch = true;
       }
+
       return reco;
     })
   );

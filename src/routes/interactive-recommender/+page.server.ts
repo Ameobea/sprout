@@ -20,7 +20,8 @@ const getEmbeddingPartialMetadata = async () => {
     return CachedEmbeddingPartialMetadata;
   }
 
-  const embedding = (await loadEmbedding(EmbeddingName.PyMDE_4D_40N)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
+  const embedding = (await loadEmbedding(EmbeddingName.Model)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
+  console.log(embedding);
   const embeddingMetadata = await getEmbeddingMetadata(embedding);
   const trimmed = embeddingMetadata
     .filter((entry) => entry)

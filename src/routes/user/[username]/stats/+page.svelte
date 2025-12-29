@@ -7,6 +7,7 @@
   import SvelteSeo from 'svelte-seo';
 
   import GenresBarChart from 'src/components/profileStats/GenresBarChart.svelte';
+  import ProfileAnalysisLists from 'src/components/profileStats/ProfileAnalysisLists.svelte';
   import RatingDistributionChart from 'src/components/profileStats/RatingDistributionChart.svelte';
   import type { PageData } from './$types';
 
@@ -38,6 +39,15 @@
       <a href="/">Back to Homepage</a>
     </div>
   {:else}
+    {#if data.profileAnalysis}
+      <ProfileAnalysisLists
+        mostImpactfulRatings={data.profileAnalysis.mostImpactfulRatings}
+        mostSurprisingItems={data.profileAnalysis.mostSurprisingItems}
+        normalizationStats={data.profileAnalysis.normalizationStats}
+        animeData={data.animeData}
+      />
+    {/if}
+
     <RatingDistributionChart profile={data.profileRes.profile} />
     <GenresBarChart profile={data.profileRes.profile} animeData={data.animeData} />
 

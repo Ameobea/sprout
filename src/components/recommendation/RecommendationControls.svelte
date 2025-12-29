@@ -1,31 +1,11 @@
 <script lang="ts" context="module">
-  import { ModelName, PopularityAttenuationFactor } from './conf';
+  import { ModelName } from './conf';
 
-  const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
-    // { id: ModelName.Model_6K, text: 'Top 6k Anime v1' },
-    // { id: ModelName.Model_6K_Smaller, text: 'Top 6k Smaller' },
-    // { id: ModelName.Model_6K_Smaller_Weighted, text: 'Top 6k Smaller Weighted' },
-    // { id: ModelName.Model_6_5K_New, text: 'Top 6.5K Weighted Updated' },
-    // { id: ModelName.Model_6_5K_Unweighted, text: 'Top 6.5K Unweighted Updated' },
-    // { id: ModelName.Model_6_5k_New2, text: 'Top 6.5K Weighted Jan. 2023' },
-    // { id: ModelName.Model_6_5k_New2_Alt, text: 'Top 6.5K Weighted Alt. Jan. 2023' },
-    { id: ModelName.Model_2024_07, text: 'Top 6.5k Jul. 2024' },
-    { id: ModelName.Model_2024_07_alt, text: 'Top 6.5k Jul. 2024 Alt.' },
-  ];
-
-  const ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS: { id: PopularityAttenuationFactor; text: string }[] = [
-    { id: PopularityAttenuationFactor.None, text: 'None' },
-    { id: PopularityAttenuationFactor.VeryLow, text: 'Very Low' },
-    { id: PopularityAttenuationFactor.Low, text: 'Low' },
-    { id: PopularityAttenuationFactor.Medium, text: 'Medium' },
-    { id: PopularityAttenuationFactor.High, text: 'High' },
-    { id: PopularityAttenuationFactor.VeryHigh, text: 'Very High' },
-    { id: PopularityAttenuationFactor.Extreme, text: 'Extreme' },
-  ];
+  const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [{ id: ModelName.Model_2025_jax, text: 'V2 - 2025' }];
 </script>
 
 <script lang="ts">
-  import { Dropdown, InlineLoading, Tag, Toggle, ExpandableTile } from 'carbon-components-svelte';
+  import { Dropdown, InlineLoading, Tag, Toggle, ExpandableTile, Slider } from 'carbon-components-svelte';
   import type { Writable } from 'svelte/store';
 
   import type { AnimeDetails } from 'src/malAPI';
@@ -41,6 +21,14 @@
   export let isLoading: boolean;
   export let genresDB: Writable<Map<number, string>>;
   export let forceHideTopBar: boolean | undefined = false;
+
+  // Local state for sliders to prevent updates while dragging
+  let localLogitWeight = $params.logitWeight;
+  let localNicheBoostFactor = $params.nicheBoostFactor;
+
+  // Sync local state with params store when params change from outside
+  // $: localLogitWeight = $params.logitWeight;
+  // $: localNicheBoostFactor = $params.nicheBoostFactor;
 </script>
 
 <svelte:window bind:innerWidth />
@@ -72,33 +60,63 @@
     <ExpandableTile style="min-height: 10px">
       <div slot="above">Advanced Options</div>
       <div class="top" slot="below">
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <div on:click={(e) => e.stopPropagation()}>
-          <Dropdown
-            style="width: 100%;"
-            titleText="Popularity Attenuation Factor"
-            selectedId={$params.popularityAttenuationFactor}
-            on:select={(selected) => {
-              $params.popularityAttenuationFactor = selected.detail.selectedItem.id;
-            }}
-            items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
-            helperText="Higher popularity attenuation factors result in less-popular anime being weighted higher in recommendations"
-          />
+        <div class="top-row">
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div on:click={(e) => e.stopPropagation()}>
+            <Dropdown
+              style="width: 100%;"
+              titleText="Model"
+              selectedId={$params.modelName}
+              on:select={(selected) => {
+                $params.modelName = selected.detail.selectedItem.id;
+              }}
+              items={ALL_MODEL_OPTIONS}
+              helperText="Each model was trained slightly differently, which impacts the generated recommendations"
+            />
+          </div>
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div on:click={(e) => e.stopPropagation()}>
+            <Toggle labelText="Filter Plan to Watch" bind:toggled={$params.filterPlanToWatch} />
+            <span class="helper-text">Hide shows that are already marked plan to watch</span>
+          </div>
         </div>
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <div on:click={(e) => e.stopPropagation()}>
-          <Dropdown
-            style="width: 100%;"
-            titleText="Model"
-            selectedId={$params.modelName}
-            on:select={(selected) => {
-              $params.modelName = selected.detail.selectedItem.id;
-            }}
-            items={ALL_MODEL_OPTIONS}
-            helperText="Each model was trained slightly differently, which impacts the generated recommendations"
-          />
+        <div class="bottom-row">
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div on:click={(e) => e.stopPropagation()}>
+            <Slider
+              labelText="Presence/Rating Weight"
+              min={0}
+              max={1}
+              step={0.1}
+              bind:value={localLogitWeight}
+              on:change={() => {
+                $params.logitWeight = localLogitWeight;
+              }}
+            />
+            <span class="helper-text">
+              Balance between predicted rating (0) and presence probability (1) when scoring recommendations
+            </span>
+          </div>
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div on:click={(e) => e.stopPropagation()}>
+            <Slider
+              labelText="Niche Boost Factor"
+              min={0}
+              max={1}
+              step={0.1}
+              bind:value={localNicheBoostFactor}
+              on:change={() => {
+                $params.nicheBoostFactor = localNicheBoostFactor;
+              }}
+            />
+            <span class="helper-text">
+              Boosts shows that the model thinks you'll like more than their popularity suggests. Higher = more boost.
+            </span>
+          </div>
         </div>
       </div>
     </ExpandableTile>
@@ -165,8 +183,23 @@
     display: flex;
     flex-direction: row;
     min-width: 100%;
-    gap: 20px;
+    gap: 16px;
     padding: 4px;
+  }
+
+  .top-row,
+  .bottom-row {
+    display: flex;
+    flex-direction: row;
+    gap: 16px;
+  }
+
+  .top-row > div,
+  .bottom-row > div {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
   }
 
   .top > div {
@@ -206,6 +239,12 @@
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  .helper-text {
+    font-size: 0.75rem;
+    color: #a8a8a8;
+    margin-top: 4px;
   }
 
   :global(.bx--tile--expandable) {

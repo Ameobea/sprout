@@ -138,6 +138,7 @@ export const getUserAnimeList = async (username: string): Promise<MALUserAnimeLi
       break;
     }
   }
+  console.log(data.map((d) => d.node.id));
   UserAnimeListCache.set(username, data);
 
   return data;
@@ -215,6 +216,7 @@ export interface AnimeDetails {
     relation_type_formatted: string;
   }[];
   genres?: Genre[];
+  rating?: string;
 }
 
 const AnimeDetailsCache = new NodeCache({ stdTTL: 24 * 60 * 60 * 1000 });
@@ -230,6 +232,7 @@ export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | n
     'recommendations',
     'related_anime',
     'media_type',
+    'rating',
   ];
   const url = `${MAL_API_BASE_URL}/anime/${id}?nsfw=true&fields=${fieldsToFetch.join(',')}`;
   console.log('Fetching anime...', url);
@@ -275,7 +278,7 @@ const fetchAnimesFromDB = async (ids: number[]): Promise<(AnimeDetails | null)[]
   const entries = await new Promise<{ id: number; metadata: string; update_timestamp: string }[]>((resolve, reject) => {
     const replacers = ids.map(() => '?').join(',');
     // Re-fetch from MAL if older than 30 days
-    const query = `SELECT id, metadata, update_timestamp FROM \`anime-metadata\` WHERE update_timestamp >= now() - interval 30 DAY AND id IN (${replacers})`;
+    const query = `SELECT id, metadata, update_timestamp FROM \`anime-metadata\` WHERE update_timestamp >= now() - interval 30 DAY AND id IN (${replacers}) AND metadata is not null AND metadata != ''`;
 
     DbPool.query(query, ids, (err, res) => {
       if (err) {
@@ -354,4 +357,33 @@ export const getAnimesByID = async (
     return datum;
   });
   return joined;
+};
+
+export const refreshAllMetadataInDB = async (delayMs: number = 1200) => {
+  console.log('Refreshing all anime metadata in DB from MAL API...');
+  // fetch all IDs
+  const ids: number[] = await new Promise((resolve, reject) => {
+    DbPool.query('SELECT id FROM `anime-metadata`', (err, res) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(res.map((row: { id: number }) => row.id));
+      }
+    });
+  });
+
+  console.log(
+    `Found ${ids.length} anime IDs in DB. Estimated time to refresh: ${(ids.length * delayMs) / 1000 / 60} minutes.`
+  );
+
+  for (const id of ids) {
+    console.log(`Refreshing metadata for anime ID ${id}...`);
+    // fetch from MAL and update DB
+    await fetchAnimeFromMALAPI(id).catch((err) => {
+      console.error(`Failed to refresh metadata for anime ID ${id}:`, err);
+    });
+    await delay(delayMs);
+  }
+
+  console.log('Finished refreshing all anime metadata in DB from MAL API.');
 };

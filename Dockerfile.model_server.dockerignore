@@ -4,12 +4,12 @@ data/*
 !data/processed-metadata.csv
 !data/projected_embedding*.json
 !data/projected_model_embedding.json
-notebooks
+!data/jax_model.msgpack
 *.tar.gz
 *.tar.bz2
 Justfile
 README.md
 queue-receiver
 node_modules
-# we need to include this; we build outside the docker context
-# build
+src
+build

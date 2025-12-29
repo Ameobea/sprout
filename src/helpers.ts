@@ -3,16 +3,9 @@ import { tryCatchK } from 'fp-ts/lib/TaskEither.js';
 import { getAnilistUserAnimeList, type CompatAnimeListEntry } from './anilistAPI';
 import { getUserAnimeList as getUserMALAnimeList, MALAPIError } from 'src/malAPI';
 import { ProfileSource } from './components/recommendation/conf';
-import {
-  convertMALProfileToTrainingData,
-  type TrainingDatum,
-} from './routes/recommendation/training/trainingData/trainingData';
 
 export const fetchUserRankings = tryCatchK(
-  async (
-    username: string,
-    profileSource: ProfileSource
-  ): Promise<{ profile: CompatAnimeListEntry[]; ratings: TrainingDatum[]; userIsNonRater: boolean }> => {
+  async (username: string, profileSource: ProfileSource): Promise<{ profile: CompatAnimeListEntry[] }> => {
     let profile: CompatAnimeListEntry[] = [];
     switch (profileSource) {
       case ProfileSource.MyAnimeList:
@@ -37,8 +30,7 @@ export const fetchUserRankings = tryCatchK(
       throw new Error('Failed to fetch user profile from source');
     }
 
-    const { ratings, userIsNonRater } = (await convertMALProfileToTrainingData([profile]))[0];
-    return { profile, ratings, userIsNonRater };
+    return { profile };
   },
   (err: Error) => {
     console.error('Failed to fetch user rankings', err);

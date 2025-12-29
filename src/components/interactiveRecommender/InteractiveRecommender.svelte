@@ -18,8 +18,6 @@
         availableAnimeMetadataIDs,
         includeContributors,
         ...params,
-        popularityAttenuationFactor:
-          profile.length < 5 ? PopularityAttenuationFactor.Extreme : PopularityAttenuationFactor.VeryHigh,
       }),
     }).then(async (res) => {
       if (!res.ok) {
@@ -38,7 +36,6 @@
   import RecommendationControls from '../recommendation/RecommendationControls.svelte';
   import { getDefaultRecommendationControlParams, type RecommendationControlParams } from '../recommendation/utils';
   import RecommendationsList from '../recommendation/RecommendationsList.svelte';
-  import { PopularityAttenuationFactor } from '../recommendation/conf';
 
   export let profile: {
     animeID: number;

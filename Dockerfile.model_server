@@ -1,0 +1,47 @@
+# Dockerfile for the anime recommendation model server
+#
+# Build: docker build -f Dockerfile.model_server -t anime-model-server .
+# Run:   docker run -p 8000:8000 anime-model-server
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+# Using CPU-only JAX for inference - same versions as training environment
+RUN pip install --no-cache-dir \
+    fastapi==0.115.* \
+    uvicorn==0.32.* \
+    numpy==1.26.4 \
+    jax==0.7.1 \
+    jaxlib==0.7.1 \
+    flax==0.11.2 \
+    msgpack==1.1.2 \
+    chex==0.1.91
+
+# Copy application code
+COPY notebooks/model_server.py /app/
+COPY notebooks/model.py /app/
+COPY notebooks/normalize_ratings.py /app/
+
+# Copy model weights and corpus mapping
+COPY data/jax_model.msgpack /opt/model/jax_model.msgpack
+COPY data/corpus_ids.json /opt/model/corpus_ids.json
+COPY data/processed-metadata.csv /opt/model/processed-metadata.csv
+
+# Environment variables
+ENV MODEL_PATH=/opt/model/jax_model.msgpack
+ENV CORPUS_PATH=/opt/model/corpus_ids.json
+ENV METADATA_PATH=/opt/model/processed-metadata.csv
+ENV PYTHONUNBUFFERED=1
+
+# Expose the port
+EXPOSE 8000
+
+# Run with uvicorn (single process - JAX handles parallelism internally)
+# - timeout of 120s for requests with large profiles
+CMD ["uvicorn", "model_server:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "120"]

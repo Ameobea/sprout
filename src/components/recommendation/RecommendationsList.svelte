@@ -3,7 +3,7 @@
   import { flip } from 'svelte/animate';
 
   import type { AnimeDetails } from 'src/malAPI';
-  import type { Recommendation } from 'src/routes/recommendation/recommendation';
+  import type { Recommendation } from '../../routes/recommendation/recommendation/recommendation';
   import RecommendationListItem from './RecommendationListItem.svelte';
 
   export let recommendations: Recommendation[];

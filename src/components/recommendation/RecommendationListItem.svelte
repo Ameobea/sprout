@@ -98,15 +98,15 @@
       <div class="top-influences">
         <h3>Recommended Because:</h3>
         {#if topRatingContributors && topRatingContributors.length > 0}
-          {#each topRatingContributors as { datum, positiveRating } (datum.id)}
+          {#each topRatingContributors as { datum } (datum.id)}
             <Tag
               style="color: white;"
               filter={!contributorsLoading && !!excludeRanking}
               skeleton={contributorsLoading}
               on:close={() => excludeRanking?.(datum.id)}
-              type={positiveRating ? 'green' : 'red'}
+              type="outline"
             >
-              You {positiveRating ? 'liked' : 'disliked'}:
+              You watched:
               {datum.alternative_titles.en || datum.title}
             </Tag>
           {/each}

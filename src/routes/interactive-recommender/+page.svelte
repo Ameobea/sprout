@@ -70,13 +70,12 @@
   import { browser } from '$app/environment';
   import type { PageData } from './$types';
   import { replaceState } from '$app/navigation';
-  import { QueryClient } from '@tanstack/svelte-query';
 
   export let data: PageData;
   $: embeddingMetadata = data.embeddingMetadata;
 
   let selectedAnime: { id: number; score: number; title: string; titleEnglish: string; imageSrc: string } | null = null;
-  let profile: ProfileEntry[] = getDefaultProfile(embeddingMetadata, $page.url);
+  let profile: ProfileEntry[] = getDefaultProfile(data.embeddingMetadata, $page.url);
 
   let rootContainerNode: HTMLElement | null = null;
 

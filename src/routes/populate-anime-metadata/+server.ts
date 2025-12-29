@@ -10,6 +10,7 @@ const fillFromScratch = async () => {
     fs.readFile('/home/casey/anime-atlas/data/all-anime-ids.json', 'utf8', (err, data) => resolve(JSON.parse(data)))
   );
 
+  console.log(allAnimeIDs);
   await new Promise((resolve, reject) => {
     DbPool.query('INSERT IGNORE INTO `anime-metadata` (id) VALUES ?', [allAnimeIDs.map((id) => [id])], (err) => {
       if (err) {
@@ -39,7 +40,7 @@ export const POST: RequestHandler = async ({ url }) => {
 
   try {
     const idToFetch = await new Promise<number | null>((resolve, reject) =>
-      DbPool.query('SELECT id FROM `anime-metadata` WHERE metadata IS NULL LIMIT 1', (err, results) => {
+      DbPool.query('SELECT id FROM `anime-metadata` WHERE metadata IS NULL OR metadata = \'\' LIMIT 1', (err, results) => {
         if (err) {
           reject(err);
         } else {

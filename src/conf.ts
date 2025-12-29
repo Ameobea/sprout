@@ -18,6 +18,8 @@ export const MAL_CLIENT_SECRET = loadEnv('MAL_CLIENT_SECRET');
 
 export const MAL_API_BASE_URL = 'https://api.myanimelist.net/v2';
 
+export const MODEL_SERVER_URL = loadEnv('MODEL_SERVER_URL', 'http://localhost:8000');
+
 export const ADMIN_API_TOKEN = loadEnv('ADMIN_API_TOKEN');
 
 export const MYSQL_HOST = loadEnv('MYSQL_HOST');
