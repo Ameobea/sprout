@@ -22,6 +22,7 @@
 </script>
 
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { writable, type Writable } from 'svelte/store';
   import { createQuery, QueryClient } from '@tanstack/svelte-query';
 
@@ -52,7 +53,7 @@
   const animeMetadataDatabase = writable(initialRecommendations.type === 'ok' ? initialRecommendations.animeData : {});
 
   const params = writable(getDefaultRecommendationControlParams());
-  params.subscribe(updateQueryParams);
+  onMount(() => params.subscribe(updateQueryParams));
 
   let usedInitialData = false;
   const initialData = initialRecommendations.type === 'ok' ? initialRecommendations : undefined;
