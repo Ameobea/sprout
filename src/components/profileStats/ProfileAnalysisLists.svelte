@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { submitAnalyticsEvent } from 'src/analytics';
   import type { HoldoutItem, NormalizationStats } from 'src/routes/recommendation/recommendation/recommendation';
   import type { PartialStatsAnimeMetadatum } from 'src/routes/user/[username]/stats/+page.server';
   import { denormalizeRating } from 'src/util/ratingNormalization';
@@ -9,6 +10,13 @@
   export let animeData: { [animeID: number]: PartialStatsAnimeMetadatum };
 
   const getMALLink = (animeId: number) => `https://myanimelist.net/anime/${animeId}`;
+
+  const submitMALLinkClick = (animeId: number, list: 'most_impactful' | 'most_surprising', rank: number) =>
+    submitAnalyticsEvent({
+      category: 'profile_stats',
+      subcategory: 'mal_link_click',
+      payload: { anime_id: animeId, list, rank },
+    });
 
   const getAnimeName = (animeId: number): string => {
     return animeData[animeId]?.title ?? `Anime #${animeId}`;
@@ -46,7 +54,13 @@
           {#each mostImpactfulRatings as item, index}
             <div class="list-item">
               <span class="col-rank">{index + 1}</span>
-              <a href={getMALLink(item.anime_id)} target="_blank" rel="noopener noreferrer" class="col-name anime-name">
+              <a
+                href={getMALLink(item.anime_id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="col-name anime-name"
+                on:click={() => submitMALLinkClick(item.anime_id, 'most_impactful', index + 1)}
+              >
                 {getAnimeName(item.anime_id)}
               </a>
               <span class="col-rating">{item.true_rating > 0 ? item.true_rating : '-'}</span>
@@ -83,6 +97,7 @@
                   target="_blank"
                   rel="noopener noreferrer"
                   class="col-name anime-name"
+                  on:click={() => submitMALLinkClick(item.anime_id, 'most_surprising', index + 1)}
                 >
                   {getAnimeName(item.anime_id)}
                 </a>

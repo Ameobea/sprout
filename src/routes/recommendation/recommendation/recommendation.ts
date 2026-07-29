@@ -1,4 +1,4 @@
-import { type Either, isLeft, right } from 'fp-ts/lib/Either.js';
+import { type Either, isLeft, left, right } from 'fp-ts/lib/Either.js';
 import * as t from 'io-ts';
 
 import { ModelName, ProfileSource, RECOMMENDATION_MODEL_CORPUS_SIZE } from 'src/components/recommendation/conf';
@@ -6,9 +6,9 @@ import { loadEmbedding } from 'src/embedding';
 import { AnimeListStatusCode, AnimeMediaType, AnimeRelationType, getAnimesByID, type AnimeDetails } from 'src/malAPI';
 import { EmbeddingName } from 'src/types';
 import type { Embedding } from 'src/routes/embedding';
-import { fetchUserRankings } from 'src/helpers';
+import { fetchUserRankings, type ProfileFetchError } from 'src/helpers';
 import type { CompatAnimeListEntry } from 'src/anilistAPI';
-import { MODEL_SERVER_URL } from 'src/conf';
+import { LEGACY_APP_URL, MODEL_SERVER_URL } from 'src/conf';
 
 export interface Recommendation {
   id: number;
@@ -371,11 +371,14 @@ const performInferrence = async ({
   return response.json();
 };
 
-export const getRecommendations = async ({
+// Proxies to the still-deployed pre-2026 app which serves the legacy tf.js model.  It fetches the
+// user profile + performs all filtering itself and returns MAL IDs, so the rest of the pipeline
+// (metadata hydration etc.) works unchanged.  `logitWeight`/`nicheBoostFactor` have no legacy
+// equivalent and are ignored.
+const getLegacyRecommendations = async ({
   dataSource,
   count,
   computeContributions,
-  modelName,
   excludedRankingAnimeIDs,
   excludedGenreIDs,
   includeExtraSeasons,
@@ -384,9 +387,63 @@ export const getRecommendations = async ({
   includeMusic,
   profileSource,
   filterPlanToWatch,
-  logitWeight,
-  nicheBoostFactor,
-}: GetRecommendationsArgs): Promise<Either<{ status: number; body: string }, Recommendation[]>> => {
+}: GetRecommendationsArgs): Promise<Either<ProfileFetchError, Recommendation[]>> => {
+  const response = await fetch(`${LEGACY_APP_URL}/recommendation/recommendation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      availableAnimeMetadataIDs: [],
+      dataSource,
+      excludedRankingAnimeIDs: [...excludedRankingAnimeIDs],
+      excludedGenreIDs: [...excludedGenreIDs],
+      modelName: 'model_6-5k_new2',
+      includeContributors: computeContributions,
+      includeExtraSeasons,
+      includeONAsOVAsSpecials,
+      includeMovies,
+      includeMusic,
+      popularityAttenuationFactor: 0.0008,
+      profileSource,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error(`Legacy app recommendation request failed with status ${response.status}: ${body}`);
+    return left({ status: response.status, body, kind: 'unknown' as const });
+  }
+
+  const data: { recommendations: Recommendation[] } = await response.json();
+  let recommendations = data.recommendations;
+  if (filterPlanToWatch) {
+    recommendations = recommendations.filter((reco) => !reco.planToWatch);
+  }
+  return right(recommendations.slice(0, count));
+};
+
+export const getRecommendations = async (
+  args: GetRecommendationsArgs
+): Promise<Either<ProfileFetchError, Recommendation[]>> => {
+  if (args.modelName === ModelName.Legacy_2023) {
+    return getLegacyRecommendations(args);
+  }
+
+  const {
+    dataSource,
+    count,
+    computeContributions,
+    modelName,
+    excludedRankingAnimeIDs,
+    excludedGenreIDs,
+    includeExtraSeasons,
+    includeONAsOVAsSpecials,
+    includeMovies,
+    includeMusic,
+    profileSource,
+    filterPlanToWatch,
+    logitWeight,
+    nicheBoostFactor,
+  } = args;
   const embedding = (await loadEmbedding(EmbeddingName.Model)).slice(0, RECOMMENDATION_MODEL_CORPUS_SIZE);
 
   let profileData: {

@@ -1,6 +1,6 @@
 import * as R from 'ramda';
 import { isLeft } from 'fp-ts/lib/Either.js';
-import { fetchUserRankings } from 'src/helpers';
+import { fetchUserRankings, type ProfileFetchErrorKind } from 'src/helpers';
 
 import { AnimeListStatusCode, type AnimeBasicDetails, type AnimeListStatus } from 'src/malAPI';
 import { getOfflineMetadataDB, type OfflineAnimeMetadatum } from 'src/offlineMetadataDB';
@@ -31,7 +31,9 @@ export interface ProfileAnalysis {
 
 export type UserStatsLoadProps = {
   animeData: { [id: number]: PartialStatsAnimeMetadatum };
-  profileRes: { type: 'ok'; profile: Typify<PartialStatsMALUserAnimeListItem[]> } | { type: 'error'; error: string };
+  profileRes:
+    | { type: 'ok'; profile: Typify<PartialStatsMALUserAnimeListItem[]> }
+    | { type: 'error'; error: string; kind?: ProfileFetchErrorKind };
   profileAnalysis: ProfileAnalysis | null;
 };
 
@@ -114,7 +116,7 @@ export const load: PageServerLoad = async ({ params, url }): Promise<UserStatsLo
   if (isLeft(rankingsRes)) {
     return {
       animeData: {},
-      profileRes: { type: 'error' as const, error: typify(rankingsRes.left.body) },
+      profileRes: { type: 'error' as const, error: typify(rankingsRes.left.body), kind: rankingsRes.left.kind },
       profileAnalysis: null,
     };
   }

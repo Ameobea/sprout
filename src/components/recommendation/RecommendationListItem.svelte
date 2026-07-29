@@ -4,9 +4,11 @@
   import ChevronUp from 'carbon-icons-svelte/lib/ChevronUp.svelte';
   import { Tag, Loading } from 'carbon-components-svelte';
 
+  import { getSurface, submitAnalyticsEvent } from 'src/analytics';
   import type { AnimeDetails } from 'src/malAPI';
 
   export let animeMetadata: AnimeDetails;
+  export let rank: number;
   export let expanded: boolean;
   export let toggleExpanded: () => void;
   export let excludeRanking: ((animeID: number) => void) | undefined;
@@ -40,7 +42,16 @@
   <div on:click={toggleExpanded} class="title">
     <div class="title-text">
       {#if expanded}
-        <a target="_blank" href={`https://myanimelist.net/anime/${animeMetadata.id}`}>
+        <a
+          target="_blank"
+          href={`https://myanimelist.net/anime/${animeMetadata.id}`}
+          on:click={() =>
+            submitAnalyticsEvent({
+              category: 'recommendations',
+              subcategory: 'mal_link_click',
+              payload: { anime_id: animeMetadata.id, rank, plan_to_watch: planToWatch, surface: getSurface() },
+            })}
+        >
           {animeMetadata.alternative_titles.en || animeMetadata.title}
         </a>
       {:else}
@@ -57,6 +68,11 @@
           interactive
           on:click={(evt) => {
             evt.stopPropagation();
+            submitAnalyticsEvent({
+              category: 'interactive_recommender',
+              subcategory: 'add_ranking_from_list',
+              payload: { anime_id: animeMetadata.id, rank },
+            });
             addRanking?.(animeMetadata.id);
           }}
         >

@@ -20,6 +20,9 @@ export const MAL_API_BASE_URL = 'https://api.myanimelist.net/v2';
 
 export const MODEL_SERVER_URL = loadEnv('MODEL_SERVER_URL', 'http://localhost:8000');
 
+// The old pre-2026 version of the app, kept running to serve the legacy tf.js model
+export const LEGACY_APP_URL = loadEnv('LEGACY_APP_URL', 'http://ameo.dev:5702');
+
 export const ADMIN_API_TOKEN = loadEnv('ADMIN_API_TOKEN');
 
 export const MYSQL_HOST = loadEnv('MYSQL_HOST');

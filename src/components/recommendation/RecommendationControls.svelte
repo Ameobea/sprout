@@ -1,7 +1,10 @@
 <script lang="ts" context="module">
   import { ModelName } from './conf';
 
-  const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [{ id: ModelName.Model_2025_jax, text: 'V2 - 2025' }];
+  const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
+    { id: ModelName.Model_2025_jax, text: 'V2 - 2025' },
+    { id: ModelName.Legacy_2023, text: 'Legacy (2023)' },
+  ];
 </script>
 
 <script lang="ts">
@@ -10,7 +13,7 @@
 
   import type { AnimeDetails } from 'src/malAPI';
   import { browser } from '$app/environment';
-  import { captureMessage } from 'src/sentry';
+  import { getSurface, submitAnalyticsEvent } from 'src/analytics';
   import type { RecommendationControlParams } from './utils';
 
   let innerWidth = browser ? window.innerWidth : 0;
@@ -26,6 +29,13 @@
   let localLogitWeight = $params.logitWeight;
   let localNicheBoostFactor = $params.nicheBoostFactor;
 
+  const submitFilterToggle = (filter: string, enabled: boolean) =>
+    submitAnalyticsEvent({
+      category: 'recommendations',
+      subcategory: 'filter_toggle',
+      payload: { filter, enabled, surface: getSurface() },
+    });
+
   // Sync local state with params store when params change from outside
   // $: localLogitWeight = $params.logitWeight;
   // $: localNicheBoostFactor = $params.nicheBoostFactor;
@@ -36,16 +46,32 @@
 <div class="root">
   <div class="toggles">
     <div>
-      <Toggle labelText="Extra Seasons" bind:toggled={$params.includeExtraSeasons} />
+      <Toggle
+        labelText="Extra Seasons"
+        bind:toggled={$params.includeExtraSeasons}
+        on:toggle={(evt) => submitFilterToggle('extra_seasons', evt.detail.toggled)}
+      />
     </div>
     <div>
-      <Toggle labelText="Movies" bind:toggled={$params.includeMovies} />
+      <Toggle
+        labelText="Movies"
+        bind:toggled={$params.includeMovies}
+        on:toggle={(evt) => submitFilterToggle('movies', evt.detail.toggled)}
+      />
     </div>
     <div>
-      <Toggle labelText="ONAs / OVAs / Specials" bind:toggled={$params.includeONAsOVAsSpecials} />
+      <Toggle
+        labelText="ONAs / OVAs / Specials"
+        bind:toggled={$params.includeONAsOVAsSpecials}
+        on:toggle={(evt) => submitFilterToggle('onas_ovas_specials', evt.detail.toggled)}
+      />
     </div>
     <div style="position: relative">
-      <Toggle labelText="Music" bind:toggled={$params.includeMusic} />
+      <Toggle
+        labelText="Music"
+        bind:toggled={$params.includeMusic}
+        on:toggle={(evt) => submitFilterToggle('music', evt.detail.toggled)}
+      />
       {#if isLoading && isMobile}
         <div style="position: absolute; right: -4px; bottom: -4px; flex: 0;">
           <InlineLoading />
@@ -57,7 +83,15 @@
     {/if}
   </div>
   {#if !isMobile && !forceHideTopBar}
-    <ExpandableTile style="min-height: 10px">
+    <ExpandableTile
+      style="min-height: 10px"
+      on:click={() =>
+        submitAnalyticsEvent({
+          category: 'recommendations',
+          subcategory: 'advanced_options_toggle',
+          payload: { surface: getSurface() },
+        })}
+    >
       <div slot="above">Advanced Options</div>
       <div class="top" slot="below">
         <div class="top-row">
@@ -69,7 +103,15 @@
               titleText="Model"
               selectedId={$params.modelName}
               on:select={(selected) => {
-                $params.modelName = selected.detail.selectedItem.id;
+                const model = selected.detail.selectedItem.id;
+                if (model !== $params.modelName) {
+                  submitAnalyticsEvent({
+                    category: 'recommendations',
+                    subcategory: 'model_select',
+                    payload: { model, surface: getSurface() },
+                  });
+                }
+                $params.modelName = model;
               }}
               items={ALL_MODEL_OPTIONS}
               helperText="Each model was trained slightly differently, which impacts the generated recommendations"
@@ -78,7 +120,11 @@
           <!-- svelte-ignore a11y-click-events-have-key-events -->
           <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div on:click={(e) => e.stopPropagation()}>
-            <Toggle labelText="Filter Plan to Watch" bind:toggled={$params.filterPlanToWatch} />
+            <Toggle
+              labelText="Filter Plan to Watch"
+              bind:toggled={$params.filterPlanToWatch}
+              on:toggle={(evt) => submitFilterToggle('plan_to_watch', evt.detail.toggled)}
+            />
             <span class="helper-text">Hide shows that are already marked plan to watch</span>
           </div>
         </div>
@@ -93,6 +139,13 @@
               step={0.1}
               bind:value={localLogitWeight}
               on:change={() => {
+                if ($params.logitWeight !== localLogitWeight) {
+                  submitAnalyticsEvent({
+                    category: 'recommendations',
+                    subcategory: 'logit_weight_change',
+                    payload: { value: localLogitWeight, surface: getSurface() },
+                  });
+                }
                 $params.logitWeight = localLogitWeight;
               }}
             />
@@ -110,6 +163,13 @@
               step={0.1}
               bind:value={localNicheBoostFactor}
               on:change={() => {
+                if ($params.nicheBoostFactor !== localNicheBoostFactor) {
+                  submitAnalyticsEvent({
+                    category: 'recommendations',
+                    subcategory: 'niche_boost_change',
+                    payload: { value: localNicheBoostFactor, surface: getSurface() },
+                  });
+                }
                 $params.nicheBoostFactor = localNicheBoostFactor;
               }}
             />
@@ -131,7 +191,11 @@
           <Tag
             filter
             on:close={() => {
-              captureMessage('Remove excluded ranking', { id: animeID, name: datum.title });
+              submitAnalyticsEvent({
+                category: 'recommendations',
+                subcategory: 'exclude_ranking_remove',
+                payload: { anime_id: animeID, surface: getSurface() },
+              });
               params.update((state) => {
                 state.excludedRankingAnimeIDs = state.excludedRankingAnimeIDs.filter(
                   (oAnimeID) => oAnimeID !== animeID
@@ -155,7 +219,11 @@
           <Tag
             filter
             on:close={() => {
-              captureMessage('Remove excluded genre', { id: genreID, name: genreName });
+              submitAnalyticsEvent({
+                category: 'recommendations',
+                subcategory: 'exclude_genre_remove',
+                payload: { genre_id: genreID, surface: getSurface() },
+              });
               params.update((state) => {
                 state.excludedGenreIDs = state.excludedGenreIDs.filter((oGenreID) => oGenreID !== genreID);
                 return state;

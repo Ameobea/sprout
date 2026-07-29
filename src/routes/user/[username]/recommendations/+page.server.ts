@@ -5,7 +5,9 @@ import { PathReporter } from 'io-ts/lib/PathReporter.js';
 
 import { DEFAULT_MODEL_NAME, DEFAULT_PROFILE_SOURCE, validateModelName } from 'src/components/recommendation/conf';
 import { typify } from 'src/components/recommendation/utils';
+import type { ProfileFetchErrorKind } from 'src/helpers';
 import { getAnimesByID, type AnimeDetails } from 'src/malAPI';
+import { submitServerAnalyticsEvent } from 'src/serverAnalytics';
 import {
   getGenresDB,
   getRecommendations,
@@ -20,7 +22,7 @@ export type RecommendationsResponse =
       recommendations: Recommendation[];
       animeData: { [id: number]: AnimeDetails };
     }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string; kind?: ProfileFetchErrorKind };
 
 const ExcludedIDs = t.array(t.number);
 
@@ -36,7 +38,10 @@ const parseExcludedIDs = (searchParamKey: string, url: URL): Either<{ status: nu
   })(parsedExcludedIDs);
 };
 
-export const load: PageServerLoad = async ({ params, url }) => {
+export const load: PageServerLoad = async ({ params, url, request }) => {
+  const userAgent = request.headers.get('user-agent') ?? '';
+  const nonBrowserClient = !userAgent.includes('Mozilla');
+
   const username = params.username;
   if (!username || username === '_') {
     return {
@@ -45,6 +50,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
         recommendations: [],
         animeData: {},
       },
+      nonBrowserClient,
     };
   }
 
@@ -65,6 +71,16 @@ export const load: PageServerLoad = async ({ params, url }) => {
     error(400, 'Invalid `source` query param');
   }
   const profileSource = profileSourceParseRes.right;
+
+  if (userAgent.startsWith('Dart/')) {
+    submitServerAnalyticsEvent(
+      { category: 'anymex', subcategory: 'recommendations_fetch', payload: { username, source: profileSource } },
+      {
+        clientIP: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined,
+        userAgent,
+      }
+    );
+  }
 
   const excludedRankingAnimeIDsRes = parseExcludedIDs('eid', url);
   if (isLeft(excludedRankingAnimeIDsRes)) {
@@ -94,7 +110,14 @@ export const load: PageServerLoad = async ({ params, url }) => {
     logitWeight,
   });
   if (isLeft(recommendationsRes)) {
-    return { initialRecommendations: { type: 'error', error: recommendationsRes.left.body } };
+    return {
+      initialRecommendations: {
+        type: 'error',
+        error: recommendationsRes.left.body,
+        kind: recommendationsRes.left.kind,
+      },
+      nonBrowserClient,
+    };
   }
   const recommendationsList = recommendationsRes.right;
 
@@ -137,5 +160,5 @@ export const load: PageServerLoad = async ({ params, url }) => {
     }
   }
 
-  return { initialRecommendations: typify(recommendations), genreNames: typify(genreNames) };
+  return { initialRecommendations: typify(recommendations), genreNames: typify(genreNames), nonBrowserClient };
 };

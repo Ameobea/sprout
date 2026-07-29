@@ -1,36 +1,27 @@
 <script context="module" lang="ts">
-  import { EmbeddingName } from '../types';
-
-  const getCurrentEmbeddingName = (): EmbeddingName => {
-    switch (window.location.pathname) {
-      default:
-        // console.error('Unknown embedding name:', window.location.pathname);
-        return EmbeddingName.Model;
-    }
-  };
-
   const AllColorBys = [
     { label: 'Release Year', value: ColorBy.AiredFromYear },
     { label: 'Average Rating', value: ColorBy.AverageRating },
   ];
-
-  const AllEmbeddingNames = [{ label: 'Model', value: EmbeddingName.Model }];
 </script>
 
 <script lang="ts">
-  import { goto, pushState } from '$app/navigation';
+  import { pushState } from '$app/navigation';
 
   import { ColorBy } from './AtlasViz';
-  import { captureMessage } from 'src/sentry';
+  import { getSurface, submitAnalyticsEvent } from 'src/analytics';
 
   export let colorBy: ColorBy;
   export let setColorBy: (newColorBy: ColorBy) => void;
   export let loadMALProfile: (username: string) => void;
-  export let disableEmbeddingSelection: boolean | undefined;
   export let disableUsernameSearch: boolean | undefined;
 
   const handleColorByChange = (newColorBy: ColorBy) => {
-    captureMessage('Atlas color by changed', { newColorBy });
+    submitAnalyticsEvent({
+      category: 'atlas',
+      subcategory: 'color_by_change',
+      payload: { color_by: newColorBy, previous: colorBy, surface: getSurface() },
+    });
     setColorBy(newColorBy);
 
     // Set query param
@@ -39,19 +30,12 @@
     pushState(`?${queryParams.toString()}`, {});
   };
 
-  let embeddingName = getCurrentEmbeddingName();
-  const handleEmbeddingNameChange = (newEmbeddingName: EmbeddingName) => {
-    embeddingName = newEmbeddingName;
-
-    const embeddingPathname = (
-      {
-        [EmbeddingName.Model]: '/model',
-      } as const
-    )[embeddingName];
-    goto(`${embeddingPathname}${window.location.search}`);
-  };
-
-  const handleLoadMALProfileButtonClick = () => {
+  const handleLoadMALProfileButtonClick = (via: 'button' | 'enter') => {
+    submitAnalyticsEvent({
+      category: 'atlas',
+      subcategory: 'load_profile_submit',
+      payload: { username: malUsername, via, surface: getSurface() },
+    });
     loadMALProfile(malUsername);
 
     // Set search params
@@ -76,25 +60,6 @@
       {/each}
     </div>
   </div>
-  {#if !disableEmbeddingSelection}
-    <div class="row">
-      <div class="label">Embedding</div>
-      <div class="tabs">
-        {#each AllEmbeddingNames as { label, value } (value)}
-          <!-- svelte-ignore a11y-interactive-supports-focus -->
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <div
-            class="tab"
-            role="button"
-            data-selected={embeddingName == value}
-            on:click={() => handleEmbeddingNameChange(value)}
-          >
-            {label}
-          </div>
-        {/each}
-      </div>
-    </div>
-  {/if}
   {#if !disableUsernameSearch}
     <div class="row">
       <div class="label">MAL Username</div>
@@ -104,13 +69,13 @@
           bind:value={malUsername}
           on:keydown={(evt) => {
             if (evt.key === 'Enter') {
-              handleLoadMALProfileButtonClick();
+              handleLoadMALProfileButtonClick('enter');
             }
           }}
           placeholder="Enter MyAnimeList Username"
         />
         {#if malUsername.length > 0}
-          <button class="load-mal-profile-button" on:click={handleLoadMALProfileButtonClick}>Go</button>
+          <button class="load-mal-profile-button" on:click={() => handleLoadMALProfileButtonClick('button')}>Go</button>
         {/if}
       </div>
     </div>

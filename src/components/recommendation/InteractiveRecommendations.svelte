@@ -31,7 +31,8 @@
   import type { Recommendation } from 'src/routes/recommendation/recommendation/recommendation';
   import type { RecommendationsResponse } from 'src/routes/user/[username]/recommendations/+page.server';
   import RecommendationControls from './RecommendationControls.svelte';
-  import { captureMessage, getSentry } from 'src/sentry';
+  import { getSurface, submitAnalyticsEvent } from 'src/analytics';
+  import { getSentry } from 'src/sentry';
   import { getDefaultRecommendationControlParams, updateQueryParams, type RecommendationControlParams } from './utils';
   import { browser } from '$app/environment';
 
@@ -142,6 +143,14 @@
 
   $: if ($recosRes.isError) {
     getSentry()?.captureException('Error fetching recommendations', { extra: { params: $params } });
+    submitAnalyticsEvent(
+      {
+        category: 'recommendations',
+        subcategory: 'refetch_error',
+        payload: { surface: getSurface(), model: $params.modelName, source: $params.profileSource },
+      },
+      true
+    );
   }
 
   $: recommendations = (() => {
@@ -165,7 +174,11 @@
         return state;
       }
 
-      captureMessage('Add excluded anime', { id: animeID, title: $animeMetadataDatabase[animeID]?.title });
+      submitAnalyticsEvent({
+        category: 'recommendations',
+        subcategory: 'exclude_ranking_add',
+        payload: { anime_id: animeID, surface: getSurface() },
+      });
       state.excludedRankingAnimeIDs.push(animeID);
       return state;
     });
@@ -178,7 +191,11 @@
         return state;
       }
 
-      captureMessage('Add excluded genre', { id: genreID, name: genreName });
+      submitAnalyticsEvent({
+        category: 'recommendations',
+        subcategory: 'exclude_genre_add',
+        payload: { genre_id: genreID, genre_name: genreName, surface: getSurface() },
+      });
       state.excludedGenreIDs.push(genreID);
       return state;
     });

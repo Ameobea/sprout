@@ -2,6 +2,7 @@
   import { fade } from 'svelte/transition';
   import { flip } from 'svelte/animate';
 
+  import { getSurface, submitAnalyticsEvent } from 'src/analytics';
   import type { AnimeDetails } from 'src/malAPI';
   import type { Recommendation } from '../../routes/recommendation/recommendation/recommendation';
   import RecommendationListItem from './RecommendationListItem.svelte';
@@ -20,18 +21,21 @@
 </script>
 
 <div class="recommendations">
-  {#each recommendations as { id, topRatingContributorsIds, planToWatch } (id)}
+  {#each recommendations as { id, topRatingContributorsIds, planToWatch }, rank (id)}
     {@const animeMetadata = animeMetadataDatabase[id]}
     <div in:fade animate:flip={{ duration: (d) => 39 * Math.sqrt(d) }}>
       <RecommendationListItem
         {animeMetadata}
+        {rank}
         expanded={expandedAnimeID === animeMetadata.id}
         toggleExpanded={() => {
-          if (expandedAnimeID === animeMetadata.id) {
-            expandedAnimeID = null;
-          } else {
-            expandedAnimeID = animeMetadata.id;
-          }
+          const expanded = expandedAnimeID !== animeMetadata.id;
+          submitAnalyticsEvent({
+            category: 'recommendations',
+            subcategory: 'item_expand',
+            payload: { anime_id: animeMetadata.id, rank, expanded, surface: getSurface() },
+          });
+          expandedAnimeID = expanded ? animeMetadata.id : null;
         }}
         topRatingContributors={topRatingContributorsIds?.map((id) => ({
           datum: animeMetadataDatabase[Math.abs(id)],

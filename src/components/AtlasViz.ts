@@ -4,7 +4,7 @@ import type { EmbeddedPoint, Embedding } from '../routes/embedding';
 import ColorLegend from './ColorLegend';
 import * as d3 from '../d3';
 import type * as PIXI from '../pixi';
-import { captureMessage } from 'src/sentry';
+import { getSurface, submitAnalyticsEvent } from 'src/analytics';
 import type { CompatAnimeListEntry } from 'src/anilistAPI';
 
 const WORLD_SIZE = 1;
@@ -117,6 +117,15 @@ function fastQuadtreeVisit<T>(
 
 export class AtlasViz {
   private embedding: EmbeddingWithIndices;
+  private sessionStats = {
+    engaged: false,
+    engagedAt: 0,
+    nodeSelects: 0,
+    hovers: 0,
+    minZoom: Infinity,
+    maxZoom: 0,
+  };
+  private sessionSummarySubmitted = false;
   private dataExtents: { mins: { x: number; y: number }; maxs: { x: number; y: number } };
   public embeddedPointByID: Map<number, EmbeddedPointWithIndex>;
   /**
@@ -275,6 +284,7 @@ export class AtlasViz {
       scale: false,
     });
 
+    const overlayStats = { entryCount: allMALData.length, renderedCount: 0, missingCount: 0 };
     const texture = this.getNodeBackgroundTexture();
     malData.forEach((item) => {
       // TODO: Dynamic color based on rating?
@@ -282,9 +292,11 @@ export class AtlasViz {
       const datum = this.embeddedPointByID.get(+item.node.id);
       if (!datum) {
         console.warn(`Could not find embedded point for MAL data point ${item.node.id}`);
+        overlayStats.missingCount += 1;
         return;
       }
 
+      overlayStats.renderedCount += 1;
       const sprite = this.buildNodeBackgroundSprite(texture, datum, color);
       pointGlowBackgrounds.addChild(sprite);
     });
@@ -327,6 +339,8 @@ export class AtlasViz {
       pointGlowBackgrounds,
       connections,
     };
+
+    return overlayStats;
   }
 
   private getColorByTitle() {
@@ -567,6 +581,11 @@ export class AtlasViz {
       }
       lastScale = newScale;
 
+      if (this.sessionStats.engaged) {
+        this.sessionStats.minZoom = Math.min(this.sessionStats.minZoom, newScale);
+        this.sessionStats.maxZoom = Math.max(this.sessionStats.maxZoom, newScale);
+      }
+
       const adjustment = this.getNodeRadiusAdjustment(newScale);
 
       // || This is now computed in our overridden `uploadVertices` function to avoid the overhead
@@ -639,6 +658,7 @@ export class AtlasViz {
           return;
         }
 
+        this.markEngaged();
         this.container.cursor = 'grabbing';
         containerPointerDownPos = evt.data.getLocalPosition(this.app.stage);
 
@@ -660,6 +680,8 @@ export class AtlasViz {
     };
 
     canvas.addEventListener('pointermove', this.pointerCbs.pointerMove);
+    canvas.addEventListener('wheel', this.markEngaged, { passive: true });
+    window.addEventListener('pagehide', this.submitSessionSummary);
     this.container.on('pointerdown', this.pointerCbs.pointerDown).on('pointerup', this.pointerCbs.pointerUp);
 
     this.setColorBy(this.colorBy);
@@ -684,7 +706,47 @@ export class AtlasViz {
     return adjustment;
   };
 
+  private markEngaged = () => {
+    if (this.sessionStats.engaged) {
+      return;
+    }
+    this.sessionStats.engaged = true;
+    this.sessionStats.engagedAt = performance.now();
+    submitAnalyticsEvent(
+      {
+        category: 'atlas',
+        subcategory: 'engaged',
+        payload: {
+          surface: getSurface(),
+          route: window.location.pathname,
+          node_count: this.embedding.length,
+        },
+      },
+      true
+    );
+  };
+
+  private submitSessionSummary = () => {
+    if (!this.sessionStats.engaged || this.sessionSummarySubmitted) {
+      return;
+    }
+    this.sessionSummarySubmitted = true;
+    submitAnalyticsEvent({
+      category: 'atlas',
+      subcategory: 'session_summary',
+      payload: {
+        surface: getSurface(),
+        duration_s: Math.round((performance.now() - this.sessionStats.engagedAt) / 1000),
+        node_selects: this.sessionStats.nodeSelects,
+        hovers: this.sessionStats.hovers,
+        min_zoom: Number.isFinite(this.sessionStats.minZoom) ? +this.sessionStats.minZoom.toFixed(2) : null,
+        max_zoom: this.sessionStats.maxZoom > 0 ? +this.sessionStats.maxZoom.toFixed(2) : null,
+      },
+    });
+  };
+
   private handlePointerOver = (datum: EmbeddedPointWithIndex) => {
+    this.sessionStats.hovers += 1;
     this.maybeRemoveHoverObjects();
     const label = this.buildHoverLabel(datum);
     this.hoverLabelsContainer.addChild(label);
@@ -698,9 +760,11 @@ export class AtlasViz {
   };
   private handlePointerOut = () => this.maybeRemoveHoverObjects();
   private handlePointerDown = (datum: EmbeddedPoint) => {
-    captureMessage('Atlas set selected anime', {
-      animeID: datum.metadata.id,
-      title: datum.metadata.title,
+    this.sessionStats.nodeSelects += 1;
+    submitAnalyticsEvent({
+      category: 'atlas',
+      subcategory: 'node_select',
+      payload: { anime_id: datum.metadata.id, color_by: this.colorBy, surface: getSurface() },
     });
     this.setSelectedAnimeID(datum.metadata.id);
   };
@@ -790,7 +854,7 @@ export class AtlasViz {
   }
 
   public flyTo = (id: number) => {
-    captureMessage('Fly to anime in atlas', { id, title: this.embeddedPointByID.get(id)?.metadata.title });
+    this.markEngaged();
     this.setSelectedAnimeID(id);
     const { x, y } = this.embedding.find((p) => p.metadata.id === id)!.vector;
     this.container.animate({
@@ -1177,10 +1241,13 @@ export class AtlasViz {
   };
 
   public dispose() {
+    this.submitSessionSummary();
+    window.removeEventListener('pagehide', this.submitSessionSummary);
     window.removeEventListener('resize', this.handleResize);
     this.container.off('pointerdown', this.pointerCbs.pointerUp);
     this.container.off('pointerup', this.pointerCbs.pointerUp);
     this.app.renderer.view.removeEventListener('pointermove', this.pointerCbs.pointerMove);
+    this.app.renderer.view.removeEventListener('wheel', this.markEngaged);
     this.app.ticker.stop();
     this.app.destroy(false, { children: true, texture: true, baseTexture: true });
   }

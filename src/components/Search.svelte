@@ -1,6 +1,8 @@
 <script lang="ts">
   import Fuse from 'fuse.js';
 
+  import { getSurface, submitAnalyticsEvent } from 'src/analytics';
+
   export let embedding: { metadata: { id: number; title: string; title_english: string } }[];
   export let onSubmit: (id: number, title: string, titleEnglish: string) => void;
   export let style: string | undefined = undefined;
@@ -24,6 +26,10 @@
 
   const handleInputChange = (evt: any) => {
     value = evt.target.value;
+    // The interactive recommender's funnel already covers its search usage via anime_search_select
+    if (value && getSurface() !== 'interactive') {
+      submitAnalyticsEvent({ category: 'atlas', subcategory: 'search_first_input', payload: { surface: getSurface() } }, true);
+    }
   };
 
   const handleKeyDown = (evt: KeyboardEvent) => {
