@@ -63,10 +63,13 @@
   import { QueryClient, QueryClientProvider } from '@sveltestack/svelte-query';
   import { page } from '$app/stores';
 
+  import { submitAnalyticsEvent } from 'src/analytics';
   import Header from 'src/components/recommendation/Header.svelte';
   import Search from 'src/components/Search.svelte';
   import ScoreSelector, { Score } from 'src/components/interactiveRecommender/ScoreSelector.svelte';
-  import InteractiveRecommender from 'src/components/interactiveRecommender/InteractiveRecommender.svelte';
+  import InteractiveRecommender, {
+    MIN_REQUIRED_RATING_COUNT,
+  } from 'src/components/interactiveRecommender/InteractiveRecommender.svelte';
   import { filterNils } from 'src/components/recommendation/utils';
   import { browser } from '$app/env';
 
@@ -85,6 +88,7 @@
 
   const handleSearchSubmit = (id: number, title: string, titleEnglish: string) => {
     const entry = embeddingMetadata.find((anime) => anime.metadata.id === id)!;
+    submitAnalyticsEvent({ category: 'interactive_recommender', subcategory: 'anime_search_select', payload: { anime_id: id } });
     selectedAnime = { id, title, titleEnglish, score: Score.Good, imageSrc: entry.metadata.imageSrc };
   };
 
@@ -100,6 +104,21 @@
       title: selectedAnime.title,
       titleEnglish: selectedAnime.titleEnglish,
     });
+    submitAnalyticsEvent({
+      category: 'interactive_recommender',
+      subcategory: 'profile_entry_add',
+      payload: { anime_id: selectedAnime.id, score: selectedAnime.score, profile_size: profile.length },
+    });
+    if (profile.length >= MIN_REQUIRED_RATING_COUNT) {
+      submitAnalyticsEvent(
+        {
+          category: 'interactive_recommender',
+          subcategory: 'results_first_shown',
+          payload: { profile_size: profile.length },
+        },
+        true
+      );
+    }
     selectedAnime = null;
   };
 
@@ -178,6 +197,11 @@
           filter
           on:close={() => {
             profile = profile.filter((anime) => anime.animeID !== entry.animeID);
+            submitAnalyticsEvent({
+              category: 'interactive_recommender',
+              subcategory: 'profile_entry_remove',
+              payload: { anime_id: entry.animeID, profile_size: profile.length },
+            });
           }}
         >
           {entry.titleEnglish || entry.title}

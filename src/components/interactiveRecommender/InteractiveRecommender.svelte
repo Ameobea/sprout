@@ -1,5 +1,5 @@
 <script context="module" lang="ts">
-  const MIN_REQUIRED_RATING_COUNT = 4;
+  export const MIN_REQUIRED_RATING_COUNT = 4;
 
   const fetchRecommendations = async (
     profile: { animeID: number; score: number }[],

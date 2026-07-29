@@ -19,6 +19,7 @@
   import SvelteSeo from 'svelte-seo';
 
   import SproutLogo from 'src/components/SproutLogo.svelte';
+  import { markInAppNav, submitAnalyticsEvent } from 'src/analytics';
 
   let selectedProfileSource = DEFAULT_PROFILE_SOURCE;
   let searchValue = '';
@@ -27,10 +28,17 @@
 
   onMount(() => prefetch('/user/_/recommendations'));
 
-  const handleRecommendationsButtonClick = async () => {
+  const handleRecommendationsButtonClick = async (method: 'button' | 'enter' = 'button') => {
     if (!searchValue || isLoading) {
       return;
     }
+
+    markInAppNav();
+    submitAnalyticsEvent({
+      category: 'home',
+      subcategory: 'username_search_submit',
+      payload: { username: searchValue, source: selectedProfileSource, method },
+    });
 
     isLoading = true;
     try {
@@ -42,8 +50,15 @@
 
   const handleSearchKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Enter' && searchValue) {
-      handleRecommendationsButtonClick();
+      handleRecommendationsButtonClick('enter');
     }
+  };
+
+  const selectProfileSource = (source: ProfileSource) => {
+    if (selectedProfileSource !== source) {
+      submitAnalyticsEvent({ category: 'home', subcategory: 'profile_source_select', payload: { source } });
+    }
+    selectedProfileSource = source;
   };
 
   const prefetchRecommendations = () => prefetch(buildRecommendationsURL(searchValue, selectedProfileSource));
@@ -98,7 +113,7 @@
       />
       <button
         on:mouseenter={prefetchRecommendations}
-        on:click={handleRecommendationsButtonClick}
+        on:click={() => handleRecommendationsButtonClick('button')}
         disabled={!searchValue}
         style={isLoading ? 'background-color: #000' : undefined}
       >
@@ -115,12 +130,10 @@
         aria-selected={selectedProfileSource === ProfileSource.MyAnimeList}
         role="option"
         class="profile-switcher-option"
-        on:click={() => {
-          selectedProfileSource = ProfileSource.MyAnimeList;
-        }}
+        on:click={() => selectProfileSource(ProfileSource.MyAnimeList)}
         on:keydown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
-            selectedProfileSource = ProfileSource.MyAnimeList;
+            selectProfileSource(ProfileSource.MyAnimeList);
             event.preventDefault();
           }
         }}
@@ -132,12 +145,10 @@
         aria-selected={selectedProfileSource === ProfileSource.AniList}
         role="option"
         class="profile-switcher-option"
-        on:click={() => {
-          selectedProfileSource = ProfileSource.AniList;
-        }}
+        on:click={() => selectProfileSource(ProfileSource.AniList)}
         on:keydown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
-            selectedProfileSource = ProfileSource.AniList;
+            selectProfileSource(ProfileSource.AniList);
             event.preventDefault();
           }
         }}
@@ -148,7 +159,17 @@
     </div>
 
     <i style="color: #b6b6b6; margin-top: 24px; font-size: 12.5px;">Don't have an account to load from?</i>
-    <a style="margin-top: 5px; font-size: 16px" sveltekit:prefetch href="/interactive-recommender">
+    <a
+      style="margin-top: 5px; font-size: 16px"
+      sveltekit:prefetch
+      href="/interactive-recommender"
+      on:click={() =>
+        submitAnalyticsEvent({
+          category: 'home',
+          subcategory: 'interactive_recommender_link_click',
+          payload: { placement: 'hero' },
+        })}
+    >
       Try the Interactive Recommender
     </a>
   </div>
@@ -167,6 +188,11 @@
           personal anime watch history and preferences as well as the entire world of anime via the <a
             sveltekit:prefetch
             href="/pymde_4d_40n"
+            on:click={() =>
+              submitAnalyticsEvent(
+                { category: 'home', subcategory: 'atlas_link_click', payload: { placement: 'about_sprout' } },
+                true
+              )}
           >
             Atlas Visualization
           </a>.
@@ -203,19 +229,43 @@
           If you don't have a MyAnimeList or AniList account, you can use the <a
             sveltekit:prefetch
             href="/interactive-recommender"
+            on:click={() =>
+              submitAnalyticsEvent({
+                category: 'home',
+                subcategory: 'interactive_recommender_link_click',
+                payload: { placement: 'about' },
+              })}
           >
             interactive recommender
           </a>
           or check out some
-          <a sveltekit:prefetch href="/user/ameo___/recommendations">sample recommendations</a>.
+          <a
+            sveltekit:prefetch
+            href="/user/ameo___/recommendations"
+            on:click={() => {
+              markInAppNav();
+              submitAnalyticsEvent({ category: 'home', subcategory: 'sample_recommendations_click' }, true);
+            }}
+          >
+            sample recommendations
+          </a>.
         </p>
       </div>
       <div>
         <h2>About the Atlas Visualization</h2>
         <p>
-          The <a sveltekit:prefetch href="/pymde_4d_40n">Atlas Visualization</a> is an interactive map of the world of anime.
-          It is built by using data about relationships between different anime derived from both user ratings as well as
-          anime metadata to place more closely related anime near each other.
+          The <a
+            sveltekit:prefetch
+            href="/pymde_4d_40n"
+            on:click={() =>
+              submitAnalyticsEvent(
+                { category: 'home', subcategory: 'atlas_link_click', payload: { placement: 'about_atlas' } },
+                true
+              )}
+          >
+            Atlas Visualization
+          </a> is an interactive map of the world of anime. It is built by using data about relationships between different
+          anime derived from both user ratings as well as anime metadata to place more closely related anime near each other.
         </p>
         <p>
           If you load in your anime list to the visualization or view it from your user profile page, it will highlight

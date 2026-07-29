@@ -18,15 +18,39 @@
 
 <script lang="ts">
   import { page } from '$app/stores';
+  import { onMount } from 'svelte';
   import SvelteSeo from 'svelte-seo';
   import { QueryClient, QueryClientProvider } from '@sveltestack/svelte-query';
 
+  import { submitAnalyticsEvent, wasInAppNav } from 'src/analytics';
+  import { DEFAULT_MODEL_NAME, DEFAULT_PROFILE_SOURCE } from 'src/components/recommendation/conf';
   import type { AnimeDetails } from 'src/malAPI';
   import type { RecommendationsResponse } from './recommendations';
   import InteractiveRecommendations from 'src/components/recommendation/InteractiveRecommendations.svelte';
 
   export let initialRecommendations: RecommendationsResponse;
   export let genreNames: { [genreID: number]: string } | undefined;
+
+  onMount(() => {
+    if (!wasInAppNav()) {
+      return;
+    }
+    const source = $page.url.searchParams.get('source') ?? DEFAULT_PROFILE_SOURCE;
+    const model = $page.url.searchParams.get('model') ?? DEFAULT_MODEL_NAME;
+    if (initialRecommendations.type === 'ok') {
+      submitAnalyticsEvent({
+        category: 'recommendations',
+        subcategory: 'results_shown',
+        payload: { username, source, model, count: initialRecommendations.recommendations.length },
+      });
+    } else {
+      submitAnalyticsEvent({
+        category: 'recommendations',
+        subcategory: 'load_error',
+        payload: { username, source, kind: 'unknown' },
+      });
+    }
+  });
 
   $: animeData =
     initialRecommendations.type === 'ok'

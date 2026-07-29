@@ -34,7 +34,7 @@
   import { goto } from '$app/navigation';
 
   import { ColorBy } from './AtlasViz';
-  import { captureMessage } from 'src/sentry';
+  import { getSurface, submitAnalyticsEvent } from 'src/analytics';
 
   export let colorBy: ColorBy;
   export let setColorBy: (newColorBy: ColorBy) => void;
@@ -43,7 +43,11 @@
   export let disableUsernameSearch: boolean | undefined;
 
   const handleColorByChange = (newColorBy: ColorBy) => {
-    captureMessage('Atlas color by changed', { newColorBy });
+    submitAnalyticsEvent({
+      category: 'atlas',
+      subcategory: 'color_by_change',
+      payload: { color_by: newColorBy, previous: colorBy, surface: getSurface() },
+    });
     setColorBy(newColorBy);
 
     // Set query param
@@ -54,6 +58,11 @@
 
   let embeddingName = getCurrentEmbeddingName();
   const handleEmbeddingNameChange = (newEmbeddingName: EmbeddingName) => {
+    submitAnalyticsEvent({
+      category: 'atlas',
+      subcategory: 'embedding_select',
+      payload: { embedding: newEmbeddingName, surface: getSurface() },
+    });
     embeddingName = newEmbeddingName;
 
     const embeddingPathname = (
@@ -67,7 +76,12 @@
     goto(`${embeddingPathname}${window.location.search}`);
   };
 
-  const handleLoadMALProfileButtonClick = () => {
+  const handleLoadMALProfileButtonClick = (via: 'button' | 'enter') => {
+    submitAnalyticsEvent({
+      category: 'atlas',
+      subcategory: 'load_profile_submit',
+      payload: { username: malUsername, via, surface: getSurface() },
+    });
     loadMALProfile(malUsername);
 
     // Set search params
@@ -116,13 +130,13 @@
           bind:value={malUsername}
           on:keydown={(evt) => {
             if (evt.key === 'Enter') {
-              handleLoadMALProfileButtonClick();
+              handleLoadMALProfileButtonClick('enter');
             }
           }}
           placeholder="Enter MyAnimeList Username"
         />
         {#if malUsername.length > 0}
-          <button class="load-mal-profile-button" on:click={handleLoadMALProfileButtonClick}>Go</button>
+          <button class="load-mal-profile-button" on:click={() => handleLoadMALProfileButtonClick('button')}>Go</button>
         {/if}
       </div>
     </div>

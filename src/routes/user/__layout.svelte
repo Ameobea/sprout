@@ -64,7 +64,7 @@
 <script lang="ts">
   import { goto, prefetch } from '$app/navigation';
   import { page } from '$app/stores';
-  import { captureMessage } from 'src/sentry';
+  import { markInAppNav, submitAnalyticsEvent } from 'src/analytics';
   import { Tabs, Tab } from 'carbon-components-svelte';
 
   import Header from 'src/components/recommendation/Header.svelte';
@@ -88,7 +88,12 @@
 
   const handleTabSelected = (evt: any) => {
     const newSelectedTab = evt.detail as UserTab;
-    captureMessage(`User page tab click: ${formatTabName(newSelectedTab)}`);
+    markInAppNav();
+    submitAnalyticsEvent({
+      category: 'user_page',
+      subcategory: 'tab_select',
+      payload: { tab: formatTabName(newSelectedTab).toLowerCase(), source: profileSource },
+    });
     goto(getTabPath(username, newSelectedTab, profileSource));
   };
 

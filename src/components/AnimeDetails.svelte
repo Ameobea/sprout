@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { getSurface, submitAnalyticsEvent } from 'src/analytics';
   import type { AnimeDetails } from '../malAPI';
   import type { EmbeddedPointWithIndex } from './AtlasViz';
 
@@ -16,9 +17,25 @@
 
   $: {
     if (details.id !== id) {
-      details = { id, details: fetch(`/anime?id=${id}`).then((res) => res.json()) };
+      details = {
+        id,
+        details: fetch(`/anime?id=${id}`).then((res) => {
+          if (!res.ok) {
+            submitAnalyticsEvent({ category: 'anime_details', subcategory: 'load_failed', payload: { anime_id: id } });
+            throw new Error(`Failed to fetch anime details: ${res.status}`);
+          }
+          return res.json();
+        }),
+      };
     }
   }
+
+  const submitMALLinkClick = (state: 'loading' | 'loaded') =>
+    submitAnalyticsEvent({
+      category: 'anime_details',
+      subcategory: 'open_mal_link',
+      payload: { anime_id: id, state, surface: getSurface() },
+    });
 </script>
 
 <div class="root">
@@ -26,7 +43,11 @@
     <div class="details">
       <div class="placeholder-image" width={225} height={332} />
       <div class="info">
-        <h2><a target="_blank" href={buildMALLink(id)}>{datum.metadata.title_english || datum.metadata.title}</a></h2>
+        <h2>
+          <a target="_blank" href={buildMALLink(id)} on:click={() => submitMALLinkClick('loading')}>
+            {datum.metadata.title_english || datum.metadata.title}
+          </a>
+        </h2>
         <p>Loading...</p>
       </div>
     </div>
@@ -40,7 +61,11 @@
         alt={datum.metadata.title_english || datum.metadata.title}
       />
       <div class="info">
-        <h2><a target="_blank" href={buildMALLink(id)}>{datum.metadata.title_english || datum.metadata.title}</a></h2>
+        <h2>
+          <a target="_blank" href={buildMALLink(id)} on:click={() => submitMALLinkClick('loaded')}>
+            {datum.metadata.title_english || datum.metadata.title}
+          </a>
+        </h2>
         <p>{details.start_date || '-'} - {details.end_date || '-'}</p>
         <p>Average rating: {datum.metadata.average_rating.toFixed(2)}</p>
       </div>

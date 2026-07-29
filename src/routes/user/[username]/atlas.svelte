@@ -13,7 +13,7 @@
   import Atlas from 'src/components/Atlas.svelte';
   import type { Embedding } from 'src/routes/embedding';
   import type { EmbeddingName } from 'src/types';
-  import { captureMessage } from 'src/sentry';
+  import { submitAnalyticsEvent } from 'src/analytics';
   import { DEFAULT_PROFILE_SOURCE, type ProfileSource } from 'src/components/recommendation/conf';
 
   export let embeddingName: EmbeddingName;
@@ -35,12 +35,14 @@
     }
   });
 
-  const enableFullscreen = () => {
+  let fullscreenEnteredAt: number | null = null;
+
+  const enableFullscreen = (via: 'button' | 'keyboard') => {
     if (!atlasWrapperElem) {
       return;
     }
 
-    captureMessage('Maximizing Atlas on user profile');
+    submitAnalyticsEvent({ category: 'atlas', subcategory: 'fullscreen_enter', payload: { via } });
     atlasWrapperElem.requestFullscreen();
   };
 </script>
@@ -73,11 +75,11 @@
     tabindex="0"
     aria-label="full-screen mode"
     class="maximize-icon-container"
-    on:click={enableFullscreen}
+    on:click={() => enableFullscreen('button')}
     on:keydown={(event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        enableFullscreen();
+        enableFullscreen('keyboard');
       }
     }}
   >
@@ -89,6 +91,16 @@
     on:fullscreenchange={() => {
       const isFullScreen = document.fullscreenElement === atlasWrapperElem;
       maxWidth = isFullScreen ? undefined : 950;
+      if (isFullScreen) {
+        fullscreenEnteredAt = performance.now();
+      } else if (fullscreenEnteredAt !== null) {
+        submitAnalyticsEvent({
+          category: 'atlas',
+          subcategory: 'fullscreen_exit',
+          payload: { duration_s: Math.round((performance.now() - fullscreenEnteredAt) / 1000) },
+        });
+        fullscreenEnteredAt = null;
+      }
     }}
   >
     <Atlas

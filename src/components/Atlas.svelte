@@ -3,6 +3,7 @@
 
   import { onMount } from 'svelte';
 
+  import { getSurface, submitAnalyticsEvent } from 'src/analytics';
   import type { EmbeddingName } from 'src/types';
   import type { Embedding } from '../routes/embedding';
   import AnimeDetails from './AnimeDetails.svelte';
@@ -38,17 +39,44 @@
       console.error('Tried to load MAL profile before Atlas viz was loaded.');
       return;
     }
+    const startTime = performance.now();
     fetch(`/${profileSource}-profile?username=${username}`)
       .then((res) => res.json())
       .then((profile) => {
-        viz?.displayMALUser(profile);
+        const overlayStats = viz?.displayMALUser(profile);
+        submitAnalyticsEvent({
+          category: 'atlas',
+          subcategory: 'load_profile_result',
+          payload: {
+            ok: true,
+            entry_count: overlayStats?.entryCount,
+            rendered_count: overlayStats?.renderedCount,
+            missing_count: overlayStats?.missingCount,
+            duration_ms: Math.round(performance.now() - startTime),
+            surface: getSurface(),
+          },
+        });
+      })
+      .catch((err) => {
+        console.error('Failed to load user profile for atlas', err);
+        submitAnalyticsEvent({
+          category: 'atlas',
+          subcategory: 'load_profile_result',
+          payload: { ok: false, surface: getSurface() },
+        });
       });
   };
 
   onMount(() => {
     const usernameToLoad = username ?? new URLSearchParams(window.location.search).get('username');
     const userProfilePromise =
-      usernameToLoad && fetch(`/${profileSource}-profile?username=${usernameToLoad}`).then((res) => res.json());
+      usernameToLoad &&
+      fetch(`/${profileSource}-profile?username=${usernameToLoad}`)
+        .then((res) => res.json())
+        .catch((err) => {
+          console.error('Failed to load user profile for atlas', err);
+          return null;
+        });
     const neighborsPromise: Promise<{ neighbors: number[][] }> = fetch(`/neighbors?embedding=${embeddingName}`).then(
       (res) => res.json()
     );
@@ -64,7 +92,9 @@
         viz?.setNeighbors(neighbors);
         if (userProfilePromise) {
           userProfilePromise.then((profile) => {
-            viz?.displayMALUser(profile);
+            if (profile) {
+              viz?.displayMALUser(profile);
+            }
           });
         }
       });
@@ -85,7 +115,14 @@
   <canvas id="viz" />
 </div>
 {#if viz}
-  <Search {embedding} onSubmit={(id) => viz?.flyTo(id)} suggestionsStyle="top: 30px;" />
+  <Search
+    {embedding}
+    onSubmit={(id) => {
+      submitAnalyticsEvent({ category: 'atlas', subcategory: 'search_select', payload: { anime_id: id, surface: getSurface() } });
+      viz?.flyTo(id);
+    }}
+    suggestionsStyle="top: 30px;"
+  />
   <VizControls {colorBy} {setColorBy} {loadMALProfile} {disableEmbeddingSelection} {disableUsernameSearch} />
 {/if}
 <div id="atlas-viz-legend" />
