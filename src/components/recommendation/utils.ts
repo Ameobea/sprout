@@ -46,6 +46,13 @@ export const getDefaultRecommendationControlParams = (): RecommendationControlPa
   };
 };
 
+/**
+ * Serializes the current recommendation control params into the URL query string via
+ * `replaceState`. This must only be called once the SvelteKit client router has finished
+ * initializing: `replaceState` updates the router's root component, which is `undefined` during
+ * the initial mount/hydration flush and throws "Cannot read properties of undefined (reading
+ * '$set')". Callers gate this behind a post-`tick()` flag (see e.g. InteractiveRecommendations.svelte).
+ */
 export const updateQueryParams = (params: RecommendationControlParams) => {
   if (!browser) {
     return;

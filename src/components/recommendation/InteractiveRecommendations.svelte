@@ -22,7 +22,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { writable, type Writable } from 'svelte/store';
   import { createQuery, QueryClient } from '@tanstack/svelte-query';
 
@@ -53,7 +53,19 @@
   const animeMetadataDatabase = writable(initialRecommendations.type === 'ok' ? initialRecommendations.animeData : {});
 
   const params = writable(getDefaultRecommendationControlParams());
-  onMount(() => params.subscribe(updateQueryParams));
+
+  // Keep the URL query string in sync with the control params, but only after the SvelteKit
+  // client router has initialized. `updateQueryParams` calls `replaceState`, which throws if
+  // invoked during the initial mount flush (the router root isn't assigned yet). Waiting for a
+  // tick guarantees hydration has completed before the first sync.
+  let canSyncQueryParams = false;
+  onMount(async () => {
+    await tick();
+    canSyncQueryParams = true;
+  });
+  $: if (canSyncQueryParams) {
+    updateQueryParams($params);
+  }
 
   let usedInitialData = false;
   const initialData = initialRecommendations.type === 'ok' ? initialRecommendations : undefined;

@@ -59,6 +59,7 @@
 
 <script lang="ts">
   import SvelteSeo from 'svelte-seo';
+  import { onMount, tick } from 'svelte';
   import { Tag } from 'carbon-components-svelte';
   import { page } from '$app/stores';
 
@@ -79,7 +80,17 @@
 
   let rootContainerNode: HTMLElement | null = null;
 
-  $: updateQueryParams(profile);
+  // Defer URL syncing until after the SvelteKit client router has initialized. `updateQueryParams`
+  // calls `replaceState`, which throws if invoked during the initial mount flush (the router root
+  // isn't assigned yet). Waiting for a tick guarantees hydration has completed before the first sync.
+  let canSyncQueryParams = false;
+  onMount(async () => {
+    await tick();
+    canSyncQueryParams = true;
+  });
+  $: if (canSyncQueryParams) {
+    updateQueryParams(profile);
+  }
 
   $: selectedAnimeMetadata = selectedAnime
     ? embeddingMetadata.find((anime) => anime.metadata.id === selectedAnime!.id)!
