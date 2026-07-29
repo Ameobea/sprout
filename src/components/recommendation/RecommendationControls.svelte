@@ -1,9 +1,18 @@
 <script lang="ts" context="module">
-  import { ModelName } from './conf';
+  import { ModelName, PopularityAttenuationFactor } from './conf';
 
   const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
     { id: ModelName.Model_2025_jax, text: 'V2 - 2025' },
     { id: ModelName.Legacy_2023, text: 'Legacy (2023)' },
+  ];
+
+  const ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS: { id: PopularityAttenuationFactor; text: string }[] = [
+    { id: PopularityAttenuationFactor.None, text: 'None' },
+    { id: PopularityAttenuationFactor.VeryLow, text: 'Very Low' },
+    { id: PopularityAttenuationFactor.Low, text: 'Low' },
+    { id: PopularityAttenuationFactor.Medium, text: 'Medium' },
+    { id: PopularityAttenuationFactor.High, text: 'High' },
+    { id: PopularityAttenuationFactor.VeryHigh, text: 'Very High' },
   ];
 </script>
 
@@ -129,54 +138,79 @@
           </div>
         </div>
         <div class="bottom-row">
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div on:click={(e) => e.stopPropagation()}>
-            <Slider
-              labelText="Presence/Rating Weight"
-              min={0}
-              max={1}
-              step={0.1}
-              bind:value={localLogitWeight}
-              on:change={() => {
-                if ($params.logitWeight !== localLogitWeight) {
-                  submitAnalyticsEvent({
-                    category: 'recommendations',
-                    subcategory: 'logit_weight_change',
-                    payload: { value: localLogitWeight, surface: getSurface() },
-                  });
-                }
-                $params.logitWeight = localLogitWeight;
-              }}
-            />
-            <span class="helper-text">
-              Balance between predicted rating (0) and presence probability (1) when scoring recommendations
-            </span>
-          </div>
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div on:click={(e) => e.stopPropagation()}>
-            <Slider
-              labelText="Niche Boost Factor"
-              min={0}
-              max={1}
-              step={0.1}
-              bind:value={localNicheBoostFactor}
-              on:change={() => {
-                if ($params.nicheBoostFactor !== localNicheBoostFactor) {
-                  submitAnalyticsEvent({
-                    category: 'recommendations',
-                    subcategory: 'niche_boost_change',
-                    payload: { value: localNicheBoostFactor, surface: getSurface() },
-                  });
-                }
-                $params.nicheBoostFactor = localNicheBoostFactor;
-              }}
-            />
-            <span class="helper-text">
-              Boosts shows that the model thinks you'll like more than their popularity suggests. Higher = more boost.
-            </span>
-          </div>
+          {#if $params.modelName === ModelName.Legacy_2023}
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <div on:click={(e) => e.stopPropagation()}>
+              <Dropdown
+                style="width: 100%;"
+                titleText="Popularity Attenuation Factor"
+                selectedId={$params.popularityAttenuationFactor}
+                on:select={(selected) => {
+                  const value = selected.detail.selectedItem.id;
+                  if (value !== $params.popularityAttenuationFactor) {
+                    submitAnalyticsEvent({
+                      category: 'recommendations',
+                      subcategory: 'attenuation_change',
+                      payload: { value, surface: getSurface() },
+                    });
+                  }
+                  $params.popularityAttenuationFactor = value;
+                }}
+                items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
+                helperText="Higher popularity attenuation factors result in less-popular anime being weighted higher in recommendations"
+              />
+            </div>
+          {:else}
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <div on:click={(e) => e.stopPropagation()}>
+              <Slider
+                labelText="Presence/Rating Weight"
+                min={0}
+                max={1}
+                step={0.1}
+                bind:value={localLogitWeight}
+                on:change={() => {
+                  if ($params.logitWeight !== localLogitWeight) {
+                    submitAnalyticsEvent({
+                      category: 'recommendations',
+                      subcategory: 'logit_weight_change',
+                      payload: { value: localLogitWeight, surface: getSurface() },
+                    });
+                  }
+                  $params.logitWeight = localLogitWeight;
+                }}
+              />
+              <span class="helper-text">
+                Balance between predicted rating (0) and presence probability (1) when scoring recommendations
+              </span>
+            </div>
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <div on:click={(e) => e.stopPropagation()}>
+              <Slider
+                labelText="Niche Boost Factor"
+                min={0}
+                max={1}
+                step={0.1}
+                bind:value={localNicheBoostFactor}
+                on:change={() => {
+                  if ($params.nicheBoostFactor !== localNicheBoostFactor) {
+                    submitAnalyticsEvent({
+                      category: 'recommendations',
+                      subcategory: 'niche_boost_change',
+                      payload: { value: localNicheBoostFactor, surface: getSurface() },
+                    });
+                  }
+                  $params.nicheBoostFactor = localNicheBoostFactor;
+                }}
+              />
+              <span class="helper-text">
+                Boosts shows that the model thinks you'll like more than their popularity suggests. Higher = more boost.
+              </span>
+            </div>
+          {/if}
         </div>
       </div>
     </ExpandableTile>

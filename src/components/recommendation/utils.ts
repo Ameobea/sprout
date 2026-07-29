@@ -13,7 +13,13 @@ export type Typify<T> = { [K in keyof T]: Typify<T[K]> };
  */
 export const typify = <T>(obj: T): Typify<T> => obj;
 
-import { DEFAULT_MODEL_NAME, DEFAULT_PROFILE_SOURCE, ModelName, ProfileSource } from './conf';
+import {
+  DEFAULT_MODEL_NAME,
+  DEFAULT_POPULARITY_ATTENUATION_FACTOR,
+  DEFAULT_PROFILE_SOURCE,
+  ModelName,
+  ProfileSource,
+} from './conf';
 
 export interface RecommendationControlParams {
   modelName: ModelName;
@@ -27,6 +33,7 @@ export interface RecommendationControlParams {
   filterPlanToWatch: boolean;
   logitWeight: number;
   nicheBoostFactor: number;
+  popularityAttenuationFactor: number;
 }
 
 export const getDefaultRecommendationControlParams = (): RecommendationControlParams => {
@@ -43,6 +50,10 @@ export const getDefaultRecommendationControlParams = (): RecommendationControlPa
     filterPlanToWatch: queryParams.get('fptw') === 'true',
     logitWeight: Math.max(0, Math.min(1, parseFloat(queryParams.get('lw') ?? '0.4'))),
     nicheBoostFactor: Math.max(0, Math.min(1, parseFloat(queryParams.get('nb') ?? '0'))),
+    popularityAttenuationFactor: Math.max(
+      0,
+      Math.min(0.01, parseFloat(queryParams.get('paf') ?? `${DEFAULT_POPULARITY_ATTENUATION_FACTOR}`))
+    ),
   };
 };
 
@@ -94,6 +105,9 @@ export const updateQueryParams = (params: RecommendationControlParams) => {
   }
   if (params.nicheBoostFactor !== 0) {
     url.searchParams.set('nb', params.nicheBoostFactor.toFixed(1));
+  }
+  if (params.popularityAttenuationFactor !== DEFAULT_POPULARITY_ATTENUATION_FACTOR) {
+    url.searchParams.set('paf', params.popularityAttenuationFactor.toString());
   }
 
   const newSearchParams = url.searchParams.toString();

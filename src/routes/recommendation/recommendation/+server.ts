@@ -32,6 +32,7 @@ const RecommendationRequest = t.type({
   filterPlanToWatch: t.boolean,
   logitWeight: t.number,
   nicheBoostFactor: t.number,
+  popularityAttenuationFactor: t.number,
 });
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -73,6 +74,7 @@ export const POST: RequestHandler = async ({ request }) => {
     filterPlanToWatch,
     logitWeight: Math.max(0, Math.min(1, logitWeight)),
     nicheBoostFactor: Math.max(0, Math.min(1, nicheBoostFactor)),
+    popularityAttenuationFactor: Math.max(0, Math.min(0.01, req.popularityAttenuationFactor)),
   });
   if (isLeft(recommendationsRes)) {
     return error(recommendationsRes.left.status, recommendationsRes.left.body);

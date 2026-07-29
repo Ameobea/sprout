@@ -105,7 +105,7 @@
           on:click={() => submitAnalyticsEvent({ category: 'home', subcategory: 'legacy_site_link_click' })}
         >
           anime-old.ameo.dev
-        </a>.
+        </a>
       </div>
     {/if}
 
@@ -326,8 +326,13 @@
     border: 1px solid #323232;
     background-color: #8de53d12;
     color: #d4d4d4;
-    font-size: 14px;
+    font-size: 15.5px;
     text-align: center;
+  }
+
+  .new-model-banner a {
+    display: block;
+    margin-top: 2px;
   }
 
   .search-container {
@@ -354,6 +359,10 @@
   @media (max-width: 800px) {
     .main-search {
       font-size: 20px;
+    }
+
+    .new-model-banner {
+      font-size: 14px;
     }
 
     h1 {

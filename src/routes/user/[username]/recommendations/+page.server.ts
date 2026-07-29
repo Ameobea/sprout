@@ -65,6 +65,7 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
   const includeMusic = url.searchParams.get('music') === 'true';
   const filterPlanToWatch = url.searchParams.get('fptw') === 'true';
   const logitWeight = Math.max(0, Math.min(1, parseFloat(url.searchParams.get('lw') ?? '0.4')));
+  const popularityAttenuationFactor = Math.max(0, Math.min(0.01, parseFloat(url.searchParams.get('paf') ?? '0.0008')));
   const rawProfileSource = url.searchParams.get('source') ?? DEFAULT_PROFILE_SOURCE;
   const profileSourceParseRes = ProfileSourceValidator.decode(rawProfileSource);
   if (isLeft(profileSourceParseRes)) {
@@ -108,6 +109,7 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
     profileSource,
     filterPlanToWatch,
     logitWeight,
+    popularityAttenuationFactor,
   });
   if (isLeft(recommendationsRes)) {
     return {

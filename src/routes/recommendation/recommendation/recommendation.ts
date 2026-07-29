@@ -45,6 +45,10 @@ interface GetRecommendationsArgs {
    * Controls how much to boost less popular shows in the rankings (0.0 = no boost, 1.0 = maximum boost)
    */
   nicheBoostFactor: number;
+  /**
+   * Legacy model only; higher values weight less-popular anime higher in recommendations
+   */
+  popularityAttenuationFactor?: number;
 }
 
 let CachedEmbeddingMetadata: (AnimeDetails | null)[] | null = null;
@@ -387,6 +391,7 @@ const getLegacyRecommendations = async ({
   includeMusic,
   profileSource,
   filterPlanToWatch,
+  popularityAttenuationFactor,
 }: GetRecommendationsArgs): Promise<Either<ProfileFetchError, Recommendation[]>> => {
   const response = await fetch(`${LEGACY_APP_URL}/recommendation/recommendation`, {
     method: 'POST',
@@ -402,7 +407,7 @@ const getLegacyRecommendations = async ({
       includeONAsOVAsSpecials,
       includeMovies,
       includeMusic,
-      popularityAttenuationFactor: 0.0008,
+      popularityAttenuationFactor: popularityAttenuationFactor ?? 0.0008,
       profileSource,
     }),
   });
