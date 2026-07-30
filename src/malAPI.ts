@@ -1,4 +1,6 @@
-import { MAL_API_BASE_URL, MAL_CLIENT_ID } from './conf';
+import * as fs from 'fs';
+
+import { DATA_DIR, MAL_API_BASE_URL, MAL_CLIENT_ID } from './conf';
 import { delay } from './util';
 import NodeCache from 'node-cache';
 import { DbPool } from './dbUtil';
@@ -173,7 +175,7 @@ export const getUserMangaList = async (username: string): Promise<MALUserMangaLi
   return data;
 };
 
-interface Genre {
+export interface Genre {
   id: number;
   name: string;
 }
@@ -210,6 +212,7 @@ export interface AnimeDetails {
     num_recommendations: number;
   }[];
   media_type: AnimeMediaType;
+  num_episodes?: number;
   related_anime?: {
     node: AnimeBasicDetails;
     relation_type: AnimeRelationType;
@@ -232,6 +235,7 @@ export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | n
     'recommendations',
     'related_anime',
     'media_type',
+    'num_episodes',
     'rating',
   ];
   const url = `${MAL_API_BASE_URL}/anime/${id}?nsfw=true&fields=${fieldsToFetch.join(',')}`;
@@ -306,8 +310,105 @@ const fetchAnimesFromDB = async (ids: number[]): Promise<(AnimeDetails | null)[]
   });
 };
 
+const parseCSV = (raw: string): string[][] => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (raw[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(field);
+      field = '';
+    } else if (ch === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else if (ch !== '\r') {
+      field += ch;
+    }
+  }
+  if (field || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+};
+
+// Local dump of the `anime-metadata` table (data/anime-metadata.csv), used as a metadata source
+// when the MySQL DB is unreachable (i.e. local dev off-network).  Absent in prod.
+let localMetadataDump: Map<number, AnimeDetails> | null | undefined;
+
+const loadLocalMetadataDump = (): Map<number, AnimeDetails> | null => {
+  if (localMetadataDump !== undefined) {
+    return localMetadataDump;
+  }
+
+  const path = `${DATA_DIR}/anime-metadata.csv`;
+  if (!fs.existsSync(path)) {
+    localMetadataDump = null;
+    return null;
+  }
+
+  try {
+    const rows = parseCSV(fs.readFileSync(path, 'utf8'));
+    const map = new Map<number, AnimeDetails>();
+    for (const row of rows) {
+      if (row.length < 2 || row[0] === 'id') {
+        continue;
+      }
+      try {
+        map.set(+row[0], JSON.parse(row[1]));
+      } catch (_err) {
+        // skip malformed rows
+      }
+    }
+    console.log(`Loaded ${map.size} entries from local anime metadata dump`);
+    localMetadataDump = map;
+  } catch (err) {
+    console.error('Failed to load local anime metadata dump:', err);
+    localMetadataDump = null;
+  }
+  return localMetadataDump;
+};
+
+let metadataDBDisabledUntil = 0;
+
 const fetchAnimesByID = async (ids: number[]): Promise<(AnimeDetails | null)[]> => {
-  const fromDB = await fetchAnimesFromDB(ids);
+  let fromDB: (AnimeDetails | null)[];
+  let dbUnavailable = Date.now() < metadataDBDisabledUntil;
+  if (dbUnavailable) {
+    fromDB = ids.map(() => null);
+  } else {
+    fromDB = await fetchAnimesFromDB(ids).catch((err) => {
+      metadataDBDisabledUntil = Date.now() + 60_000;
+      dbUnavailable = true;
+      console.error('Anime metadata DB unavailable; falling back to local dump + MAL API for 60s:', err?.code ?? err);
+      return ids.map(() => null);
+    });
+  }
+
+  if (dbUnavailable) {
+    const dump = loadLocalMetadataDump();
+    if (dump) {
+      fromDB = fromDB.map((entry, i) => entry ?? dump.get(ids[i]) ?? null);
+    }
+  }
+
   const missingIDs = ids.filter((_id, i) => fromDB[i] === null);
   if (missingIDs.length === 0) {
     return fromDB as AnimeDetails[];

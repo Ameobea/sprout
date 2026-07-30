@@ -79,7 +79,7 @@ export const POST: RequestHandler = async ({ request }) => {
   if (isLeft(recommendationsRes)) {
     return error(recommendationsRes.left.status, recommendationsRes.left.body);
   }
-  const recommendationsList = recommendationsRes.right;
+  const { recommendations: recommendationsList, userRatingStats } = recommendationsRes.right;
 
   const alreadyFetchedAnimeIDs = new Set(req.availableAnimeMetadataIDs);
   const idsToFetch = [
@@ -103,5 +103,9 @@ export const POST: RequestHandler = async ({ request }) => {
     {} as { [id: number]: AnimeDetails }
   );
 
-  return json({ recommendations: typify(recommendationsList), animeData: typify(animeData) });
+  return json({
+    recommendations: typify(recommendationsList),
+    animeData: typify(animeData),
+    userRatingStats: typify(userRatingStats),
+  });
 };

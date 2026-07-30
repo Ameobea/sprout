@@ -33,6 +33,11 @@
   export let isLoading: boolean;
   export let genresDB: Writable<Map<number, string>>;
   export let forceHideTopBar: boolean | undefined = false;
+  /**
+   * Hides the presence/rating weight slider entirely for non-rater profiles, where rating
+   * predictions are too unreliable for the control to be meaningful.
+   */
+  export let hideLogitWeight = false;
 
   // Local state for sliders to prevent updates while dragging
   let localLogitWeight = $params.logitWeight;
@@ -162,30 +167,32 @@
               />
             </div>
           {:else}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div on:click={(e) => e.stopPropagation()}>
-              <Slider
-                labelText="Presence/Rating Weight"
-                min={0}
-                max={1}
-                step={0.1}
-                bind:value={localLogitWeight}
-                on:change={() => {
-                  if ($params.logitWeight !== localLogitWeight) {
-                    submitAnalyticsEvent({
-                      category: 'recommendations',
-                      subcategory: 'logit_weight_change',
-                      payload: { value: localLogitWeight, surface: getSurface() },
-                    });
-                  }
-                  $params.logitWeight = localLogitWeight;
-                }}
-              />
-              <span class="helper-text">
-                Balance between predicted rating (0) and presence probability (1) when scoring recommendations
-              </span>
-            </div>
+            {#if !hideLogitWeight}
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
+              <!-- svelte-ignore a11y-no-static-element-interactions -->
+              <div on:click={(e) => e.stopPropagation()}>
+                <Slider
+                  labelText="Presence/Rating Weight"
+                  min={0}
+                  max={1}
+                  step={0.1}
+                  bind:value={localLogitWeight}
+                  on:change={() => {
+                    if ($params.logitWeight !== localLogitWeight) {
+                      submitAnalyticsEvent({
+                        category: 'recommendations',
+                        subcategory: 'logit_weight_change',
+                        payload: { value: localLogitWeight, surface: getSurface() },
+                      });
+                    }
+                    $params.logitWeight = localLogitWeight;
+                  }}
+                />
+                <span class="helper-text">
+                  Balance between predicted rating (0) and presence probability (1) when scoring recommendations
+                </span>
+              </div>
+            {/if}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-static-element-interactions -->
             <div on:click={(e) => e.stopPropagation()}>

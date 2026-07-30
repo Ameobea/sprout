@@ -2,10 +2,12 @@
   import { slide } from 'svelte/transition';
   import ChevronDown from 'carbon-icons-svelte/lib/ChevronDown.svelte';
   import ChevronUp from 'carbon-icons-svelte/lib/ChevronUp.svelte';
-  import { Tag, Loading } from 'carbon-components-svelte';
+  import { Tag } from 'carbon-components-svelte';
 
   import { getSurface, submitAnalyticsEvent } from 'src/analytics';
   import type { AnimeDetails } from 'src/malAPI';
+  import type { RatingTier } from 'src/util/ratingTiers';
+  import GenreTagList from './GenreTagList.svelte';
 
   export let animeMetadata: AnimeDetails;
   export let rank: number;
@@ -17,6 +19,25 @@
   export let topRatingContributors: { datum: AnimeDetails; positiveRating: boolean }[] | undefined;
   export let planToWatch: boolean;
   export let contributorsLoading: boolean;
+  export let predictedRating: number | null = null;
+  export let ratingTier: RatingTier | null = null;
+
+  const MEDIA_TYPE_NAMES: { [mediaType: string]: string } = {
+    tv: 'TV',
+    ova: 'OVA',
+    ona: 'ONA',
+    movie: 'Movie',
+    special: 'Special',
+    music: 'Music',
+  };
+
+  $: metaLine = [
+    animeMetadata.start_date?.slice(0, 4),
+    MEDIA_TYPE_NAMES[animeMetadata.media_type],
+    animeMetadata.num_episodes ? `${animeMetadata.num_episodes} ${animeMetadata.num_episodes === 1 ? 'ep' : 'eps'}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   let synopsisElem: HTMLDivElement | null = null;
   $: {
@@ -28,7 +49,13 @@
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="recommendation" data-plan-to-watch={planToWatch.toString()} data-expanded={expanded.toString()} in:slide>
+<div
+  class="recommendation"
+  data-plan-to-watch={planToWatch.toString()}
+  data-expanded={expanded.toString()}
+  data-show-rating={(predictedRating !== null).toString()}
+  in:slide
+>
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
   <img
@@ -37,6 +64,14 @@
     alt={animeMetadata.alternative_titles.en || animeMetadata.title}
     loading="lazy"
   />
+  {#if !expanded && predictedRating !== null}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="predicted-rating" data-tier={ratingTier ?? 'neutral'} on:click={toggleExpanded}>
+      <span class="rating-num">{predictedRating.toFixed(1)}</span>
+      <span class="rating-label">predicted</span>
+    </div>
+  {/if}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div on:click={toggleExpanded} class="title">
@@ -58,6 +93,9 @@
         {animeMetadata.alternative_titles.en || animeMetadata.title}
       {/if}
     </div>
+    {#if !expanded && metaLine}
+      <div class="meta-line">{metaLine}</div>
+    {/if}
     {#if planToWatch && !expanded}
       <div class="tag"><Tag style="color: white" type="green">Plan To Watch</Tag></div>
     {:else if addRanking && !expanded}
@@ -92,17 +130,33 @@
   </div>
   {#if !expanded}
     <div class="genres">
-      {#each animeMetadata.genres ?? [] as genre, i (genre)}
-        <Tag
-          style={i === 0 ? 'margin-left: 0' : undefined}
-          size="sm"
-          type="cool-gray"
-          filter={!!excludeGenre}
-          on:close={() => excludeGenre?.(genre.id, genre.name)}
-        >
-          {genre.name}
-        </Tag>
-      {/each}
+      <GenreTagList genres={animeMetadata.genres ?? []} {excludeGenre} />
+    </div>
+  {/if}
+  {#if expanded}
+    <div class="expanded-meta">
+      {#if predictedRating !== null}
+        <div class="predicted-line" data-tier={ratingTier ?? 'neutral'}>
+          <span class="star">★</span>
+          <span class="predicted-value">{predictedRating.toFixed(1)}</span>
+          <span class="predicted-text">predicted for you</span>
+        </div>
+      {/if}
+      <div class="expanded-meta-row">
+        {#if metaLine}
+          <span class="meta-line">{metaLine}</span>
+        {/if}
+        {#each animeMetadata.genres ?? [] as genre (genre.id)}
+          <Tag
+            size="sm"
+            type="cool-gray"
+            filter={!!excludeGenre}
+            on:close={() => excludeGenre?.(genre.id, genre.name)}
+          >
+            {genre.name}
+          </Tag>
+        {/each}
+      </div>
     </div>
   {/if}
   <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -131,8 +185,6 @@
         {/if}
       </div>
     </div>
-  {:else}
-    <Loading withOverlay={false} />
   {/if}
 </div>
 
@@ -157,21 +209,32 @@
     grid-template-columns: 87px 140px 190px 1fr 60px;
   }
 
+  .recommendation[data-expanded='false'][data-show-rating='true'] {
+    grid-template-areas: 'thumbnail rating title genres synopsis expander';
+    grid-template-columns: 87px 64px 140px 190px 1fr 60px;
+  }
+
   .recommendation[data-expanded='true'] {
     max-height: 800px;
     transition: max-height 0.3s ease-in-out;
     grid-template-areas:
       'thumbnail title expander'
+      'thumbnail meta meta'
       'thumbnail synopsis synopsis'
       'details details details';
     grid-template-columns: 225px 1fr 60px;
-    grid-template-rows: 28px auto auto;
+    grid-template-rows: 28px auto auto auto;
   }
 
   @media (max-width: 768px) {
     .recommendation[data-expanded='false'] {
       grid-template-areas: 'thumbnail title genres expander';
       grid-template-columns: 90px 100px 1fr 45px;
+    }
+
+    .recommendation[data-expanded='false'][data-show-rating='true'] {
+      grid-template-areas: 'thumbnail rating title genres expander';
+      grid-template-columns: 90px 48px 100px 1fr 45px;
     }
 
     .recommendation[data-expanded='false'] .synopsis {
@@ -181,10 +244,60 @@
     .recommendation[data-expanded='true'] {
       grid-template-areas:
         'title title expander'
+        'thumbnail meta expander'
         'thumbnail synopsis expander'
         'details details details';
       grid-template-columns: 150px 1fr 45px;
-      grid-template-rows: 30px auto auto;
+      grid-template-rows: 30px auto auto auto;
+    }
+  }
+
+  .recommendation .predicted-rating {
+    grid-area: rating;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    height: 100%;
+    border-right: 1px solid #cccccc55;
+    cursor: pointer;
+  }
+
+  .predicted-rating[data-tier='high'],
+  .predicted-line[data-tier='high'] {
+    --tier-color: #42be65;
+  }
+
+  .predicted-rating[data-tier='low'],
+  .predicted-line[data-tier='low'] {
+    --tier-color: #ff832b;
+  }
+
+  .predicted-rating[data-tier='mid'],
+  .predicted-rating[data-tier='neutral'],
+  .predicted-line[data-tier='mid'],
+  .predicted-line[data-tier='neutral'] {
+    --tier-color: #a8b0b8;
+  }
+
+  .rating-num {
+    font-size: 21px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--tier-color);
+  }
+
+  .rating-label {
+    font-size: 8.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #8d8d8d;
+  }
+
+  @media (max-width: 768px) {
+    .rating-num {
+      font-size: 17px;
     }
   }
 
@@ -196,6 +309,7 @@
     justify-content: center;
     text-align: center;
     padding: 0 5px;
+    min-width: 0;
   }
 
   .recommendation[data-expanded='false'] .title {
@@ -212,13 +326,30 @@
     flex: 1;
     justify-content: center;
     align-items: center;
+    overflow: hidden;
+  }
+
+  .title-text {
+    overflow-wrap: anywhere;
+  }
+
+  .meta-line {
+    font-size: 11px;
+    color: #9ba3ab;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .recommendation[data-expanded='false'] .title .meta-line {
+    flex: 0;
+    padding-bottom: 3px;
   }
 
   .recommendation[data-expanded='false'] .title .tag {
     display: flex;
     justify-content: center;
     flex: 0;
-    padding: 4px 4px;
+    padding: 0 4px 4px 4px;
   }
 
   .recommendation[data-expanded='true'] .title {
@@ -270,6 +401,52 @@
     transition: max-height 0.3s ease-in-out;
   }
 
+  .recommendation .expanded-meta {
+    grid-area: meta;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 8px 4px;
+  }
+
+  .predicted-line {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+  }
+
+  .predicted-line .star {
+    font-size: 14px;
+    color: var(--tier-color);
+  }
+
+  .predicted-line .predicted-value {
+    font-size: 17px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--tier-color);
+  }
+
+  .predicted-line .predicted-text {
+    font-size: 13px;
+    color: #c9ced3;
+  }
+
+  .expanded-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 4px;
+  }
+
+  .expanded-meta-row .meta-line {
+    margin-right: 6px;
+  }
+
+  .expanded-meta-row :global(.bx--tag) {
+    margin: 0;
+  }
+
   @media (max-width: 768px) {
     .recommendation[data-expanded='true'] img {
       max-width: 150px;
@@ -290,13 +467,11 @@
   }
 
   .recommendation .genres {
-    overflow-y: hidden;
+    grid-area: genres;
     height: 120px;
     max-height: 120px;
-    padding: 4px 0px 0px 4px;
-    justify-content: flex-start;
-    align-items: flex-start;
     border-right: 1px solid #cccccc55;
+    min-width: 0;
   }
 
   .recommendation .synopsis {
@@ -313,9 +488,13 @@
     cursor: pointer;
     overflow: hidden;
     text-overflow: ellipsis;
-    -webkit-line-clamp: 6;
-    line-clamp: 6;
-    padding: 4px 6px;
+    -webkit-line-clamp: 5;
+    line-clamp: 5;
+    font-size: 13.5px;
+    line-height: 1.32;
+    color: #b9c0c7;
+    /* no bottom padding: clamped-away lines paint into the padding box and show as a clipped stripe */
+    padding: 6px 10px 0;
   }
 
   .recommendation[data-expanded='true'] .synopsis {

@@ -13,6 +13,7 @@ import {
   getRecommendations,
   ProfileSourceValidator,
   type Recommendation,
+  type UserRatingStats,
 } from 'src/routes/recommendation/recommendation/recommendation';
 import type { PageServerLoad } from './$types';
 
@@ -21,6 +22,7 @@ export type RecommendationsResponse =
       type: 'ok';
       recommendations: Recommendation[];
       animeData: { [id: number]: AnimeDetails };
+      userRatingStats: UserRatingStats | null;
     }
   | { type: 'error'; error: string; kind?: ProfileFetchErrorKind };
 
@@ -49,6 +51,7 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
         type: 'ok',
         recommendations: [],
         animeData: {},
+        userRatingStats: null,
       },
       nonBrowserClient,
     };
@@ -65,6 +68,7 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
   const includeMusic = url.searchParams.get('music') === 'true';
   const filterPlanToWatch = url.searchParams.get('fptw') === 'true';
   const logitWeight = Math.max(0, Math.min(1, parseFloat(url.searchParams.get('lw') ?? '0.4')));
+  const nicheBoostFactor = Math.max(0, Math.min(1, parseFloat(url.searchParams.get('nb') ?? '0')));
   const popularityAttenuationFactor = Math.max(0, Math.min(0.01, parseFloat(url.searchParams.get('paf') ?? '0.0008')));
   const rawProfileSource = url.searchParams.get('source') ?? DEFAULT_PROFILE_SOURCE;
   const profileSourceParseRes = ProfileSourceValidator.decode(rawProfileSource);
@@ -109,6 +113,7 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
     profileSource,
     filterPlanToWatch,
     logitWeight,
+    nicheBoostFactor,
     popularityAttenuationFactor,
   });
   if (isLeft(recommendationsRes)) {
@@ -121,7 +126,7 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
       nonBrowserClient,
     };
   }
-  const recommendationsList = recommendationsRes.right;
+  const { recommendations: recommendationsList, userRatingStats } = recommendationsRes.right;
 
   const animeIdsNeedingMetadata = new Set(
     recommendationsList.flatMap(({ id, topRatingContributorsIds }) => [
@@ -147,6 +152,7 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
     type: 'ok',
     recommendations: recommendationsList.filter((reco) => !!animeData[reco.id]),
     animeData,
+    userRatingStats,
   };
 
   const genreNames: { [id: number]: string } = {};

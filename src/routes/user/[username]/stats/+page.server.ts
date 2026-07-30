@@ -14,6 +14,7 @@ import {
   type NormalizationStats,
 } from 'src/routes/recommendation/recommendation/recommendation';
 import { MODEL_SERVER_URL } from 'src/conf';
+import { computeProfileRatingStats, type ProfileRatingStats } from 'src/util/profileStats';
 import { denormalizeRating } from 'src/util/ratingNormalization';
 import type { PageServerLoad } from './$types';
 
@@ -35,6 +36,7 @@ export type UserStatsLoadProps = {
     | { type: 'ok'; profile: Typify<PartialStatsMALUserAnimeListItem[]> }
     | { type: 'error'; error: string; kind?: ProfileFetchErrorKind };
   profileAnalysis: ProfileAnalysis | null;
+  ratedStats?: ProfileRatingStats;
 };
 
 async function fetchProfileAnalysis(
@@ -171,5 +173,6 @@ export const load: PageServerLoad = async ({ params, url }): Promise<UserStatsLo
     animeData: typify(animeData),
     profileRes: { type: 'ok', profile: typify(profile) },
     profileAnalysis: typify(profileAnalysis),
+    ratedStats: typify(computeProfileRatingStats(userProfile)),
   };
 };

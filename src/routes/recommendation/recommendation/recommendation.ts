@@ -9,16 +9,34 @@ import type { Embedding } from 'src/routes/embedding';
 import { fetchUserRankings, type ProfileFetchError } from 'src/helpers';
 import type { CompatAnimeListEntry } from 'src/anilistAPI';
 import { LEGACY_APP_URL, MODEL_SERVER_URL } from 'src/conf';
+import { computeProfileRatingStats } from 'src/util/profileStats';
+import { denormalizeRating } from 'src/util/ratingNormalization';
 
 export interface Recommendation {
   id: number;
   score: number;
+  /**
+   * Predicted rating on the 1-10 scale (denormalized).  Absent for the legacy model.
+   */
+  predictedRating?: number;
   /**
    * These IDs will be negative to indicate a negative rating contributing to a positive recommendation.  Absolute
    * value should be used to get IDs to look up.
    */
   topRatingContributorsIds?: number[];
   planToWatch?: boolean;
+}
+
+export interface UserRatingStats {
+  mean: number;
+  stdDev: number;
+  ratedCount: number;
+  isNonRater: boolean;
+}
+
+export interface GetRecommendationsOutput {
+  recommendations: Recommendation[];
+  userRatingStats: UserRatingStats | null;
 }
 
 interface GetRecommendationsArgs {
@@ -392,7 +410,7 @@ const getLegacyRecommendations = async ({
   profileSource,
   filterPlanToWatch,
   popularityAttenuationFactor,
-}: GetRecommendationsArgs): Promise<Either<ProfileFetchError, Recommendation[]>> => {
+}: GetRecommendationsArgs): Promise<Either<ProfileFetchError, GetRecommendationsOutput>> => {
   const response = await fetch(`${LEGACY_APP_URL}/recommendation/recommendation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -423,12 +441,12 @@ const getLegacyRecommendations = async ({
   if (filterPlanToWatch) {
     recommendations = recommendations.filter((reco) => !reco.planToWatch);
   }
-  return right(recommendations.slice(0, count));
+  return right({ recommendations: recommendations.slice(0, count), userRatingStats: null });
 };
 
 export const getRecommendations = async (
   args: GetRecommendationsArgs
-): Promise<Either<ProfileFetchError, Recommendation[]>> => {
+): Promise<Either<ProfileFetchError, GetRecommendationsOutput>> => {
   if (args.modelName === ModelName.Legacy_2023) {
     return getLegacyRecommendations(args);
   }
@@ -580,30 +598,40 @@ export const getRecommendations = async (
   // Build a map of profile entries by anime ID for contributor sign determination
   const profileAnimeByID = new Map(profile.map((entry) => [entry.node.id, entry]));
 
-  // Determine if user is a non-rater (most scores are 0)
-  const ratedCount = profile.filter((entry) => entry.list_status.score > 0).length;
-  const userIsNonRater = ratedCount < profile.length * 0.5;
+  const ratingStats = computeProfileRatingStats(profile);
 
-  return right(
-    filteredRecommendations.slice(0, count).map((rec) => {
-      const reco: Recommendation = { id: rec.anime_id, score: rec.score };
+  const recommendations = filteredRecommendations.slice(0, count).map((rec) => {
+    const reco: Recommendation = {
+      id: rec.anime_id,
+      score: rec.score,
+      predictedRating: denormalizeRating(rec.predicted_rating, output.normalization_stats),
+    };
 
-      if (rec.top_contributors) {
-        reco.topRatingContributorsIds = rec.top_contributors.map((contrib) => {
-          const rating = profileAnimeByID.get(contrib.anime_id);
-          // Positive contribution if score >= 6, or if user is a non-rater
-          const isPositive = (rating?.list_status.score ?? 10) >= 6;
-          return isPositive || userIsNonRater ? contrib.anime_id : -contrib.anime_id;
-        });
-      }
+    if (rec.top_contributors) {
+      reco.topRatingContributorsIds = rec.top_contributors.map((contrib) => {
+        const rating = profileAnimeByID.get(contrib.anime_id);
+        // Positive contribution if score >= 6, or if user is a non-rater
+        const isPositive = (rating?.list_status.score ?? 10) >= 6;
+        return isPositive || ratingStats.isNonRater ? contrib.anime_id : -contrib.anime_id;
+      });
+    }
 
-      if (planToWatchAnimeIDs.has(rec.anime_id)) {
-        reco.planToWatch = true;
-      }
+    if (planToWatchAnimeIDs.has(rec.anime_id)) {
+      reco.planToWatch = true;
+    }
 
-      return reco;
-    })
-  );
+    return reco;
+  });
+
+  return right({
+    recommendations,
+    userRatingStats: {
+      mean: ratingStats.mean,
+      stdDev: ratingStats.stdDev,
+      ratedCount: ratingStats.ratedCount,
+      isNonRater: ratingStats.isNonRater,
+    },
+  });
 };
 
 const AllProfileSources: { [key in ProfileSource]: ProfileSource } = {

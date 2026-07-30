@@ -6,9 +6,13 @@
     params: RecommendationControlParams,
     availableAnimeMetadataIDs: number[],
     includeContributors: boolean
-  ): Promise<{ recommendations: { id: number; score: number }[]; animeData: { [animeID: number]: AnimeDetails } }> => {
+  ): Promise<{
+    recommendations: Recommendation[];
+    animeData: { [animeID: number]: AnimeDetails };
+    userRatingStats?: UserRatingStats | null;
+  }> => {
     if (profile.length === 0) {
-      return { recommendations: [], animeData: {} };
+      return { recommendations: [], animeData: {}, userRatingStats: null };
     }
 
     return fetch('/recommendation/recommendation', {
@@ -33,6 +37,7 @@
   import { writable, type Writable } from 'svelte/store';
 
   import type { AnimeDetails } from 'src/malAPI';
+  import type { Recommendation, UserRatingStats } from 'src/routes/recommendation/recommendation/recommendation';
   import RecommendationControls from '../recommendation/RecommendationControls.svelte';
   import { getDefaultRecommendationControlParams, type RecommendationControlParams } from '../recommendation/utils';
   import RecommendationsList from '../recommendation/RecommendationsList.svelte';
@@ -54,13 +59,11 @@
 
   let lastRecosRes:
     | {
-        recommendations: {
-          id: number;
-          score: number;
-        }[];
+        recommendations: Recommendation[];
         animeData: {
           [animeID: number]: AnimeDetails;
         };
+        userRatingStats?: UserRatingStats | null;
       }
     | undefined = undefined;
   $: recosRes = createQuery(
@@ -132,6 +135,7 @@
     <RecommendationsList
       recommendations={recommendations?.recommendations ?? []}
       animeMetadataDatabase={$animeMetadataDatabase}
+      userRatingStats={recommendations?.userRatingStats ?? null}
       {addRanking}
       contributorsLoading={$recosRes.isLoading ||
         $recosRes.isRefetching ||

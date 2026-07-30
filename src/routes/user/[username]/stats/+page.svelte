@@ -62,6 +62,15 @@
       <a href="/">Back to Homepage</a>
     </div>
   {:else}
+    {#if data.ratedStats && data.ratedStats.consideredCount > 0}
+      <div class="rated-stat">
+        <b>{Math.round(data.ratedStats.ratedFraction * 100)}%</b> of your list is rated ({data.ratedStats.ratedCount} of
+        {data.ratedStats.consideredCount} watched entries)
+        {#if data.ratedStats.isNonRater}
+          — treated as a presence-only profile, so predicted ratings are hidden in your recommendations
+        {/if}
+      </div>
+    {/if}
     {#if data.profileAnalysis}
       <ProfileAnalysisLists
         mostImpactfulRatings={data.profileAnalysis.mostImpactfulRatings}
@@ -84,6 +93,17 @@
     flex-direction: column;
     padding: 4px;
     text-align: center;
+  }
+
+  .rated-stat {
+    font-size: 0.9rem;
+    color: #aaa;
+    text-align: left;
+    margin-bottom: 14px;
+  }
+
+  .rated-stat b {
+    color: #ddd;
   }
 
   .error h2 {

@@ -4,7 +4,8 @@
 
   import { getSurface, submitAnalyticsEvent } from 'src/analytics';
   import type { AnimeDetails } from 'src/malAPI';
-  import type { Recommendation } from '../../routes/recommendation/recommendation/recommendation';
+  import type { Recommendation, UserRatingStats } from '../../routes/recommendation/recommendation/recommendation';
+  import { getRatingTier, type RatingTier } from 'src/util/ratingTiers';
   import RecommendationListItem from './RecommendationListItem.svelte';
 
   export let recommendations: Recommendation[];
@@ -13,6 +14,20 @@
   export let excludeGenre: ((genreID: number, genreName: string) => void) | undefined = undefined;
   export let addRanking: ((animeID: number) => void) | undefined = undefined;
   export let contributorsLoading: boolean;
+  export let userRatingStats: UserRatingStats | null = null;
+
+  let displayRecommendations: (Recommendation & {
+    shownPredictedRating: number | null;
+    ratingTier: RatingTier | null;
+  })[] = [];
+  $: displayRecommendations = recommendations.map((reco) => {
+    const showRating = !!userRatingStats && !userRatingStats.isNonRater && typeof reco.predictedRating === 'number';
+    return {
+      ...reco,
+      shownPredictedRating: showRating ? reco.predictedRating! : null,
+      ratingTier: showRating ? getRatingTier(reco.predictedRating!, userRatingStats!) : null,
+    };
+  });
 
   let expandedAnimeID: number | null = null;
   $: if (expandedAnimeID !== null && !recommendations.some((reco) => reco.id === expandedAnimeID)) {
@@ -21,7 +36,7 @@
 </script>
 
 <div class="recommendations">
-  {#each recommendations as { id, topRatingContributorsIds, planToWatch }, rank (id)}
+  {#each displayRecommendations as { id, topRatingContributorsIds, planToWatch, shownPredictedRating, ratingTier }, rank (id)}
     {@const animeMetadata = animeMetadataDatabase[id]}
     <div in:fade animate:flip={{ duration: (d) => 39 * Math.sqrt(d) }}>
       <RecommendationListItem
@@ -42,6 +57,8 @@
           positiveRating: id > 0,
         }))}
         planToWatch={planToWatch ?? false}
+        predictedRating={shownPredictedRating}
+        {ratingTier}
         {excludeRanking}
         {excludeGenre}
         {addRanking}

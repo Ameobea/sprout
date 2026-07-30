@@ -4,7 +4,11 @@
     params: RecommendationControlParams,
     availableAnimeMetadataIDs: number[],
     includeContributors: boolean
-  ): Promise<{ recommendations: Recommendation[]; animeData: { [animeID: number]: AnimeDetails } }> =>
+  ): Promise<{
+    recommendations: Recommendation[];
+    animeData: { [animeID: number]: AnimeDetails };
+    userRatingStats: UserRatingStats | null;
+  }> =>
     fetch('/recommendation/recommendation', {
       method: 'POST',
       body: JSON.stringify({
@@ -28,7 +32,7 @@
 
   import RecommendationsList from 'src/components/recommendation/RecommendationsList.svelte';
   import type { AnimeDetails } from 'src/malAPI';
-  import type { Recommendation } from 'src/routes/recommendation/recommendation/recommendation';
+  import type { Recommendation, UserRatingStats } from 'src/routes/recommendation/recommendation/recommendation';
   import type { RecommendationsResponse } from 'src/routes/user/[username]/recommendations/+page.server';
   import RecommendationControls from './RecommendationControls.svelte';
   import { getSurface, submitAnalyticsEvent } from 'src/analytics';
@@ -75,17 +79,20 @@
 
   let lastRecosRes:
     | {
-        recommendations: {
-          id: number;
-          score: number;
-        }[];
+        recommendations: Recommendation[];
         animeData: {
           [animeID: number]: AnimeDetails;
         };
+        userRatingStats?: UserRatingStats | null;
       }
     | undefined = undefined;
   $: recosRes = createQuery<
-    { recommendations: Recommendation[]; animeData: { [animeID: number]: AnimeDetails } } | undefined
+    | {
+        recommendations: Recommendation[];
+        animeData: { [animeID: number]: AnimeDetails };
+        userRatingStats?: UserRatingStats | null;
+      }
+    | undefined
   >(
     {
       queryKey: ['recommendations', username, $params] as const,
@@ -160,6 +167,8 @@
     return recosData ? recosData : null;
   })();
 
+  $: userRatingStats = recommendations?.userRatingStats ?? null;
+
   const updateAnimeDB = (animeData: { [animeID: number]: AnimeDetails }) =>
     animeMetadataDatabase.update((db) => {
       Object.entries(animeData).forEach(([animeID, metadata]) => {
@@ -211,10 +220,12 @@
       animeMetadataDatabase={$animeMetadataDatabase}
       isLoading={$recosRes.isLoading || $recosRes.isRefetching}
       {genresDB}
+      hideLogitWeight={userRatingStats?.isNonRater ?? false}
     />
     <RecommendationsList
       recommendations={recommendations?.recommendations ?? []}
       animeMetadataDatabase={$animeMetadataDatabase}
+      {userRatingStats}
       excludeRanking={excludedRankingAnimeIDs}
       excludeGenre={excludeGenreID}
       contributorsLoading={$recosRes.isLoading ||
