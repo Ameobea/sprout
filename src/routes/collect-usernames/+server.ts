@@ -1,8 +1,7 @@
 import { error, text, type RequestHandler } from '@sveltejs/kit';
 import { JSDOM } from 'jsdom';
 
-import { ADMIN_API_TOKEN } from '../../conf';
-import { addUsernames } from '../add-usernames/addUsernames';
+import { ADMIN_API_TOKEN, MAIN_SERVER_URL } from '../../conf';
 
 export const POST: RequestHandler = async ({ url }) => {
   const token = url.searchParams.get('token');
@@ -32,8 +31,16 @@ export const POST: RequestHandler = async ({ url }) => {
       error(500, 'Failed to parse usernames from the page');
     }
 
-    const resText = await addUsernames(usernames);
-    return text(resText);
+    const res = await fetch(`${MAIN_SERVER_URL}/add-usernames?token=${ADMIN_API_TOKEN}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(usernames),
+    });
+    if (!res.ok) {
+      console.error(`Error forwarding usernames to main server: ${res.status} ${await res.text()}`);
+      error(500, 'Error forwarding usernames to main server');
+    }
+    return text(await res.text());
   } catch (err) {
     console.error('Error fetching + processing MAL users page: ', err);
     error(500, 'Error fetching + processing MAL users page');

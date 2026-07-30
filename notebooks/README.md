@@ -1,10 +1,10 @@
-1. Run `download-animelists.ipynb` to download the collected user anime profiles from the DB and write them into `./work/data/mal-user-animelists.csv`
-2. Run `process-collected-profiles.ipynb` to convert it into individual rankings and filter it.  This also generates `all-anime-ids.json`
-3. You'll probably want to delete or compress the `data/mal-user-animelists.csv` at this point.  It wil be enormous and isn't needed after this point.
-4. Use `curl -X POST http://localhost:3080/populate-anime-metadata\?populateNulls\=true\&token\=asdf` to fill metadata table with placeholders
-5. Use `while true; do curl -X POST http://localhost:3080/populate-anime-metadata\?token\=asdf && echo "" && sleep 1.2; done` to fill in missing metadata from MAL API
-6. Download metadata table as CSV and move to `./work/data/anime-metadata.csv`. Include header row.
-7. Run `process-collected-metadata` script to convert metadata to `./work/data/processed-metadata.csv`.  This also generates `./work/data/corpus_ids.json`.
+1. Run `./dump-table.sh` to dump `mal-user-animelists` server-side (streamed through zstd, staged on ameo.dev, rsync'd down — resumable) into `../data/mal-user-animelists.tsv.zst`. ~13x compressed; benchmarked ~5x faster than the old chunked-query notebook (`download-animelists.ipynb`, now obsolete). The `--raw` TSV needs no unescaping: the JSON blobs contain no literal tabs/newlines.
+2. Run `process-collected-profiles.ipynb` to convert it into individual rankings and filter it.  This also generates `all-anime-ids.json`.
+   NOTE: input is now the .tsv.zst — read via `zstd -dc` subprocess stream (tab-split, not csv.reader) so the raw dump never hits disk uncompressed. The notebook still has the old CSV reader; adapt when running the next cycle.
+3. `curl -X POST http://localhost:3080/populate-anime-metadata\?populateNulls\=true\&token\=asdf` to fill metadata table with placeholders (local dev server + MySQL tunnel)
+4. `while true; do curl -X POST http://localhost:3080/populate-anime-metadata\?token\=asdf && echo "" && sleep 1.2; done` to fill in missing metadata from MAL API
+5. Run `./dump-table.sh anime-metadata ../data/anime-metadata.tsv.zst` (replaces the old manual CSV export; small enough to just `zstd -d` in place)
+6. Run `process-collected-metadata` script to convert metadata to `./work/data/processed-metadata.csv`.  This also generates `./work/data/corpus_ids.json`.
 <!-- 7. Run `embedding_gen` script to build cooccurrence matrices and produce the `cooccurrence_matrix_wextra.npy` output file
 1. Run `pymde.ipynb` to process the cooccurrence matrix and produce an embedding with PyMDE with desired parameters.  This will export the embedding to a .w2v file.
 2. Run `emblaze` (in the browser if you want to use the embedding viz) to generate `data/projected_embedding.json` which is loaded by the webapp backend

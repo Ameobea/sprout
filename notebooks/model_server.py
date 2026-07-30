@@ -46,6 +46,7 @@ import jax.numpy as jnp
 from jax.sharding import NamedSharding, PartitionSpec as P
 from flax import serialization
 from normalize_ratings import normalize_ratings
+from profile_preprocessing import filter_profile_entries, vectorize_entries
 
 logging.basicConfig(
     level=logging.INFO,
@@ -246,44 +247,21 @@ def preprocess_profile(
         - valid_entries: list of valid entry dicts with corpus_idx added
         - norm_stats: normalization statistics
     """
-    valid_entries = []
-    for entry in user_profile:
-        anime_id = entry["anime_id"]
-        if anime_id not in model.anime_id_to_corpus_idx:
-            continue
-
-        rating = entry.get("rating", 0) or 0
-        watch_status = entry.get("watch_status", "")
-
-        if rating > 0 or watch_status in ("completed", "watching", "dropped"):
-            valid_entries.append(
-                {
-                    "corpus_idx": model.anime_id_to_corpus_idx[anime_id],
-                    "anime_id": anime_id,
-                    "rating": rating,
-                    "watch_status": watch_status,
-                }
-            )
-
-    if not valid_entries:
+    entries = [
+        (e["anime_id"], e.get("rating", 0) or 0, e.get("watch_status", ""))
+        for e in user_profile
+    ]
+    kept = filter_profile_entries(entries, model.anime_id_to_corpus_idx)
+    if not kept:
         raise ValueError("No valid entries in user profile")
 
-    valid_entries.sort(key=lambda x: x["corpus_idx"])
-
-    corpus_indices = np.array([e["corpus_idx"] for e in valid_entries], dtype=np.int32)
-    original_ratings = np.array(
-        [
-            (
-                -2
-                if e.get("watch_status") == "dropped" and e.get("rating", 0) == 0
-                else e["rating"]
-            )
-            for e in valid_entries
-        ],
-        dtype=np.float32,
+    corpus_indices, normalized_ratings, original_ratings, norm_stats = (
+        vectorize_entries(kept)
     )
-
-    normalized_ratings, norm_stats = normalize_ratings(original_ratings)
+    valid_entries = [
+        {"corpus_idx": ci, "anime_id": aid, "rating": r, "watch_status": s}
+        for ci, aid, r, s in kept
+    ]
 
     return (
         corpus_indices,

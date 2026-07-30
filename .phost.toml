@@ -13,5 +13,5 @@ ports = ["5700:5700"]
 # Secrets (MAL_*, MYSQL_*, ADMIN_API_TOKEN) come from the gitignored .env via env_file.
 # These inline values take precedence over --env-file, which lets the build-oriented .env
 # on the builder double as the runtime env file without its DATA_DIR/ORIGIN/PORT leaking in.
-env = { ORIGIN = "https://anime.ameo.dev", PORT = "5700", DATA_DIR = "/opt/data", IS_DOCKER = "true", MODEL_SERVER_URL = "http://ameo.dev:5708", LEGACY_APP_URL = "http://ameo.dev:5702" }
+env = { ORIGIN = "https://anime.ameo.dev", PORT = "5700", DATA_DIR = "/opt/data", IS_DOCKER = "true", MODEL_SERVER_URL = "http://ameo.dev:5708", LEGACY_APP_URL = "http://ameo.dev:5702", BODY_SIZE_LIMIT = "16M" }
 env_file = ".env"

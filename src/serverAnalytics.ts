@@ -17,6 +17,15 @@ export const submitServerAnalyticsEvent = (
     .update(event.category + event.subcategory + ANALYTICS_SALT)
     .digest('hex');
 
+  // Daily-rotating synthetic session: groups a client's requests within a UTC day without
+  // needing the client to carry any session state
+  const sessionID = meta.clientIP
+    ? createHash('sha256')
+        .update(meta.clientIP + (meta.userAgent ?? '') + new Date().toISOString().slice(0, 10) + ANALYTICS_SALT)
+        .digest('hex')
+        .slice(0, 16)
+    : undefined;
+
   void fetch(ANALYTICS_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -24,7 +33,12 @@ export const submitServerAnalyticsEvent = (
       ...(meta.clientIP ? { 'X-Forwarded-For': meta.clientIP } : {}),
       ...(meta.userAgent ? { 'User-Agent': meta.userAgent } : {}),
     },
-    body: JSON.stringify({ events: [event], verification, project: ANALYTICS_PROJECT }),
+    body: JSON.stringify({
+      events: [event],
+      verification,
+      project: ANALYTICS_PROJECT,
+      ...(sessionID ? { session_id: sessionID } : {}),
+    }),
   }).catch(() => {
     // analytics must never break the app
   });

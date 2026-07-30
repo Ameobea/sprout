@@ -1,24 +1,9 @@
 import { error, text, type RequestHandler } from '@sveltejs/kit';
 
+import { CollectionType, getTableNames } from '../../collection';
 import { DbPool } from '../../dbUtil';
 import { ADMIN_API_TOKEN } from '../../conf';
 import { getUserAnimeList, getUserMangaList, MALAPIError } from '../../malAPI';
-
-enum CollectionType {
-  Anime = 'anime',
-  Manga = 'manga',
-}
-
-const getTableNames = (collectionType: CollectionType) => {
-  switch (collectionType) {
-    case CollectionType.Anime:
-      return { listsTableName: '`mal-user-animelists`', collectedStatusColumnName: 'collected' };
-    case CollectionType.Manga:
-      return { listsTableName: '`mal-user-mangalists`', collectedStatusColumnName: '`collected-manga`' };
-    default:
-      throw new Error('Unknown collection type');
-  }
-};
 
 export const GET: RequestHandler = async ({ url }) => {
   const token = url.searchParams.get('token');

@@ -23,6 +23,10 @@ export const MODEL_SERVER_URL = loadEnv('MODEL_SERVER_URL', 'http://localhost:80
 // The old pre-2026 version of the app, kept running to serve the legacy tf.js model
 export const LEGACY_APP_URL = loadEnv('LEGACY_APP_URL', 'http://ameo.dev:5702');
 
+// The main deployment with direct MySQL access; the Cloud Run username collector
+// forwards scraped usernames here rather than talking to the DB itself
+export const MAIN_SERVER_URL = loadEnv('MAIN_SERVER_URL', 'https://anime.ameo.dev');
+
 export const ADMIN_API_TOKEN = loadEnv('ADMIN_API_TOKEN');
 
 export const MYSQL_HOST = loadEnv('MYSQL_HOST');

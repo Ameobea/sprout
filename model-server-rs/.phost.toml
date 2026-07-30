@@ -10,4 +10,4 @@ health = { url = "http://localhost:5708/health" }
 
 [deploy.run]
 net = "host"
-env = { PORT = "5708", PRECISION = "bf16" }
+env = { PORT = "5708", METRICS_PORT = "5709", PRECISION = "bf16" }

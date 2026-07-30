@@ -1,5 +1,6 @@
 pub mod engine;
 pub mod kernels;
+pub mod metrics;
 pub mod norm;
 pub mod pool;
 pub mod post;

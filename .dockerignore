@@ -1,15 +1,9 @@
-node_modules
+# Allowlist: the image only needs the server output (built outside docker), deps manifests, and data files
+*
+!package.json
+!yarn.lock
+!build
+!data
 data/*
-!data/corpus_ids.json
 !data/processed-metadata.csv
-!data/projected_embedding*.json
 !data/projected_model_embedding.json
-notebooks
-*.tar.gz
-*.tar.bz2
-Justfile
-README.md
-queue-receiver
-node_modules
-# we need to include this; we build outside the docker context
-# build

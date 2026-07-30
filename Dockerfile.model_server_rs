@@ -23,9 +23,10 @@ ENV MODEL_PATH=/opt/model/jax_model.msgpack
 ENV CORPUS_PATH=/opt/model/corpus_ids.json
 ENV METADATA_PATH=/opt/model/processed-metadata.csv
 ENV PORT=8000
+ENV METRICS_PORT=5709
 ENV INFER_THREADS=8
 ENV PIN_CORES=1
 ENV PRECISION=bf16
 
-EXPOSE 8000
+EXPOSE 8000 5709
 CMD ["model-server"]

@@ -32,13 +32,16 @@ deploy:
 launch-jupyter:
   #!/usr/bin/env zsh
 
-  id="$(docker run -d --net host -v "${PWD}":/home/jovyan/work --user root --memory-swap -1 -e GRANT_SUDO=yes -e MYSQL_HOST="$MYSQL_HOST" -e MYSQL_USER="$MYSQL_USER" -e MYSQL_PASSWORD="$MYSQL_PASSWORD" -e MYSQL_DATABASE="$MYSQL_DATABASE" jupyter/tensorflow-notebook:latest)"
+  id="$(docker run -d --net host -v "${PWD}":/home/jovyan/work --user root --memory-swap -1 -e GRANT_SUDO=yes -e MYSQL_HOST=127.0.0.1 -e MYSQL_USER="$MYSQL_USER" -e MYSQL_PASSWORD="$MYSQL_PASSWORD" -e MYSQL_DATABASE="$MYSQL_DATABASE" quay.io/jupyter/scipy-notebook:latest)"
   echo "Launched docker container with id=${id}"
   sleep 1
   echo "$((docker logs $id) 2>&1 | grep token | head -n 1)"
 
 launch-jax:
   docker run -it -d --network=host --device=/dev/kfd --device=/dev/dri --ipc=host --shm-size 32G --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/jax_dir --name rocm_jax rocm/jax:latest /bin/bash
+
+build-agent:
+  ./node_modules/.bin/esbuild fleet/agent/agent.ts --bundle --platform=node --target=node18 --outfile=fleet/agent/dist/agent.cjs --log-level=warning
 
 model-server-rs-build:
   docker build -f Dockerfile.model_server_rs -t anime-model-server-rs:latest .

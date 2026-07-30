@@ -37,8 +37,12 @@ profile-holdout scoring (it never forwards the flag); this is replicated.
 
 ## Env
 
-`MODEL_PATH`, `CORPUS_PATH`, `METADATA_PATH`, `PORT`, `INFER_THREADS` (8),
-`PIN_CORES` (1), `PRECISION` (`f32`|`bf16`).
+`MODEL_PATH`, `CORPUS_PATH`, `METADATA_PATH`, `PORT`, `METRICS_PORT` (5709),
+`INFER_THREADS` (8), `PIN_CORES` (1), `PRECISION` (`f32`|`bf16`).
+
+Prometheus metrics (via `foundations`) are served on `METRICS_PORT` at
+`/metrics`: request rates/latencies, inference + queue-wait timings, profile
+size and response size distributions, cache utilization, errors.
 
 ## Bench / test
 

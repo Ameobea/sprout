@@ -10,3 +10,8 @@ export const DbPool = mysql.createPool({
   database: MYSQL_DATABASE,
   charset: 'utf8mb4_unicode_ci',
 });
+
+export const dbQuery = <T = any>(sql: string, values?: unknown[]): Promise<T> =>
+  new Promise((resolve, reject) =>
+    DbPool.query(sql, values, (err, results) => (err ? reject(err) : resolve(results)))
+  );

@@ -1,3 +1,5 @@
+use foundations::telemetry::settings::TelemetrySettings;
+use foundations::telemetry::TelemetryConfig;
 use model_server_rs::engine::{Engine, Precision};
 use model_server_rs::kernels::DEFAULT_CFG;
 use model_server_rs::recommend::ModelData;
@@ -5,6 +7,7 @@ use model_server_rs::server::build_router;
 use model_server_rs::weights::Params;
 use model_server_rs::CORPUS;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -39,6 +42,7 @@ fn main() {
     let corpus_path = envv("CORPUS_PATH", "/opt/model/corpus_ids.json");
     let metadata_path = envv("METADATA_PATH", "/opt/model/processed-metadata.csv");
     let port: u16 = envv("PORT", "8000").parse().unwrap();
+    let metrics_port: u16 = envv("METRICS_PORT", "5709").parse().unwrap();
     let threads: usize = envv("INFER_THREADS", "8").parse().unwrap();
     let pin = envv("PIN_CORES", "1") == "1";
     let prec = match envv("PRECISION", "f32").as_str() {
@@ -73,6 +77,21 @@ fn main() {
         .build()
         .unwrap();
     rt.block_on(async {
+        let mut service_info = foundations::service_info!();
+        service_info.name_in_metrics = "anime_model_server".into();
+        let mut tele_settings = TelemetrySettings::default();
+        tele_settings.server.addr = SocketAddr::from(([0, 0, 0, 0], metrics_port)).into();
+        let tele_driver = foundations::telemetry::init(TelemetryConfig {
+            service_info: &service_info,
+            settings: &tele_settings,
+            custom_server_routes: vec![],
+        })
+        .unwrap();
+        if let Some(addr) = tele_driver.server_addr() {
+            println!("telemetry server listening on http://{addr}");
+        }
+        tokio::task::spawn(tele_driver);
+
         let app = build_router(md);
         let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.unwrap();
         println!("listening on 0.0.0.0:{port}");

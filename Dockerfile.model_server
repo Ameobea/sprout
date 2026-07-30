@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir \
 COPY notebooks/model_server.py /app/
 COPY notebooks/model.py /app/
 COPY notebooks/normalize_ratings.py /app/
+COPY notebooks/profile_preprocessing.py /app/
 
 # Copy model weights and corpus mapping
 COPY data/jax_model.msgpack /opt/model/jax_model.msgpack
