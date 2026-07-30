@@ -27,12 +27,7 @@ deploy-gcs:
     --project=free-tier-164405
 
 deploy:
-  #!/bin/bash
-
-  just build
-  just docker-build
-  docker save anime-atlas:latest | bzip2 > anime-atlas.tar.bz2
-  ameotrack upload -e 1 anime-atlas.tar.bz2
+  phost deploy
 
 launch-jupyter:
   #!/usr/bin/env zsh
