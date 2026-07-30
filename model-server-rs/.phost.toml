@@ -1,0 +1,13 @@
+[app]
+name = "anime-model-server-rs"
+
+[build]
+commands = ["docker build -f ../Dockerfile.model_server_rs -t anime-model-server-rs:latest .."]
+image = "anime-model-server-rs:latest"
+
+[deploy]
+health = { url = "http://localhost:5708/health" }
+
+[deploy.run]
+net = "host"
+env = { PORT = "5708", PRECISION = "bf16" }

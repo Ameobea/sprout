@@ -1,0 +1,31 @@
+# Rust inference engine for the anime recommendation model.
+#
+# Build: docker build -f Dockerfile.model_server_rs -t anime-model-server-rs .
+# Run:   docker run --net host -e PORT=5708 anime-model-server-rs
+#
+# NOTE: built with -C target-cpu=znver4 (see model-server-rs/.cargo/config.toml);
+# the binary requires an AVX-512 Zen 4+ CPU (EPYC 4344P prod box, 7950X dev box).
+
+FROM rustlang/rust:nightly-slim AS build
+WORKDIR /src
+COPY model-server-rs/Cargo.toml model-server-rs/Cargo.lock ./
+COPY model-server-rs/.cargo .cargo
+COPY model-server-rs/src src
+RUN cargo build --release --bin serve
+
+FROM debian:bookworm-slim
+COPY --from=build /src/target/release/serve /usr/local/bin/model-server
+COPY data/jax_model.msgpack /opt/model/jax_model.msgpack
+COPY data/corpus_ids.json /opt/model/corpus_ids.json
+COPY data/processed-metadata.csv /opt/model/processed-metadata.csv
+
+ENV MODEL_PATH=/opt/model/jax_model.msgpack
+ENV CORPUS_PATH=/opt/model/corpus_ids.json
+ENV METADATA_PATH=/opt/model/processed-metadata.csv
+ENV PORT=8000
+ENV INFER_THREADS=8
+ENV PIN_CORES=1
+ENV PRECISION=bf16
+
+EXPOSE 8000
+CMD ["model-server"]

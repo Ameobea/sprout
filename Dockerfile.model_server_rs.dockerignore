@@ -1,0 +1,8 @@
+*
+!model-server-rs/
+model-server-rs/target/
+model-server-rs/jax_model.msgpack
+model-server-rs/testdata/
+!data/jax_model.msgpack
+!data/corpus_ids.json
+!data/processed-metadata.csv

@@ -1,0 +1,30 @@
+[package]
+name = "model-server-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rmpv = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "signal"] }
+libc = "0.2"
+csv = "1"
+faer = { version = "0.23", optional = true }
+
+[features]
+bench-compare = ["faer"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+debug = true
+
+[[bin]]
+name = "serve"
+path = "src/bin/serve.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
