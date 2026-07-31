@@ -90,12 +90,14 @@ def load_params(weights_path):
         return serialization.from_bytes(params, f.read())
 
 
-def eval_profile(params, idxs, vals, original, statuses, corpus_size, device):
+def eval_profile(params, idxs, vals, original, statuses, corpus_size, device, serve_prior=None):
     n = len(idxs)
     item_logits, rating_pred = batch_holdout_predict(
         params, idxs, vals, corpus_size, device=device, aux=build_aux(original, statuses)
     )
     item_logits = np.array(item_logits)
+    if serve_prior is not None:
+        item_logits = item_logits + serve_prior[None, :]
     rating_pred = np.array(rating_pred)
 
     probs = np.array(jax.nn.softmax(jnp.array(item_logits), axis=1))
@@ -145,8 +147,15 @@ def main():
     ap.add_argument("--restrict-corpus", help="corpus_ids.json of another model; eval on intersection only")
     ap.add_argument("--device", default="cpu", choices=["cpu", "gpu"])
     ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
+    ap.add_argument("--serve-prior-alpha", type=float, default=0.0,
+                    help="add alpha*log_pop to logits before ranking (lift-trained models)")
     args = ap.parse_args()
     CONF["input_channels"] = args.input_channels
+
+    serve_prior = None
+    if args.serve_prior_alpha != 0.0:
+        counts = np.load(Path(__file__).parent / "../../data/item_popularity_dec2025.npy")
+        serve_prior = (args.serve_prior_alpha * np.log(np.maximum(counts, 1.0))).astype(np.float32)
 
     with open(args.corpus) as f:
         corpus_ids = json.load(f)
@@ -172,7 +181,7 @@ def main():
         per_profile[username] = {
             "bucket": p["bucket"],
             "coverage": len(idxs) / max(1, len(p["items"])),
-            **eval_profile(params, idxs, vals, original, statuses, CONF["corpus_size"], args.device),
+            **eval_profile(params, idxs, vals, original, statuses, CONF["corpus_size"], args.device, serve_prior),
         }
         if (i + 1) % 20 == 0:
             print(f"{i + 1}/{len(profiles)} profiles evaluated")

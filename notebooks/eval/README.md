@@ -10,13 +10,24 @@ they undervalue that goal. Use them as guardrails, not as the objective.
 
 - `eval_harness.py` — deterministic leave-one-out over every in-corpus item of every
   fixture profile (zero RNG). Reports rating MAE, recall@{10,50,100}, median rank, per
-  bucket and overall. ~40 min on CPU.
+  bucket and overall. ~40 min on CPU. `--serve-prior-alpha A` (default 0 = off) adds
+  A·log_pop to logits before ranking — required for lift-trained (logQ) models.
 - `temporal_eval.py` — future-watch eval: input is the profile as of 2025-06-24,
   targets are items watched after. Includes a global-popularity baseline and sweeps the
   ranking blend (`--logit-weights`) without re-running the model. ~3 min on CPU.
-- Both take `--input-channels {2,3,5}`, which **must match how the model was trained**.
+  Since 2026-08-01 also reports `by_popularity_tier` (micro-averaged target recall by
+  global-popularity tier — the hidden-gems metric) and `rec_popularity` (how niche the
+  top-k recs are); additive fields, frozen metrics verified unchanged.
+- `presence_diagnostics.py` — popularity decomposition of the presence head (prob↔pop
+  correlation, per-tier NLL/recall, head isolation). `pop_correction_sweep.py` —
+  inference-time ranking variants (logQ α, alt z-score, niche-boost analog) from one
+  cached forward pass per user; negative α re-adds popularity for lift models.
+  `eyeball_recs.py` — qualitative top-k for a sentinel profile with titles+pop ranks.
+  All three read `data/item_popularity_dec2025.npy`.
+- All take `--input-channels {2,3,5}`, which **must match how the model was trained**.
 - `fixtures/` — frozen, never regenerate; comparability across all reports depends on it.
-  `reports/` — one JSON per run.
+  `reports/` — one JSON per run, flat; the dec2025-era reports live in
+  `reports/archive-dec2025/` with a map in `reports/INDEX.md`.
 
 ## Fixtures
 
@@ -35,8 +46,11 @@ combined so older reports stay comparable. v2 was added because v1's 10–29 buc
 
 From identical-config retrains: **LOO overall MAE ~0.003**, per 25-profile bucket
 ~0.02. The temporal eval at n=300 is noisier — two identical statuschan runs differed
-by 0.005 recall@10 and 29 median-rank positions. **Confirm every winner with a second
-training run.**
+by 0.005 recall@10 and 29 median-rank positions, and dec2025 vs replication (same
+data+code) differ by 0.016 overall recall@50. Tail popularity tiers (n=820–3079
+pooled targets) show ~±0.008 cross-model spread. Within-model rerank comparisons
+(same forward passes, different scoring) are noise-free. **Confirm every winner with
+a second training run.**
 
 ## Baselines (LOO, v1+v2 combined, n=454)
 

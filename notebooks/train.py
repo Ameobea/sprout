@@ -99,12 +99,11 @@ def create_train_state(rng, learning_rate):
 
 
 @jax.jit
-def train_step(state, batch, rated_mask):
+def train_step(state, batch, rated_mask, prior_logits, pop_w):
     presence = batch[:, : CONF["corpus_size"]]
     ratings_z = batch[:, CONF["corpus_size"] : 2 * CONF["corpus_size"]]
 
     dropout_rng, vae_rng = random.split(state.key)
-    # keep = random.bernoulli(dropout_rng, p=(1.0 - dropout_rate), shape=presence.shape)
 
     # vary the dropout rate for each sample in the batch +-40% from the base rate
     rate_variation = CONF["dropout_variation"] * CONF["dropout_rate"]
@@ -117,7 +116,13 @@ def train_step(state, batch, rated_mask):
     # clamp to force the droprate rate to always be in [0.01, 0.75]
     random_rates = jnp.clip(random_rates, 0.01, 0.75)
 
-    keep = random.bernoulli(dropout_rng, p=(1.0 - random_rates), shape=presence.shape)
+    # popularity-biased dropout: per-item drop prob scaled by pop_w, renormalized
+    # over each row's present items so the expected per-row rate stays random_rates.
+    # pop_w = ones reduces to uniform dropout bit-identically.
+    present_w_sum = jnp.maximum(jnp.sum(presence * pop_w[None, :], axis=1, keepdims=True), 1e-6)
+    n_present = jnp.sum(presence, axis=1, keepdims=True)
+    drop_p = jnp.clip(random_rates * pop_w[None, :] * n_present / present_w_sum, 0.0, 0.95)
+    keep = random.bernoulli(dropout_rng, p=(1.0 - drop_p), shape=presence.shape)
 
     # corrupt all input channels consistently (presence, ratings, optional mask)
     b, cs = presence.shape
@@ -137,8 +142,9 @@ def train_step(state, batch, rated_mask):
             rngs={"noise": vae_rng},
         )
 
-        # presence multinomial loss
-        log_probs = jax.nn.log_softmax(item_logits, axis=1)
+        # presence multinomial loss; prior_logits (log-popularity offset, zeros when
+        # disabled) absorbs the global prior so item_logits learn lift over popularity
+        log_probs = jax.nn.log_softmax(item_logits + prior_logits[None, :], axis=1)
         per_user_counts = jnp.maximum(jnp.sum(x_tgt_presence, axis=1), 1.0)
         recon_presence_per_user = (
             -jnp.sum(x_tgt_presence * log_probs, axis=1) / per_user_counts
@@ -182,7 +188,7 @@ def train_step(state, batch, rated_mask):
 
 
 @jax.jit
-def validation_step(state, batch, rated_mask):
+def validation_step(state, batch, rated_mask, prior_logits):
     presence = batch[:, : CONF["corpus_size"]]
     ratings_z = batch[:, CONF["corpus_size"] : 2 * CONF["corpus_size"]]
 
@@ -197,7 +203,7 @@ def validation_step(state, batch, rated_mask):
     )
 
     # --- Presence multinomial loss ---
-    log_probs = jax.nn.log_softmax(item_logits, axis=1)
+    log_probs = jax.nn.log_softmax(item_logits + prior_logits[None, :], axis=1)
     per_user_counts = jnp.maximum(jnp.sum(x_tgt_presence, axis=1), 1.0)
     recon_presence_per_user = (
         -jnp.sum(x_tgt_presence * log_probs, axis=1) / per_user_counts
@@ -458,6 +464,9 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
         indices = data["indices"]
         values = data["values"]
         lengths = data["lengths"]
+        item_counts = np.bincount(indices, minlength=CONF["corpus_size"]).astype(
+            np.float64
+        )
 
         if "rated_masks" in data:
             packed_masks = data["rated_masks"]
@@ -495,10 +504,16 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
         idx_start = idx_end
 
     print(f"Loaded {len(all_users)} user profiles.")
-    return all_users
+    return all_users, item_counts
 
 
-def main(steps=50_000, vectors_path="../data/user_input_vectors.npz", out_path="../data/jax_model.msgpack"):
+def main(
+    steps=50_000,
+    vectors_path="../data/user_input_vectors.npz",
+    out_path="../data/jax_model.msgpack",
+    presence_prior_alpha=0.0,
+    pop_dropout_beta=0.0,
+):
     rng = random.PRNGKey(0)
     state = create_train_state(rng, CONF["learning_rate"])
 
@@ -524,7 +539,23 @@ def main(steps=50_000, vectors_path="../data/user_input_vectors.npz", out_path="
             anime_titles[anime_id] = title
     print(f"Loaded {len(anime_titles)} anime titles")
 
-    all_users = load_all_users(vectors_path)
+    all_users, item_counts = load_all_users(vectors_path)
+
+    clipped = np.maximum(item_counts, 1.0)
+    if presence_prior_alpha > 0.0:
+        log_pop_frac = np.log(clipped / clipped.sum())
+        prior_logits = jnp.asarray(
+            presence_prior_alpha * log_pop_frac, dtype=jnp.float32
+        )
+        print(f"presence prior enabled: alpha={presence_prior_alpha}")
+    else:
+        prior_logits = jnp.zeros(CONF["corpus_size"], dtype=jnp.float32)
+
+    if pop_dropout_beta > 0.0:
+        pop_w = jnp.asarray(clipped**pop_dropout_beta, dtype=jnp.float32)
+        print(f"popularity-biased dropout enabled: beta={pop_dropout_beta}")
+    else:
+        pop_w = jnp.ones(CONF["corpus_size"], dtype=jnp.float32)
 
     print("Starting training...")
     loader = data_generator(all_users, batch_size=CONF["batch_size"])
@@ -545,7 +576,7 @@ def main(steps=50_000, vectors_path="../data/user_input_vectors.npz", out_path="
         rated_mask_jax = jnp.array(rated_mask)
 
         state, loss, presence_loss, rating_loss = train_step(
-            state, batch_jax, rated_mask_jax
+            state, batch_jax, rated_mask_jax, prior_logits, pop_w
         )
 
         if step % 100 == 0:
@@ -566,7 +597,7 @@ def main(steps=50_000, vectors_path="../data/user_input_vectors.npz", out_path="
             val_batch_jax = jnp.array(val_batch)
             val_rated_mask_jax = jnp.array(val_rated_mask)
             val_presence, val_rating = validation_step(
-                state, val_batch_jax, val_rated_mask_jax
+                state, val_batch_jax, val_rated_mask_jax, prior_logits
             )
             print(
                 f"  [Validation @ step {step}]: "
@@ -625,7 +656,15 @@ if __name__ == "__main__":
     ap.add_argument("--out", default="../data/jax_model.msgpack")
     ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
     ap.add_argument("--dropout-rate", type=float, default=CONF["dropout_rate"])
+    ap.add_argument("--presence-prior-alpha", type=float, default=0.0)
+    ap.add_argument("--pop-dropout-beta", type=float, default=0.0)
     args = ap.parse_args()
     CONF["input_channels"] = args.input_channels
     CONF["dropout_rate"] = args.dropout_rate
-    main(steps=args.steps, vectors_path=args.vectors, out_path=args.out)
+    main(
+        steps=args.steps,
+        vectors_path=args.vectors,
+        out_path=args.out,
+        presence_prior_alpha=args.presence_prior_alpha,
+        pop_dropout_beta=args.pop_dropout_beta,
+    )
