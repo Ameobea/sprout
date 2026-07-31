@@ -17,3 +17,4 @@ data/*
 /fleet/hosts
 /fleet/agent/dist
 RUN_STATE.md
+WORKSTREAMS.md

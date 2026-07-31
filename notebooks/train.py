@@ -474,7 +474,7 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
     return all_users
 
 
-def main(steps=50_000):
+def main(steps=50_000, vectors_path="../data/user_input_vectors.npz", out_path="../data/jax_model.msgpack"):
     rng = random.PRNGKey(0)
     state = create_train_state(rng, CONF["learning_rate"])
 
@@ -500,7 +500,7 @@ def main(steps=50_000):
             anime_titles[anime_id] = title
     print(f"Loaded {len(anime_titles)} anime titles")
 
-    all_users = load_all_users()
+    all_users = load_all_users(vectors_path)
 
     print("Starting training...")
     loader = data_generator(all_users, batch_size=CONF["batch_size"])
@@ -587,10 +587,17 @@ def main(steps=50_000):
             print(f"\n{'#' * 80}\n")
 
     bytes_output = serialization.to_bytes(state.params)
-    with open("../data/jax_model.msgpack", "wb") as f:
+    with open(out_path, "wb") as f:
         f.write(bytes_output)
-    print("Model parameters saved to ../data/jax_model.msgpack")
+    print(f"Model parameters saved to {out_path}")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--steps", type=int, default=50_000)
+    ap.add_argument("--vectors", default="../data/user_input_vectors.npz")
+    ap.add_argument("--out", default="../data/jax_model.msgpack")
+    args = ap.parse_args()
+    main(steps=args.steps, vectors_path=args.vectors, out_path=args.out)

@@ -56,6 +56,10 @@ def load_fixture_profiles():
         profiles[name] = {"bucket": "sentinel", "items": items}
     with open(FIXTURES_DIR / "sampled_profiles.json") as f:
         profiles.update(json.load(f))
+    v2 = FIXTURES_DIR / "sampled_profiles_v2.json"
+    if v2.exists():
+        with open(v2) as f:
+            profiles.update(json.load(f))
     return profiles
 
 
@@ -169,6 +173,8 @@ def main():
             b: aggregate([r for r in per_profile.values() if r["bucket"] == b]) for b in buckets
         },
         "overall": aggregate(list(per_profile.values())),
+        "overall_v1": aggregate([r for r in per_profile.values() if not r["bucket"].startswith("v2-")]),
+        "overall_v2": aggregate([r for r in per_profile.values() if r["bucket"].startswith("v2-")]),
         "per_profile": per_profile,
     }
 
@@ -182,8 +188,10 @@ def main():
         print(f"  {u}: mae={r['rating_mae']:.4f} recall@50={r['recall@50']:.3f} median_rank={r['median_rank']:.0f}")
     for b, a in report["by_bucket"].items():
         print(f"  [{b}] n={a['n_profiles']} mae={a['rating_mae']:.4f} recall@50={a['recall@50']:.3f} median_rank={a['median_rank']:.0f}")
-    o = report["overall"]
-    print(f"  overall: n={o['n_profiles']} mae={o['rating_mae']:.4f} recall@50={o['recall@50']:.3f} median_rank={o['median_rank']:.0f}")
+    for key in ["overall", "overall_v1", "overall_v2"]:
+        o = report[key]
+        if o["n_profiles"]:
+            print(f"  {key}: n={o['n_profiles']} mae={o['rating_mae']:.4f} recall@50={o['recall@50']:.3f} median_rank={o['median_rank']:.0f}")
     print(f"report written to {out_path}")
 
 
