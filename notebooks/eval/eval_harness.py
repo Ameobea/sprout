@@ -66,21 +66,35 @@ def load_fixture_profiles():
 def preprocess(items, id_to_idx, restrict_ids=None):
     kept = filter_profile_entries(items, id_to_idx, restrict_ids)
     idxs, normalized, original, _ = vectorize_entries(kept)
-    return idxs, normalized, original
+    statuses = np.array([k[3] for k in kept])
+    return idxs, normalized, original, statuses
+
+
+def build_aux(original, statuses):
+    nch = CONF["input_channels"]
+    if nch <= 2:
+        return None
+    rows = [(original > 0).astype(np.float32)]
+    if nch == 5:
+        rows.append((statuses == "dropped").astype(np.float32))
+        rows.append(np.isin(statuses, ("watching", "on_hold")).astype(np.float32))
+    return np.stack(rows)
 
 
 def load_params(weights_path):
     model = Recommender()
     rng = random.PRNGKey(0)
-    dummy = jnp.ones((1, CONF["corpus_size"] * 2))
+    dummy = jnp.ones((1, CONF["corpus_size"] * CONF["input_channels"]))
     params = model.init({"params": rng, "noise": rng}, dummy)["params"]
     with open(weights_path, "rb") as f:
         return serialization.from_bytes(params, f.read())
 
 
-def eval_profile(params, idxs, vals, original, corpus_size, device):
+def eval_profile(params, idxs, vals, original, statuses, corpus_size, device):
     n = len(idxs)
-    item_logits, rating_pred = batch_holdout_predict(params, idxs, vals, corpus_size, device=device)
+    item_logits, rating_pred = batch_holdout_predict(
+        params, idxs, vals, corpus_size, device=device, aux=build_aux(original, statuses)
+    )
     item_logits = np.array(item_logits)
     rating_pred = np.array(rating_pred)
 
@@ -130,7 +144,9 @@ def main():
     ap.add_argument("--name", required=True)
     ap.add_argument("--restrict-corpus", help="corpus_ids.json of another model; eval on intersection only")
     ap.add_argument("--device", default="cpu", choices=["cpu", "gpu"])
+    ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
     args = ap.parse_args()
+    CONF["input_channels"] = args.input_channels
 
     with open(args.corpus) as f:
         corpus_ids = json.load(f)
@@ -149,14 +165,14 @@ def main():
     per_profile = {}
     skipped = []
     for i, (username, p) in enumerate(sorted(profiles.items())):
-        idxs, vals, original = preprocess(p["items"], id_to_idx, restrict_ids)
+        idxs, vals, original, statuses = preprocess(p["items"], id_to_idx, restrict_ids)
         if len(idxs) < 5:
             skipped.append(username)
             continue
         per_profile[username] = {
             "bucket": p["bucket"],
             "coverage": len(idxs) / max(1, len(p["items"])),
-            **eval_profile(params, idxs, vals, original, CONF["corpus_size"], args.device),
+            **eval_profile(params, idxs, vals, original, statuses, CONF["corpus_size"], args.device),
         }
         if (i + 1) % 20 == 0:
             print(f"{i + 1}/{len(profiles)} profiles evaluated")
@@ -165,6 +181,7 @@ def main():
     report = {
         "name": args.name,
         "weights": str(args.weights),
+        "input_channels": CONF["input_channels"],
         "corpus": str(args.corpus),
         "restrict_corpus": args.restrict_corpus,
         "skipped_too_small": skipped,

@@ -1,2 +1,6 @@
-[build]
+# Must live under [target.<triple>], not [build]: cargo picks exactly one rustflags
+# source (RUSTFLAGS > target.<triple> > build), so a `[target.x86_64-unknown-linux-gnu]`
+# entry in ~/.cargo/config.toml silently discards a [build] entry here. Same-key arrays
+# across config files are joined, so any user-level flags for this triple still apply.
+[target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "target-cpu=znver4"]

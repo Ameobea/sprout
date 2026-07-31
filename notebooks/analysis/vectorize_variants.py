@@ -30,6 +30,7 @@ from normalize_ratings import normalize_ratings
 
 MIN_RAW_ROWS = 30
 VARIANTS = ["baseline", "trustmask", "harddrop", "cleanup", "cleanup_notrust"]
+STATUS_CODE = {"completed": 0, "watching": 1, "on_hold": 2, "dropped": 3, "plan_to_watch": 4}
 
 
 def load_flags(metrics_path):
@@ -48,7 +49,7 @@ def load_flags(metrics_path):
 
 
 def process(user_ratings, ix_by_id, keep_rated_ptw):
-    indices, scores, rated = [], [], []
+    indices, scores, rated, codes = [], [], [], []
     for aid, score, status in user_ratings:
         ix = ix_by_id.get(aid)
         if ix is None:
@@ -66,6 +67,7 @@ def process(user_ratings, ix_by_id, keep_rated_ptw):
             rated.append(True)
         indices.append(ix)
         scores.append(score)
+        codes.append(STATUS_CODE[status])
     if not indices:
         return None
     norm, _ = normalize_ratings(np.array(scores, dtype=np.float32))
@@ -73,15 +75,17 @@ def process(user_ratings, ix_by_id, keep_rated_ptw):
         np.array(indices, dtype=np.int16),
         norm.astype(np.float32),
         np.array(rated, dtype=bool),
+        np.array(codes, dtype=np.uint8),
     )
 
 
 def save(vectors, path):
-    all_idx, all_val, all_rated, lengths = [], [], [], []
-    for idxs, vals, rated in vectors:
+    all_idx, all_val, all_rated, all_codes, lengths = [], [], [], [], []
+    for idxs, vals, rated, codes in vectors:
         all_idx.append(idxs)
         all_val.append(vals)
         all_rated.append(rated)
+        all_codes.append(codes)
         lengths.append(len(idxs))
     masks = np.concatenate(all_rated).astype(np.uint8)
     np.savez(
@@ -91,6 +95,7 @@ def save(vectors, path):
         lengths=np.array(lengths, dtype=np.int32),
         rated_masks=np.packbits(masks),
         total_mask_bits=np.array([len(masks)], dtype=np.int64),
+        statuses=np.concatenate(all_codes),
     )
     print(f"{path}: {len(vectors):,} users, {len(masks):,} entries, "
           f"{int(masks.sum()):,} rated ({masks.mean():.1%})")
@@ -130,7 +135,7 @@ def main():
             out["baseline"].append(base)
         if "trustmask" in out and base is not None:
             if is_untrusted:
-                out["trustmask"].append((base[0], base[1], np.zeros(len(base[0]), dtype=bool)))
+                out["trustmask"].append((base[0], base[1], np.zeros(len(base[0]), dtype=bool), base[3]))
             else:
                 out["trustmask"].append(base)
         if "harddrop" in out and base is not None and not is_untrusted:
@@ -141,8 +146,7 @@ def main():
                 if "cleanup_notrust" in out:
                     out["cleanup_notrust"].append(res)
                 if "cleanup" in out:
-                    if is_untrusted:
-                        res = (res[0], res[1], np.zeros(len(res[0]), dtype=bool))
+                    res = (res[0], res[1], np.zeros(len(res[0]), dtype=bool), res[3]) if is_untrusted else res
                     out["cleanup"].append(res)
 
     print(f"done scanning {n_users:,} users")

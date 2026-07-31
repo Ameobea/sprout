@@ -287,20 +287,22 @@ static KERNS_BF16_32: [KernBf16Fn; 8] =
 pub fn a_to_bf16(a: *const f32, m: usize, lda: usize, out: &mut Vec<u16>) {
     out.clear();
     out.resize(m * lda + 2, 0); // +2: kernel k-pair tail may read one element past odd K
-    unsafe {
-        let n = m * lda;
-        let mut i = 0;
-        while i + 32 <= n {
-            let lo = _mm512_loadu_ps(a.add(i));
-            let hi = _mm512_loadu_ps(a.add(i + 16));
-            let packed = _mm512_cvtne2ps_pbh(hi, lo);
-            _mm512_storeu_si512(out.as_mut_ptr().add(i) as *mut __m512i, std::mem::transmute(packed));
-            i += 32;
-        }
-        while i < n {
-            out[i] = f32_to_bf16(*a.add(i));
-            i += 1;
-        }
+    unsafe { a_to_bf16_avx(a, m * lda, out) };
+}
+
+#[target_feature(enable = "avx512f,avx512bf16")]
+unsafe fn a_to_bf16_avx(a: *const f32, n: usize, out: &mut [u16]) {
+    let mut i = 0;
+    while i + 32 <= n {
+        let lo = _mm512_loadu_ps(a.add(i));
+        let hi = _mm512_loadu_ps(a.add(i + 16));
+        let packed = _mm512_cvtne2ps_pbh(hi, lo);
+        _mm512_storeu_si512(out.as_mut_ptr().add(i) as *mut __m512i, std::mem::transmute(packed));
+        i += 32;
+    }
+    while i < n {
+        out[i] = f32_to_bf16(*a.add(i));
+        i += 1;
     }
 }
 

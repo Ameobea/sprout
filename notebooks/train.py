@@ -25,6 +25,8 @@ EVAL_PROFILE_MAX_RATINGS = 300
 
 
 def data_generator(all_users, batch_size=32):
+    cs = CONF["corpus_size"]
+    nch = CONF["input_channels"]
     while True:
         # the list of users is shuffled each epoch
         perm = np.random.permutation(len(all_users))
@@ -33,20 +35,33 @@ def data_generator(all_users, batch_size=32):
             batch_indices = perm[b_idx : b_idx + batch_size]
 
             current_batch_size = len(batch_indices)
-            batch_tensor = np.zeros(
-                (current_batch_size, CONF["corpus_size"] * 2), dtype=np.float32
-            )
-            rated_mask_tensor = np.zeros(
-                (current_batch_size, CONF["corpus_size"]), dtype=np.float32
-            )
+            batch_tensor = np.zeros((current_batch_size, cs * nch), dtype=np.float32)
+            rated_mask_tensor = np.zeros((current_batch_size, cs), dtype=np.float32)
 
             for i, u_idx in enumerate(batch_indices):
-                idxs, vals, rated = all_users[u_idx]
+                idxs, vals, rated, statuses = all_users[u_idx]
                 batch_tensor[i, idxs] = 1.0
-                batch_tensor[i, CONF["corpus_size"] + idxs] = vals
+                batch_tensor[i, cs + idxs] = vals
                 rated_mask_tensor[i, idxs] = rated.astype(np.float32)
+                if nch >= 3:
+                    batch_tensor[i, 2 * cs + idxs] = rated
+                if nch == 5:
+                    batch_tensor[i, 3 * cs + idxs] = statuses == 3
+                    batch_tensor[i, 4 * cs + idxs] = (statuses == 1) | (statuses == 2)
 
             yield batch_tensor, rated_mask_tensor
+
+
+def profile_aux(rated, statuses):
+    """aux rows for channels 2..n from npz per-user arrays (see data_generator)."""
+    nch = CONF["input_channels"]
+    if nch <= 2:
+        return None
+    rows = [rated.astype(np.float32)]
+    if nch == 5:
+        rows.append((statuses == 3).astype(np.float32))
+        rows.append(((statuses == 1) | (statuses == 2)).astype(np.float32))
+    return np.stack(rows)
 
 
 class TrainState(train_state.TrainState):
@@ -56,7 +71,7 @@ class TrainState(train_state.TrainState):
 def create_train_state(rng, learning_rate):
     model = Recommender()
 
-    dummy_input = jnp.ones((1, CONF["corpus_size"] * 2))
+    dummy_input = jnp.ones((1, CONF["corpus_size"] * CONF["input_channels"]))
     params = model.init({"params": rng, "noise": rng}, dummy_input)["params"]
 
     # Number of epochs with no improvement after which learning rate will be reduced
@@ -86,7 +101,7 @@ def create_train_state(rng, learning_rate):
 @jax.jit
 def train_step(state, batch, rated_mask):
     presence = batch[:, : CONF["corpus_size"]]
-    ratings_z = batch[:, CONF["corpus_size"] :]
+    ratings_z = batch[:, CONF["corpus_size"] : 2 * CONF["corpus_size"]]
 
     dropout_rng, vae_rng = random.split(state.key)
     # keep = random.bernoulli(dropout_rng, p=(1.0 - dropout_rate), shape=presence.shape)
@@ -104,9 +119,10 @@ def train_step(state, batch, rated_mask):
 
     keep = random.bernoulli(dropout_rng, p=(1.0 - random_rates), shape=presence.shape)
 
-    corrupted_presence = presence * keep
-    corrupted_ratings = ratings_z * keep
-    x_in = jnp.concatenate([corrupted_presence, corrupted_ratings], axis=1)
+    # corrupt all input channels consistently (presence, ratings, optional mask)
+    b, cs = presence.shape
+    nch = CONF["input_channels"]
+    x_in = (batch.reshape(b, nch, cs) * keep[:, None, :]).reshape(b, nch * cs)
 
     x_tgt_presence = presence
     # For rating loss, only consider items that were actually rated by the user
@@ -168,7 +184,7 @@ def train_step(state, batch, rated_mask):
 @jax.jit
 def validation_step(state, batch, rated_mask):
     presence = batch[:, : CONF["corpus_size"]]
-    ratings_z = batch[:, CONF["corpus_size"] :]
+    ratings_z = batch[:, CONF["corpus_size"] : 2 * CONF["corpus_size"]]
 
     # No dropout - use full input
     x_in = batch
@@ -271,7 +287,7 @@ def select_eval_profiles(
     rng = np.random.default_rng(seed)
 
     eligible_indices = []
-    for i, (idxs, _vals, _rated) in enumerate(all_users):
+    for i, (idxs, *_rest) in enumerate(all_users):
         if min_ratings <= len(idxs) <= max_ratings:
             eligible_indices.append(i)
 
@@ -394,8 +410,10 @@ def print_eval_set_holdout_validation(
     profile_mean_probs = []
 
     for profile_idx in eval_profile_indices:
-        idxs, vals, _rated = all_users[profile_idx]
-        metrics = compute_holdout_metrics(params, idxs, vals, corpus_size, device="gpu")
+        idxs, vals, rated, statuses = all_users[profile_idx]
+        metrics = compute_holdout_metrics(
+            params, idxs, vals, corpus_size, device="gpu", aux=profile_aux(rated, statuses)
+        )
 
         all_rating_errors.extend(metrics["rating_errors"])
         all_presence_probs.extend(metrics["presence_probs"])
@@ -452,6 +470,11 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
             has_rated_masks = False
             print("Warning: rated_masks not found in file")
 
+        statuses = data["statuses"] if "statuses" in data else None
+
+    if CONF["input_channels"] == 5 and statuses is None:
+        raise ValueError("input_channels=5 requires an npz with a 'statuses' array")
+
     all_users = []
     mask_start = 0
     idx_start = 0
@@ -459,6 +482,7 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
         idx_end = idx_start + l
         user_indices = indices[idx_start:idx_end]
         user_values = values[idx_start:idx_end]
+        user_statuses = statuses[idx_start:idx_end] if statuses is not None else None
 
         if has_rated_masks:
             mask_end = mask_start + l
@@ -467,7 +491,7 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
         else:
             user_rated = np.ones(l, dtype=bool)
 
-        all_users.append((user_indices, user_values, user_rated))
+        all_users.append((user_indices, user_values, user_rated, user_statuses))
         idx_start = idx_end
 
     print(f"Loaded {len(all_users)} user profiles.")
@@ -479,7 +503,7 @@ def main(steps=50_000, vectors_path="../data/user_input_vectors.npz", out_path="
     state = create_train_state(rng, CONF["learning_rate"])
 
     model = Recommender()
-    dummy_input = jnp.ones((1, CONF["corpus_size"] * 2))
+    dummy_input = jnp.ones((1, CONF["corpus_size"] * CONF["input_channels"]))
     print(model.tabulate(rng, dummy_input))
 
     # Load corpus index -> anime_id mapping
@@ -599,5 +623,9 @@ if __name__ == "__main__":
     ap.add_argument("--steps", type=int, default=50_000)
     ap.add_argument("--vectors", default="../data/user_input_vectors.npz")
     ap.add_argument("--out", default="../data/jax_model.msgpack")
+    ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
+    ap.add_argument("--dropout-rate", type=float, default=CONF["dropout_rate"])
     args = ap.parse_args()
+    CONF["input_channels"] = args.input_channels
+    CONF["dropout_rate"] = args.dropout_rate
     main(steps=args.steps, vectors_path=args.vectors, out_path=args.out)
