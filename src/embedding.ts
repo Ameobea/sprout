@@ -4,7 +4,7 @@ import { parse } from 'csv-parse';
 import { DATA_DIR } from './conf';
 import type { Embedding } from './routes/embedding';
 import { EmbeddingName } from './types';
-import { AnimeMediaType, getAnimesByID } from './malAPI';
+import { AnimeMediaType, getAnimesByID, normalizeMediaType } from './malAPI';
 
 interface RawEmbedding {
   points: { [index: string]: { x: number; y: number } };
@@ -53,7 +53,7 @@ export const loadMetadata = async () => {
           rating_count: +row[6],
           average_rating: +row[7],
           aired_from_year: +row[5],
-          media_type: row[8] as AnimeMediaType,
+          media_type: normalizeMediaType(row[8]),
           rating: row[9],
         });
       })

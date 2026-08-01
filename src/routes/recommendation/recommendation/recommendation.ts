@@ -113,14 +113,43 @@ export const getGenresDB = async (): Promise<Map<number, string>> => {
 
 const MAX_TRAVERSAL_DEPTH = 18;
 
+/** Media types shown regardless of toggle state; everything else is governed by one of the toggles below. */
+const AlwaysVisibleMediaTypes = new Set([AnimeMediaType.TV, AnimeMediaType.Unknown]);
+
+const MediaTypesByToggle = {
+  onasOVAsSpecials: [AnimeMediaType.ONA, AnimeMediaType.OVA, AnimeMediaType.Special, AnimeMediaType.TVSpecial],
+  movies: [AnimeMediaType.Movie],
+  music: [AnimeMediaType.Music, AnimeMediaType.CM, AnimeMediaType.PV],
+};
+
+/**
+ * `Other` is deliberately excluded: MAL uses it for spiritual successors, shared universes, and
+ * staff/studio nods between genuinely separate shows (Ashita no Joe <-> Megalo Box, Tiger & Bunny
+ * <-> Double Decker), which would hide unwatched shows the user has no other connection to.
+ */
+const SeasonRelationTypes = new Set([
+  AnimeRelationType.Sequel,
+  AnimeRelationType.Prequel,
+  AnimeRelationType.ParentStory,
+  AnimeRelationType.SideStory,
+]);
+
 const buildSeasonRelationshipsByAnimeID = async (
   animeIDsToCheck: number[],
   seasonRelationshipsByAnimeID: Map<number, Set<number>> = new Map(),
   processedAnimeIDs: Set<number> = new Set(),
-  forceRetainedAnimeIDs: Set<number> = new Set(),
   depth = 0
-): Promise<{ seasonRelationshipsByAnimeID: Map<number, Set<number>>; forceRetainedAnimeIDs: Set<number> }> => {
+): Promise<Map<number, Set<number>>> => {
   const metadata = await getAnimesByID(animeIDsToCheck, true);
+
+  const linkAnimeIDs = (fromAnimeID: number, toAnimeID: number) => {
+    let relatedAnimeIDs = seasonRelationshipsByAnimeID.get(fromAnimeID);
+    if (!relatedAnimeIDs) {
+      relatedAnimeIDs = new Set();
+      seasonRelationshipsByAnimeID.set(fromAnimeID, relatedAnimeIDs);
+    }
+    relatedAnimeIDs.add(toAnimeID);
+  };
 
   let nextAnimeIDsToCheck: number[] = [];
   for (let i = 0; i < metadata.length; i++) {
@@ -130,91 +159,50 @@ const buildSeasonRelationshipsByAnimeID = async (
       console.warn(`Could not find metadata for anime ${animeIDsToCheck[i]}`);
       continue;
     }
-    if (!datum.related_anime) {
-      continue;
-    }
-    // Movies, music, ONAs, OVAs, and specials are handled by separate filters; don't filter them with extra seasons
-    if (
-      datum.media_type === AnimeMediaType.Movie ||
-      datum.media_type === AnimeMediaType.Music ||
-      datum.media_type === AnimeMediaType.ONA ||
-      datum.media_type === AnimeMediaType.OVA ||
-      datum.media_type === AnimeMediaType.Special
-    ) {
-      forceRetainedAnimeIDs.add(datum.id);
-      // Do not continue so that we can continue crawling relationships from this anime, because for some series
-      // the only link between different seasons is ONAs/OVAs/Movies/etc.
-    }
 
-    const extraSeasonIDs = new Set(
-      datum.related_anime
-        .filter((entry) => {
-          switch (entry.relation_type) {
-            case AnimeRelationType.Sequel:
-            case AnimeRelationType.Prequel:
-            case AnimeRelationType.ParentStory:
-            case AnimeRelationType.SideStory:
-            case AnimeRelationType.Other:
-              return true;
-            default:
-              return false;
-          }
-        })
-        .map((entry) => entry.node.id)
-    );
-    seasonRelationshipsByAnimeID.set(datum.id, extraSeasonIDs);
-    for (const extraSeasonID of extraSeasonIDs) {
-      if (!seasonRelationshipsByAnimeID.has(extraSeasonID)) {
-        seasonRelationshipsByAnimeID.set(extraSeasonID, new Set());
+    for (const entry of datum.related_anime ?? []) {
+      if (!SeasonRelationTypes.has(entry.relation_type)) {
+        continue;
       }
-      seasonRelationshipsByAnimeID.get(extraSeasonID)!.add(datum.id);
-      nextAnimeIDsToCheck.push(extraSeasonID);
+      // MAL relations are frequently one-sided, so both directions have to be recorded
+      linkAnimeIDs(datum.id, entry.node.id);
+      linkAnimeIDs(entry.node.id, datum.id);
+      nextAnimeIDsToCheck.push(entry.node.id);
     }
   }
 
-  nextAnimeIDsToCheck = [...nextAnimeIDsToCheck].filter((id) => !processedAnimeIDs.has(id));
+  nextAnimeIDsToCheck = [...new Set(nextAnimeIDsToCheck)].filter((id) => !processedAnimeIDs.has(id));
   if (depth >= MAX_TRAVERSAL_DEPTH || nextAnimeIDsToCheck.length === 0) {
-    return { forceRetainedAnimeIDs, seasonRelationshipsByAnimeID };
+    return seasonRelationshipsByAnimeID;
   }
 
   return buildSeasonRelationshipsByAnimeID(
     nextAnimeIDsToCheck,
     seasonRelationshipsByAnimeID,
     processedAnimeIDs,
-    forceRetainedAnimeIDs,
     depth + 1
   );
 };
 
+/**
+ * Pure graph reachability; media type is checked only on the candidate itself by the caller.  Any
+ * node may be traversed *through*, since plenty of series link their seasons solely via an ONA,
+ * special, or movie, and the graph spans the whole metadata DB rather than just the model corpus.
+ */
 const getIsExtraSeasonOfRatedAnime = (
-  embedding: Embedding,
-  animeIdToEmbeddingIndex: Map<number, number>,
   allWatchedAnimeIDs: Set<number>,
   seasonRelationshipsByAnimeID: Map<number, Set<number>>,
   animeID: number,
   checkedIDs: Set<number> = new Set(),
   depth = 0
-) => {
-  const extraSeasonIDs = seasonRelationshipsByAnimeID.get(animeID);
-  if (!extraSeasonIDs) {
+): boolean => {
+  const relatedAnimeIDs = seasonRelationshipsByAnimeID.get(animeID);
+  if (!relatedAnimeIDs) {
     return false;
   }
 
-  const embeddingIx = animeIdToEmbeddingIndex.get(animeID);
-  const metadatum = typeof embeddingIx === 'number' ? embedding[embeddingIx].metadata : null;
-  if (
-    !metadatum ||
-    metadatum.media_type === AnimeMediaType.Movie ||
-    metadatum.media_type === AnimeMediaType.Music ||
-    metadatum.media_type === AnimeMediaType.ONA ||
-    metadatum.media_type === AnimeMediaType.OVA ||
-    metadatum.media_type === AnimeMediaType.Special
-  ) {
-    return false;
-  }
-
-  for (const extraSeasonAnimeID of extraSeasonIDs) {
-    if (allWatchedAnimeIDs.has(extraSeasonAnimeID)) {
+  for (const relatedAnimeID of relatedAnimeIDs) {
+    if (allWatchedAnimeIDs.has(relatedAnimeID)) {
       return true;
     }
   }
@@ -224,21 +212,20 @@ const getIsExtraSeasonOfRatedAnime = (
   }
 
   checkedIDs.add(animeID);
-  for (const extraSeasonAnimeID of extraSeasonIDs) {
-    if (checkedIDs.has(extraSeasonAnimeID)) {
+  for (const relatedAnimeID of relatedAnimeIDs) {
+    if (checkedIDs.has(relatedAnimeID)) {
       continue;
     }
 
-    const childIsRelated = getIsExtraSeasonOfRatedAnime(
-      embedding,
-      animeIdToEmbeddingIndex,
-      allWatchedAnimeIDs,
-      seasonRelationshipsByAnimeID,
-      extraSeasonAnimeID,
-      checkedIDs,
-      depth + 1
-    );
-    if (childIsRelated) {
+    if (
+      getIsExtraSeasonOfRatedAnime(
+        allWatchedAnimeIDs,
+        seasonRelationshipsByAnimeID,
+        relatedAnimeID,
+        checkedIDs,
+        depth + 1
+      )
+    ) {
       return true;
     }
   }
@@ -514,29 +501,20 @@ export const getRecommendations = async (
     animeIdToEmbeddingIndex.set(embedding[i].metadata.id, i);
   }
 
-  // Build valid media types set for filtering
-  const validAnimeMediaTypes = new Set<AnimeMediaType>();
-  validAnimeMediaTypes.add(AnimeMediaType.TV);
-  validAnimeMediaTypes.add(AnimeMediaType.Unknown);
+  const validAnimeMediaTypes = new Set<AnimeMediaType>(AlwaysVisibleMediaTypes);
   if (includeONAsOVAsSpecials) {
-    validAnimeMediaTypes.add(AnimeMediaType.OVA);
-    validAnimeMediaTypes.add(AnimeMediaType.Special);
-    validAnimeMediaTypes.add(AnimeMediaType.ONA);
+    MediaTypesByToggle.onasOVAsSpecials.forEach((mediaType) => validAnimeMediaTypes.add(mediaType));
   }
   if (includeMovies) {
-    validAnimeMediaTypes.add(AnimeMediaType.Movie);
+    MediaTypesByToggle.movies.forEach((mediaType) => validAnimeMediaTypes.add(mediaType));
   }
   if (includeMusic) {
-    validAnimeMediaTypes.add(AnimeMediaType.Music);
+    MediaTypesByToggle.music.forEach((mediaType) => validAnimeMediaTypes.add(mediaType));
   }
 
   let seasonRelationshipsByAnimeID: Map<number, Set<number>> | null = null;
-  let excludedFromSeasonRelationshipExclusionAnimeIDs: Set<number> | null = null;
   if (!includeExtraSeasons) {
-    const ratedAnimeIDs = profile.map((entry) => entry.node.id);
-    const res = await buildSeasonRelationshipsByAnimeID(ratedAnimeIDs);
-    seasonRelationshipsByAnimeID = res.seasonRelationshipsByAnimeID;
-    excludedFromSeasonRelationshipExclusionAnimeIDs = res.forceRetainedAnimeIDs;
+    seasonRelationshipsByAnimeID = await buildSeasonRelationshipsByAnimeID(profile.map((entry) => entry.node.id));
   }
 
   const embeddingMetadata = excludedGenreIDs.size > 0 ? await getEmbeddingMetadata(embedding) : [];
@@ -565,8 +543,7 @@ export const getRecommendations = async (
     }
 
     const datum = embedding[embeddingIndex];
-    const animeMediaType = datum.metadata.media_type;
-    if (animeMediaType && !validAnimeMediaTypes.has(animeMediaType)) {
+    if (!validAnimeMediaTypes.has(datum.metadata.media_type)) {
       return false;
     }
 
@@ -577,18 +554,11 @@ export const getRecommendations = async (
       }
     }
 
-    if (seasonRelationshipsByAnimeID) {
-      if (!excludedFromSeasonRelationshipExclusionAnimeIDs?.has(datum.metadata.id)) {
-        const isExtraSeason = getIsExtraSeasonOfRatedAnime(
-          embedding,
-          animeIdToEmbeddingIndex,
-          allWatchedAnimeIDs,
-          seasonRelationshipsByAnimeID,
-          datum.metadata.id
-        );
-        if (isExtraSeason) {
-          return false;
-        }
+    // Anything governed by its own toggle (movies, ONAs, specials, ...) is never hidden as an extra
+    // season, but still gets crawled through when connecting the seasons of something that is.
+    if (seasonRelationshipsByAnimeID && AlwaysVisibleMediaTypes.has(datum.metadata.media_type)) {
+      if (getIsExtraSeasonOfRatedAnime(allWatchedAnimeIDs, seasonRelationshipsByAnimeID, datum.metadata.id)) {
+        return false;
       }
     }
 

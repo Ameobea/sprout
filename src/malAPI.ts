@@ -76,12 +76,41 @@ export interface MALUserAnimeListResponse {
 export enum AnimeMediaType {
   Unknown = 'unknown',
   TV = 'tv',
+  TVSpecial = 'tv_special',
   OVA = 'ova',
   Movie = 'movie',
   Special = 'special',
   ONA = 'ona',
   Music = 'music',
+  CM = 'cm',
+  PV = 'pv',
 }
+
+const KnownMediaTypes: Set<string> = new Set(Object.values(AnimeMediaType));
+const UnrecognizedMediaTypeCounts = new Map<string, number>();
+
+export const getUnrecognizedMediaTypeCounts = (): Map<string, number> => UnrecognizedMediaTypeCounts;
+
+/**
+ * MAL introduces new `media_type` values without notice (`tv_special`, `cm`, and `pv` all appeared
+ * after this enum was written).  Unrecognized values normalize to `unknown` so they stay *visible*
+ * rather than silently failing every filter's allowlist forever, and are counted for `/metrics`.
+ */
+export const normalizeMediaType = (rawMediaType: string | null | undefined): AnimeMediaType => {
+  if (!rawMediaType) {
+    return AnimeMediaType.Unknown;
+  }
+  if (KnownMediaTypes.has(rawMediaType)) {
+    return rawMediaType as AnimeMediaType;
+  }
+
+  const seenCount = UnrecognizedMediaTypeCounts.get(rawMediaType) ?? 0;
+  UnrecognizedMediaTypeCounts.set(rawMediaType, seenCount + 1);
+  if (seenCount === 0) {
+    console.warn(`Unrecognized MAL media_type "${rawMediaType}"; treating as \`unknown\``);
+  }
+  return AnimeMediaType.Unknown;
+};
 
 export enum MangaListStatusCode {
   Reading = 'reading',
@@ -431,7 +460,7 @@ export const getAnimesByID = async (
 
   if (uncachedIds.length === 0) {
     return (cached as AnimeDetails[]).map((cachedDatum) => {
-      const datum = { ...cachedDatum };
+      const datum = { ...cachedDatum, media_type: normalizeMediaType(cachedDatum.media_type) };
       if (!includeRecommendationsAndRelated) {
         delete datum.recommendations;
         delete datum.related_anime;
@@ -449,7 +478,7 @@ export const getAnimesByID = async (
 
     AnimeDetailsCache.set(datum.id, datum);
 
-    datum = { ...datum };
+    datum = { ...datum, media_type: normalizeMediaType(datum.media_type) };
     if (!includeRecommendationsAndRelated) {
       delete datum.recommendations;
       delete datum.related_anime;

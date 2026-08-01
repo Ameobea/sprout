@@ -24,11 +24,14 @@
 
   const MEDIA_TYPE_NAMES: { [mediaType: string]: string } = {
     tv: 'TV',
+    tv_special: 'TV Special',
     ova: 'OVA',
     ona: 'ONA',
     movie: 'Movie',
     special: 'Special',
     music: 'Music',
+    cm: 'Commercial',
+    pv: 'PV',
   };
 
   $: metaLine = [
