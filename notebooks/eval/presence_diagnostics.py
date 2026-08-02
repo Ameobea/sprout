@@ -44,6 +44,7 @@ def ranks_of(order_scores, candidate_mask, target_idxs):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--weights", required=True)
+    ap.add_argument("--popularity", default=str(POPULARITY))
     ap.add_argument("--corpus", default="../../data/corpus_ids.json")
     ap.add_argument("--name", required=True)
     ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
@@ -55,7 +56,7 @@ def main():
     id_to_idx = {aid: i for i, aid in enumerate(corpus_ids)}
     cs = CONF["corpus_size"]
 
-    counts = np.load(POPULARITY).astype(np.float64)
+    counts = np.load(args.popularity).astype(np.float64)
     pop_rank = np.argsort(np.argsort(-counts))
     tier_of = np.zeros(cs, dtype=np.int32)
     for ti, (lo, hi, _) in enumerate(TIERS):

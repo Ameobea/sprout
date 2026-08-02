@@ -513,6 +513,8 @@ def main(
     out_path="../data/jax_model.msgpack",
     presence_prior_alpha=0.0,
     pop_dropout_beta=0.0,
+    corpus_path="../data/corpus_ids.json",
+    metadata_path="../data/processed-metadata.csv",
 ):
     rng = random.PRNGKey(0)
     state = create_train_state(rng, CONF["learning_rate"])
@@ -522,7 +524,7 @@ def main(
     print(model.tabulate(rng, dummy_input))
 
     # Load corpus index -> anime_id mapping
-    with open("../data/corpus_ids.json", "r") as f:
+    with open(corpus_path, "r") as f:
         corpus_ids = json.load(f)
     if len(corpus_ids) != CONF["corpus_size"]:
         raise ValueError(
@@ -531,7 +533,7 @@ def main(
 
     print("Loading anime metadata...")
     anime_titles = {}
-    with open("../data/processed-metadata.csv", "r", encoding="utf-8") as f:
+    with open(metadata_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             anime_id = int(row["id"])
@@ -658,6 +660,8 @@ if __name__ == "__main__":
     ap.add_argument("--dropout-rate", type=float, default=CONF["dropout_rate"])
     ap.add_argument("--presence-prior-alpha", type=float, default=0.0)
     ap.add_argument("--pop-dropout-beta", type=float, default=0.0)
+    ap.add_argument("--corpus", default="../data/corpus_ids.json")
+    ap.add_argument("--metadata", default="../data/processed-metadata.csv")
     args = ap.parse_args()
     CONF["input_channels"] = args.input_channels
     CONF["dropout_rate"] = args.dropout_rate
@@ -667,4 +671,6 @@ if __name__ == "__main__":
         out_path=args.out,
         presence_prior_alpha=args.presence_prior_alpha,
         pop_dropout_beta=args.pop_dropout_beta,
+        corpus_path=args.corpus,
+        metadata_path=args.metadata,
     )

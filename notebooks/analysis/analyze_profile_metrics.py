@@ -1,6 +1,6 @@
 """
 Aggregate report over per-user metrics from extract_profile_metrics.py.
-Usage: analyze_profile_metrics.py <metrics.csv>
+Usage: analyze_profile_metrics.py <metrics.csv> [dump_date YYYY-MM-DD, default 2025-12-21]
 """
 
 import sys
@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 MIN_RECENT = date(2020, 8, 10).toordinal()
-DUMP_DAY = date(2025, 12, 21).toordinal()
+DUMP_DAY = date.fromisoformat(sys.argv[2]).toordinal() if len(sys.argv) > 2 else date(2025, 12, 21).toordinal()
 BUCKETS = [(10, 29), (30, 99), (100, 299), (300, 10_000_000)]
 
 pd.set_option("display.width", 200)

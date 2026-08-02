@@ -41,6 +41,7 @@ MID_TIERS = (1, 2, 3)  # 50-250, 250-1k, 1k-3k
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--weights", required=True)
+    ap.add_argument("--popularity", default=str(POPULARITY))
     ap.add_argument("--corpus", default="../../data/corpus_ids.json")
     ap.add_argument("--name", required=True)
     ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
@@ -52,7 +53,7 @@ def main():
     id_to_idx = {aid: i for i, aid in enumerate(corpus_ids)}
     cs = CONF["corpus_size"]
 
-    counts = np.load(POPULARITY).astype(np.float64)
+    counts = np.load(args.popularity).astype(np.float64)
     log_pop = np.log(np.maximum(counts, 1.0))
     pop_rank = np.argsort(np.argsort(-counts))
     tier_of = np.zeros(cs, dtype=np.int32)

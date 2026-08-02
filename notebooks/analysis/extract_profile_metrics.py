@@ -1,8 +1,9 @@
 """
-Streaming pass over the raw mal-user-animelists dump (csv: username,animelist_json,...)
-producing one row of per-user metrics for data-quality analysis.
+Streaming pass over the raw mal-user-animelists dump producing one row of
+per-user metrics for data-quality analysis. Accepts the legacy dec2025
+csv.xz archive or a dump-table.sh tsv.zst (header-mapped columns).
 
-Usage: extract_profile_metrics.py <dump.csv.xz> <out.csv> [corpus_ids.json]
+Usage: extract_profile_metrics.py <dump.{csv.xz,tsv.zst}> <out.csv> [corpus_ids.json]
 """
 
 import csv
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import multiprocessing as mp
 from collections import Counter
+from itertools import chain
 from datetime import date
 from math import sqrt
 
@@ -170,14 +172,26 @@ def batches(reader, size=100):
         yield batch
 
 
+def open_dump(path):
+    if path.endswith(".zst"):
+        proc = subprocess.Popen(
+            ["zstd", "-dc", "-T0", path], stdout=subprocess.PIPE, bufsize=1 << 22
+        )
+        lines = (l.decode("utf-8", "replace").rstrip("\n").split("\t") for l in proc.stdout)
+        hdr = next(lines)
+        ui, ji = hdr.index("username"), hdr.index("animelist_json")
+        return proc, chain([hdr], ((r[ui], r[ji]) for r in lines))
+    proc = subprocess.Popen(
+        ["xz", "-dc", "-T0", path], stdout=subprocess.PIPE, bufsize=1 << 22
+    )
+    return proc, csv.reader((l.decode("utf-8", "replace") for l in proc.stdout))
+
+
 def main():
     dump_path, out_path = sys.argv[1], sys.argv[2]
     corpus_path = sys.argv[3] if len(sys.argv) > 3 else "../../data/corpus_ids.json"
 
-    xz = subprocess.Popen(
-        ["xz", "-dc", "-T0", dump_path], stdout=subprocess.PIPE, bufsize=1 << 22
-    )
-    reader = csv.reader((l.decode("utf-8", "replace") for l in xz.stdout))
+    xz, reader = open_dump(dump_path)
 
     n_users = n_bad = 0
     with open(out_path, "wt", newline="") as wf, mp.Pool(

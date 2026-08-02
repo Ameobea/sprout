@@ -82,6 +82,7 @@ def aggregate(rows):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--weights", required=True)
+    ap.add_argument("--popularity", default=str(POPULARITY))
     ap.add_argument("--corpus", required=True)
     ap.add_argument("--name", required=True)
     ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
@@ -99,7 +100,7 @@ def main():
     with open(FIXTURES) as f:
         fixtures = json.load(f)
 
-    counts = np.load(POPULARITY).astype(np.float64)
+    counts = np.load(args.popularity).astype(np.float64)
     pop_rank = np.argsort(np.argsort(-counts))
     tier_of = np.zeros(cs, dtype=np.int32)
     for ti, (lo, hi, _) in enumerate(POP_TIERS):

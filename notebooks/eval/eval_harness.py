@@ -81,13 +81,18 @@ def build_aux(original, statuses):
     return np.stack(rows)
 
 
-def load_params(weights_path):
+def load_params(weights_path, bf16_sim=False):
     model = Recommender()
     rng = random.PRNGKey(0)
     dummy = jnp.ones((1, CONF["corpus_size"] * CONF["input_channels"]))
     params = model.init({"params": rng, "noise": rng}, dummy)["params"]
     with open(weights_path, "rb") as f:
-        return serialization.from_bytes(params, f.read())
+        params = serialization.from_bytes(params, f.read())
+    if bf16_sim:
+        params = jax.tree_util.tree_map(
+            lambda a: a.astype(jnp.bfloat16).astype(a.dtype), params
+        )
+    return params
 
 
 def eval_profile(params, idxs, vals, original, statuses, corpus_size, device, serve_prior=None):
@@ -149,12 +154,15 @@ def main():
     ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
     ap.add_argument("--serve-prior-alpha", type=float, default=0.0,
                     help="add alpha*log_pop to logits before ranking (lift-trained models)")
+    ap.add_argument("--popularity", default=str(Path(__file__).parent / "../../data/item_popularity_dec2025.npy"))
+    ap.add_argument("--bf16-sim", action="store_true",
+                    help="round-trip weights through bf16 to simulate prod serving numerics")
     args = ap.parse_args()
     CONF["input_channels"] = args.input_channels
 
     serve_prior = None
     if args.serve_prior_alpha != 0.0:
-        counts = np.load(Path(__file__).parent / "../../data/item_popularity_dec2025.npy")
+        counts = np.load(args.popularity)
         serve_prior = (args.serve_prior_alpha * np.log(np.maximum(counts, 1.0))).astype(np.float32)
 
     with open(args.corpus) as f:
@@ -168,7 +176,7 @@ def main():
             restrict_ids = set(json.load(f)) & set(corpus_ids)
         print(f"restricting to corpus intersection: {len(restrict_ids)} items")
 
-    params = load_params(args.weights)
+    params = load_params(args.weights, bf16_sim=args.bf16_sim)
     profiles = load_fixture_profiles()
 
     per_profile = {}

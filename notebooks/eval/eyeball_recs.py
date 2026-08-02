@@ -32,6 +32,7 @@ def main():
     ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
     ap.add_argument("--k", type=int, default=20)
     ap.add_argument("--alphas", default=None, help="comma list; each becomes (alpha, lw=0.3)")
+    ap.add_argument("--popularity", default=str(POPULARITY))
     args = ap.parse_args()
     global VARIANTS
     if args.alphas:
@@ -47,7 +48,7 @@ def main():
         for row in csv.DictReader(f):
             titles[int(row["id"])] = row["title_english"] or row["title"]
 
-    counts = np.load(POPULARITY).astype(np.float64)
+    counts = np.load(args.popularity).astype(np.float64)
     pop_rank = np.argsort(np.argsort(-counts))
     log_pop = np.log(np.maximum(counts, 1.0))
 
