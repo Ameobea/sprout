@@ -25,6 +25,8 @@ EVAL_PROFILE_MAX_RATINGS = 300
 
 
 def data_generator(all_users, batch_size=32):
+    cs = CONF["corpus_size"]
+    nch = CONF["input_channels"]
     while True:
         # the list of users is shuffled each epoch
         perm = np.random.permutation(len(all_users))
@@ -33,20 +35,33 @@ def data_generator(all_users, batch_size=32):
             batch_indices = perm[b_idx : b_idx + batch_size]
 
             current_batch_size = len(batch_indices)
-            batch_tensor = np.zeros(
-                (current_batch_size, CONF["corpus_size"] * 2), dtype=np.float32
-            )
-            rated_mask_tensor = np.zeros(
-                (current_batch_size, CONF["corpus_size"]), dtype=np.float32
-            )
+            batch_tensor = np.zeros((current_batch_size, cs * nch), dtype=np.float32)
+            rated_mask_tensor = np.zeros((current_batch_size, cs), dtype=np.float32)
 
             for i, u_idx in enumerate(batch_indices):
-                idxs, vals, rated = all_users[u_idx]
+                idxs, vals, rated, statuses = all_users[u_idx]
                 batch_tensor[i, idxs] = 1.0
-                batch_tensor[i, CONF["corpus_size"] + idxs] = vals
+                batch_tensor[i, cs + idxs] = vals
                 rated_mask_tensor[i, idxs] = rated.astype(np.float32)
+                if nch >= 3:
+                    batch_tensor[i, 2 * cs + idxs] = rated
+                if nch == 5:
+                    batch_tensor[i, 3 * cs + idxs] = statuses == 3
+                    batch_tensor[i, 4 * cs + idxs] = (statuses == 1) | (statuses == 2)
 
             yield batch_tensor, rated_mask_tensor
+
+
+def profile_aux(rated, statuses):
+    """aux rows for channels 2..n from npz per-user arrays (see data_generator)."""
+    nch = CONF["input_channels"]
+    if nch <= 2:
+        return None
+    rows = [rated.astype(np.float32)]
+    if nch == 5:
+        rows.append((statuses == 3).astype(np.float32))
+        rows.append(((statuses == 1) | (statuses == 2)).astype(np.float32))
+    return np.stack(rows)
 
 
 class TrainState(train_state.TrainState):
@@ -56,7 +71,7 @@ class TrainState(train_state.TrainState):
 def create_train_state(rng, learning_rate):
     model = Recommender()
 
-    dummy_input = jnp.ones((1, CONF["corpus_size"] * 2))
+    dummy_input = jnp.ones((1, CONF["corpus_size"] * CONF["input_channels"]))
     params = model.init({"params": rng, "noise": rng}, dummy_input)["params"]
 
     # Number of epochs with no improvement after which learning rate will be reduced
@@ -84,12 +99,11 @@ def create_train_state(rng, learning_rate):
 
 
 @jax.jit
-def train_step(state, batch, rated_mask):
+def train_step(state, batch, rated_mask, prior_logits, pop_w):
     presence = batch[:, : CONF["corpus_size"]]
-    ratings_z = batch[:, CONF["corpus_size"] :]
+    ratings_z = batch[:, CONF["corpus_size"] : 2 * CONF["corpus_size"]]
 
     dropout_rng, vae_rng = random.split(state.key)
-    # keep = random.bernoulli(dropout_rng, p=(1.0 - dropout_rate), shape=presence.shape)
 
     # vary the dropout rate for each sample in the batch +-40% from the base rate
     rate_variation = CONF["dropout_variation"] * CONF["dropout_rate"]
@@ -102,11 +116,18 @@ def train_step(state, batch, rated_mask):
     # clamp to force the droprate rate to always be in [0.01, 0.75]
     random_rates = jnp.clip(random_rates, 0.01, 0.75)
 
-    keep = random.bernoulli(dropout_rng, p=(1.0 - random_rates), shape=presence.shape)
+    # popularity-biased dropout: per-item drop prob scaled by pop_w, renormalized
+    # over each row's present items so the expected per-row rate stays random_rates.
+    # pop_w = ones reduces to uniform dropout bit-identically.
+    present_w_sum = jnp.maximum(jnp.sum(presence * pop_w[None, :], axis=1, keepdims=True), 1e-6)
+    n_present = jnp.sum(presence, axis=1, keepdims=True)
+    drop_p = jnp.clip(random_rates * pop_w[None, :] * n_present / present_w_sum, 0.0, 0.95)
+    keep = random.bernoulli(dropout_rng, p=(1.0 - drop_p), shape=presence.shape)
 
-    corrupted_presence = presence * keep
-    corrupted_ratings = ratings_z * keep
-    x_in = jnp.concatenate([corrupted_presence, corrupted_ratings], axis=1)
+    # corrupt all input channels consistently (presence, ratings, optional mask)
+    b, cs = presence.shape
+    nch = CONF["input_channels"]
+    x_in = (batch.reshape(b, nch, cs) * keep[:, None, :]).reshape(b, nch * cs)
 
     x_tgt_presence = presence
     # For rating loss, only consider items that were actually rated by the user
@@ -121,8 +142,9 @@ def train_step(state, batch, rated_mask):
             rngs={"noise": vae_rng},
         )
 
-        # presence multinomial loss
-        log_probs = jax.nn.log_softmax(item_logits, axis=1)
+        # presence multinomial loss; prior_logits (log-popularity offset, zeros when
+        # disabled) absorbs the global prior so item_logits learn lift over popularity
+        log_probs = jax.nn.log_softmax(item_logits + prior_logits[None, :], axis=1)
         per_user_counts = jnp.maximum(jnp.sum(x_tgt_presence, axis=1), 1.0)
         recon_presence_per_user = (
             -jnp.sum(x_tgt_presence * log_probs, axis=1) / per_user_counts
@@ -166,9 +188,9 @@ def train_step(state, batch, rated_mask):
 
 
 @jax.jit
-def validation_step(state, batch, rated_mask):
+def validation_step(state, batch, rated_mask, prior_logits):
     presence = batch[:, : CONF["corpus_size"]]
-    ratings_z = batch[:, CONF["corpus_size"] :]
+    ratings_z = batch[:, CONF["corpus_size"] : 2 * CONF["corpus_size"]]
 
     # No dropout - use full input
     x_in = batch
@@ -181,7 +203,7 @@ def validation_step(state, batch, rated_mask):
     )
 
     # --- Presence multinomial loss ---
-    log_probs = jax.nn.log_softmax(item_logits, axis=1)
+    log_probs = jax.nn.log_softmax(item_logits + prior_logits[None, :], axis=1)
     per_user_counts = jnp.maximum(jnp.sum(x_tgt_presence, axis=1), 1.0)
     recon_presence_per_user = (
         -jnp.sum(x_tgt_presence * log_probs, axis=1) / per_user_counts
@@ -271,7 +293,7 @@ def select_eval_profiles(
     rng = np.random.default_rng(seed)
 
     eligible_indices = []
-    for i, (idxs, _vals, _rated) in enumerate(all_users):
+    for i, (idxs, *_rest) in enumerate(all_users):
         if min_ratings <= len(idxs) <= max_ratings:
             eligible_indices.append(i)
 
@@ -394,8 +416,10 @@ def print_eval_set_holdout_validation(
     profile_mean_probs = []
 
     for profile_idx in eval_profile_indices:
-        idxs, vals, _rated = all_users[profile_idx]
-        metrics = compute_holdout_metrics(params, idxs, vals, corpus_size, device="gpu")
+        idxs, vals, rated, statuses = all_users[profile_idx]
+        metrics = compute_holdout_metrics(
+            params, idxs, vals, corpus_size, device="gpu", aux=profile_aux(rated, statuses)
+        )
 
         all_rating_errors.extend(metrics["rating_errors"])
         all_presence_probs.extend(metrics["presence_probs"])
@@ -440,6 +464,9 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
         indices = data["indices"]
         values = data["values"]
         lengths = data["lengths"]
+        item_counts = np.bincount(indices, minlength=CONF["corpus_size"]).astype(
+            np.float64
+        )
 
         if "rated_masks" in data:
             packed_masks = data["rated_masks"]
@@ -452,6 +479,11 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
             has_rated_masks = False
             print("Warning: rated_masks not found in file")
 
+        statuses = data["statuses"] if "statuses" in data else None
+
+    if CONF["input_channels"] == 5 and statuses is None:
+        raise ValueError("input_channels=5 requires an npz with a 'statuses' array")
+
     all_users = []
     mask_start = 0
     idx_start = 0
@@ -459,6 +491,7 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
         idx_end = idx_start + l
         user_indices = indices[idx_start:idx_end]
         user_values = values[idx_start:idx_end]
+        user_statuses = statuses[idx_start:idx_end] if statuses is not None else None
 
         if has_rated_masks:
             mask_end = mask_start + l
@@ -467,23 +500,31 @@ def load_all_users(file_path="../data/user_input_vectors.npz"):
         else:
             user_rated = np.ones(l, dtype=bool)
 
-        all_users.append((user_indices, user_values, user_rated))
+        all_users.append((user_indices, user_values, user_rated, user_statuses))
         idx_start = idx_end
 
     print(f"Loaded {len(all_users)} user profiles.")
-    return all_users
+    return all_users, item_counts
 
 
-def main(steps=50_000):
+def main(
+    steps=50_000,
+    vectors_path="../data/user_input_vectors.npz",
+    out_path="../data/jax_model.msgpack",
+    presence_prior_alpha=0.0,
+    pop_dropout_beta=0.0,
+    corpus_path="../data/corpus_ids.json",
+    metadata_path="../data/processed-metadata.csv",
+):
     rng = random.PRNGKey(0)
     state = create_train_state(rng, CONF["learning_rate"])
 
     model = Recommender()
-    dummy_input = jnp.ones((1, CONF["corpus_size"] * 2))
+    dummy_input = jnp.ones((1, CONF["corpus_size"] * CONF["input_channels"]))
     print(model.tabulate(rng, dummy_input))
 
     # Load corpus index -> anime_id mapping
-    with open("../data/corpus_ids.json", "r") as f:
+    with open(corpus_path, "r") as f:
         corpus_ids = json.load(f)
     if len(corpus_ids) != CONF["corpus_size"]:
         raise ValueError(
@@ -492,7 +533,7 @@ def main(steps=50_000):
 
     print("Loading anime metadata...")
     anime_titles = {}
-    with open("../data/processed-metadata.csv", "r", encoding="utf-8") as f:
+    with open(metadata_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             anime_id = int(row["id"])
@@ -500,7 +541,23 @@ def main(steps=50_000):
             anime_titles[anime_id] = title
     print(f"Loaded {len(anime_titles)} anime titles")
 
-    all_users = load_all_users()
+    all_users, item_counts = load_all_users(vectors_path)
+
+    clipped = np.maximum(item_counts, 1.0)
+    if presence_prior_alpha > 0.0:
+        log_pop_frac = np.log(clipped / clipped.sum())
+        prior_logits = jnp.asarray(
+            presence_prior_alpha * log_pop_frac, dtype=jnp.float32
+        )
+        print(f"presence prior enabled: alpha={presence_prior_alpha}")
+    else:
+        prior_logits = jnp.zeros(CONF["corpus_size"], dtype=jnp.float32)
+
+    if pop_dropout_beta > 0.0:
+        pop_w = jnp.asarray(clipped**pop_dropout_beta, dtype=jnp.float32)
+        print(f"popularity-biased dropout enabled: beta={pop_dropout_beta}")
+    else:
+        pop_w = jnp.ones(CONF["corpus_size"], dtype=jnp.float32)
 
     print("Starting training...")
     loader = data_generator(all_users, batch_size=CONF["batch_size"])
@@ -521,7 +578,7 @@ def main(steps=50_000):
         rated_mask_jax = jnp.array(rated_mask)
 
         state, loss, presence_loss, rating_loss = train_step(
-            state, batch_jax, rated_mask_jax
+            state, batch_jax, rated_mask_jax, prior_logits, pop_w
         )
 
         if step % 100 == 0:
@@ -542,7 +599,7 @@ def main(steps=50_000):
             val_batch_jax = jnp.array(val_batch)
             val_rated_mask_jax = jnp.array(val_rated_mask)
             val_presence, val_rating = validation_step(
-                state, val_batch_jax, val_rated_mask_jax
+                state, val_batch_jax, val_rated_mask_jax, prior_logits
             )
             print(
                 f"  [Validation @ step {step}]: "
@@ -587,10 +644,33 @@ def main(steps=50_000):
             print(f"\n{'#' * 80}\n")
 
     bytes_output = serialization.to_bytes(state.params)
-    with open("../data/jax_model.msgpack", "wb") as f:
+    with open(out_path, "wb") as f:
         f.write(bytes_output)
-    print("Model parameters saved to ../data/jax_model.msgpack")
+    print(f"Model parameters saved to {out_path}")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--steps", type=int, default=50_000)
+    ap.add_argument("--vectors", default="../data/user_input_vectors.npz")
+    ap.add_argument("--out", default="../data/jax_model.msgpack")
+    ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
+    ap.add_argument("--dropout-rate", type=float, default=CONF["dropout_rate"])
+    ap.add_argument("--presence-prior-alpha", type=float, default=0.0)
+    ap.add_argument("--pop-dropout-beta", type=float, default=0.0)
+    ap.add_argument("--corpus", default="../data/corpus_ids.json")
+    ap.add_argument("--metadata", default="../data/processed-metadata.csv")
+    args = ap.parse_args()
+    CONF["input_channels"] = args.input_channels
+    CONF["dropout_rate"] = args.dropout_rate
+    main(
+        steps=args.steps,
+        vectors_path=args.vectors,
+        out_path=args.out,
+        presence_prior_alpha=args.presence_prior_alpha,
+        pop_dropout_beta=args.pop_dropout_beta,
+        corpus_path=args.corpus,
+        metadata_path=args.metadata,
+    )

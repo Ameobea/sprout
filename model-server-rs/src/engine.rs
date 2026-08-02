@@ -53,6 +53,7 @@ pub struct Engine {
     pub cfg: KernCfg,
 }
 
+#[target_feature(enable = "avx512f")]
 unsafe fn axpy2(out: &mut [f32], row_p: &[f32], row_v: &[f32], pc: f32, vc: f32) {
     let pcv = _mm512_set1_ps(pc);
     let vcv = _mm512_set1_ps(vc);

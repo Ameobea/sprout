@@ -8,6 +8,9 @@ import flax.linen as nn
 
 CONF = {
     "corpus_size": 6000,
+    # 2 = [presence | ratings] (prod); 3 adds a rated-mask channel;
+    # 5 adds dropped + in-progress status channels on top
+    "input_channels": 2,
     "hidden_dim": 2048,
     "bottleneck_dim": 512,
     "batch_size": 512,
@@ -106,22 +109,32 @@ class Recommender(nn.Module):
         return item_logits, rating_pred, log_var_presence, log_var_rating
 
 
-def make_dense_profile(idxs: np.ndarray, vals: np.ndarray) -> jnp.ndarray:
-    """
-    Convert sparse profile representation to dense input vector.
+def default_aux(n_items: int) -> np.ndarray | None:
+    """Default extra-channel values (rows for channels 2..n): rated=1, rest 0."""
+    nch = CONF["input_channels"]
+    if nch <= 2:
+        return None
+    aux = np.zeros((nch - 2, n_items), dtype=np.float32)
+    aux[0] = 1.0
+    return aux
 
-    Args:
-        idxs: Array of corpus indices for items the user has rated
-        vals: Array of normalized rating values corresponding to idxs
 
-    Returns:
-        Dense input vector of shape (1, corpus_size * 2) where:
-        - First half is presence indicators (0 or 1)
-        - Second half is normalized ratings
+def make_dense_profile(
+    idxs: np.ndarray, vals: np.ndarray, aux: np.ndarray | None = None
+) -> jnp.ndarray:
     """
-    x = np.zeros((CONF["corpus_size"] * 2,), dtype=np.float32)
+    Convert sparse profile representation to dense input vector of shape
+    (1, corpus_size * input_channels): [presence | ratings | aux rows...].
+    aux rows fill channels 2..n (e.g. rated mask, dropped, in-progress).
+    """
+    cs = CONF["corpus_size"]
+    x = np.zeros((cs * CONF["input_channels"],), dtype=np.float32)
     x[idxs] = 1.0
-    x[CONF["corpus_size"] + idxs] = vals
+    x[cs + idxs] = vals
+    if aux is None:
+        aux = default_aux(len(idxs))
+    for k in range(CONF["input_channels"] - 2):
+        x[(2 + k) * cs + idxs] = aux[k]
     return jnp.asarray(x[None, :])
 
 
@@ -285,6 +298,7 @@ def create_holdout_batch(
     vals: np.ndarray,
     corpus_size: int,
     pad_to_size: int | None = None,
+    aux: np.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, int]:
     """
     Create a batch where each row holds out one item from the profile.
@@ -310,7 +324,11 @@ def create_holdout_batch(
         # If explicitly told to pad to a smaller size, we truncate
         actual_size = batch_size
 
-    input_batch = np.zeros((batch_size, corpus_size * 2), dtype=np.float32)
+    nch = CONF["input_channels"]
+    if aux is None:
+        aux = default_aux(n_items)
+
+    input_batch = np.zeros((batch_size, corpus_size * nch), dtype=np.float32)
     held_out_indices = np.zeros(batch_size, dtype=np.int32)
     held_out_ratings = np.zeros(batch_size, dtype=np.float32)
 
@@ -323,6 +341,8 @@ def create_holdout_batch(
 
         input_batch[i, remaining_idxs] = 1.0
         input_batch[i, corpus_size + remaining_idxs] = remaining_vals
+        for k in range(nch - 2):
+            input_batch[i, (2 + k) * corpus_size + remaining_idxs] = aux[k][mask]
 
         held_out_indices[i] = idxs[i]
         held_out_ratings[i] = vals[i]
@@ -345,6 +365,7 @@ def _batch_holdout_predict_gpu(
     idxs: np.ndarray,
     vals: np.ndarray,
     corpus_size: int,
+    aux: np.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     GPU-optimized holdout prediction.
@@ -358,7 +379,7 @@ def _batch_holdout_predict_gpu(
 
     # Create the full holdout batch (unpadded)
     full_input_batch, _, _, _ = create_holdout_batch(
-        idxs, vals, corpus_size, pad_to_size=None
+        idxs, vals, corpus_size, pad_to_size=None, aux=aux
     )
 
     # Process in fixed-size chunks
@@ -371,7 +392,9 @@ def _batch_holdout_predict_gpu(
 
         # Pad chunk to fixed batch size if needed
         if chunk_size < batch_size:
-            padded_chunk = jnp.zeros((batch_size, corpus_size * 2), dtype=jnp.float32)
+            padded_chunk = jnp.zeros(
+                (batch_size, corpus_size * CONF["input_channels"]), dtype=jnp.float32
+            )
             padded_chunk = padded_chunk.at[:chunk_size].set(
                 full_input_batch[start_idx:end_idx]
             )
@@ -394,6 +417,7 @@ def _batch_holdout_predict_cpu(
     idxs: np.ndarray,
     vals: np.ndarray,
     corpus_size: int,
+    aux: np.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     CPU-optimized holdout prediction.
@@ -409,7 +433,7 @@ def _batch_holdout_predict_cpu(
     padded_batch_size = ((n_items + num_devices - 1) // num_devices) * num_devices
 
     input_batch, _, _, _ = create_holdout_batch(
-        idxs, vals, corpus_size, pad_to_size=padded_batch_size
+        idxs, vals, corpus_size, pad_to_size=padded_batch_size, aux=aux
     )
 
     if num_devices > 1:
@@ -431,6 +455,7 @@ def batch_holdout_predict(
     vals: np.ndarray,
     corpus_size: int,
     device: str = "cpu",
+    aux: np.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Run inference for every possible single-item holdout in the profile.
@@ -446,9 +471,9 @@ def batch_holdout_predict(
         tuple of (item_logits, rating_pred) for each holdout
     """
     if device == "gpu":
-        return _batch_holdout_predict_gpu(params, idxs, vals, corpus_size)
+        return _batch_holdout_predict_gpu(params, idxs, vals, corpus_size, aux)
     else:
-        return _batch_holdout_predict_cpu(params, idxs, vals, corpus_size)
+        return _batch_holdout_predict_cpu(params, idxs, vals, corpus_size, aux)
 
 
 def compute_holdout_metrics(
@@ -461,6 +486,7 @@ def compute_holdout_metrics(
     baseline_top50_scores: np.ndarray | None = None,
     device: str = "cpu",
     use_alt_ranking: bool = False,
+    aux: np.ndarray | None = None,
 ) -> dict:
     """
     Compute holdout metrics for a single user profile.
@@ -495,7 +521,7 @@ def compute_holdout_metrics(
 
     # Use batched inference
     item_logits, rating_pred = batch_holdout_predict(
-        params, idxs, vals, corpus_size, device=device
+        params, idxs, vals, corpus_size, device=device, aux=aux
     )
 
     item_logits_np = np.array(item_logits)

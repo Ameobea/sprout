@@ -56,28 +56,53 @@ def load_fixture_profiles():
         profiles[name] = {"bucket": "sentinel", "items": items}
     with open(FIXTURES_DIR / "sampled_profiles.json") as f:
         profiles.update(json.load(f))
+    v2 = FIXTURES_DIR / "sampled_profiles_v2.json"
+    if v2.exists():
+        with open(v2) as f:
+            profiles.update(json.load(f))
     return profiles
 
 
 def preprocess(items, id_to_idx, restrict_ids=None):
     kept = filter_profile_entries(items, id_to_idx, restrict_ids)
     idxs, normalized, original, _ = vectorize_entries(kept)
-    return idxs, normalized, original
+    statuses = np.array([k[3] for k in kept])
+    return idxs, normalized, original, statuses
 
 
-def load_params(weights_path):
+def build_aux(original, statuses):
+    nch = CONF["input_channels"]
+    if nch <= 2:
+        return None
+    rows = [(original > 0).astype(np.float32)]
+    if nch == 5:
+        rows.append((statuses == "dropped").astype(np.float32))
+        rows.append(np.isin(statuses, ("watching", "on_hold")).astype(np.float32))
+    return np.stack(rows)
+
+
+def load_params(weights_path, bf16_sim=False):
     model = Recommender()
     rng = random.PRNGKey(0)
-    dummy = jnp.ones((1, CONF["corpus_size"] * 2))
+    dummy = jnp.ones((1, CONF["corpus_size"] * CONF["input_channels"]))
     params = model.init({"params": rng, "noise": rng}, dummy)["params"]
     with open(weights_path, "rb") as f:
-        return serialization.from_bytes(params, f.read())
+        params = serialization.from_bytes(params, f.read())
+    if bf16_sim:
+        params = jax.tree_util.tree_map(
+            lambda a: a.astype(jnp.bfloat16).astype(a.dtype), params
+        )
+    return params
 
 
-def eval_profile(params, idxs, vals, original, corpus_size, device):
+def eval_profile(params, idxs, vals, original, statuses, corpus_size, device, serve_prior=None):
     n = len(idxs)
-    item_logits, rating_pred = batch_holdout_predict(params, idxs, vals, corpus_size, device=device)
+    item_logits, rating_pred = batch_holdout_predict(
+        params, idxs, vals, corpus_size, device=device, aux=build_aux(original, statuses)
+    )
     item_logits = np.array(item_logits)
+    if serve_prior is not None:
+        item_logits = item_logits + serve_prior[None, :]
     rating_pred = np.array(rating_pred)
 
     probs = np.array(jax.nn.softmax(jnp.array(item_logits), axis=1))
@@ -126,7 +151,19 @@ def main():
     ap.add_argument("--name", required=True)
     ap.add_argument("--restrict-corpus", help="corpus_ids.json of another model; eval on intersection only")
     ap.add_argument("--device", default="cpu", choices=["cpu", "gpu"])
+    ap.add_argument("--input-channels", type=int, default=2, choices=[2, 3, 5])
+    ap.add_argument("--serve-prior-alpha", type=float, default=0.0,
+                    help="add alpha*log_pop to logits before ranking (lift-trained models)")
+    ap.add_argument("--popularity", default=str(Path(__file__).parent / "../../data/item_popularity_dec2025.npy"))
+    ap.add_argument("--bf16-sim", action="store_true",
+                    help="round-trip weights through bf16 to simulate prod serving numerics")
     args = ap.parse_args()
+    CONF["input_channels"] = args.input_channels
+
+    serve_prior = None
+    if args.serve_prior_alpha != 0.0:
+        counts = np.load(args.popularity)
+        serve_prior = (args.serve_prior_alpha * np.log(np.maximum(counts, 1.0))).astype(np.float32)
 
     with open(args.corpus) as f:
         corpus_ids = json.load(f)
@@ -139,20 +176,20 @@ def main():
             restrict_ids = set(json.load(f)) & set(corpus_ids)
         print(f"restricting to corpus intersection: {len(restrict_ids)} items")
 
-    params = load_params(args.weights)
+    params = load_params(args.weights, bf16_sim=args.bf16_sim)
     profiles = load_fixture_profiles()
 
     per_profile = {}
     skipped = []
     for i, (username, p) in enumerate(sorted(profiles.items())):
-        idxs, vals, original = preprocess(p["items"], id_to_idx, restrict_ids)
+        idxs, vals, original, statuses = preprocess(p["items"], id_to_idx, restrict_ids)
         if len(idxs) < 5:
             skipped.append(username)
             continue
         per_profile[username] = {
             "bucket": p["bucket"],
             "coverage": len(idxs) / max(1, len(p["items"])),
-            **eval_profile(params, idxs, vals, original, CONF["corpus_size"], args.device),
+            **eval_profile(params, idxs, vals, original, statuses, CONF["corpus_size"], args.device, serve_prior),
         }
         if (i + 1) % 20 == 0:
             print(f"{i + 1}/{len(profiles)} profiles evaluated")
@@ -161,6 +198,7 @@ def main():
     report = {
         "name": args.name,
         "weights": str(args.weights),
+        "input_channels": CONF["input_channels"],
         "corpus": str(args.corpus),
         "restrict_corpus": args.restrict_corpus,
         "skipped_too_small": skipped,
@@ -169,6 +207,8 @@ def main():
             b: aggregate([r for r in per_profile.values() if r["bucket"] == b]) for b in buckets
         },
         "overall": aggregate(list(per_profile.values())),
+        "overall_v1": aggregate([r for r in per_profile.values() if not r["bucket"].startswith("v2-")]),
+        "overall_v2": aggregate([r for r in per_profile.values() if r["bucket"].startswith("v2-")]),
         "per_profile": per_profile,
     }
 
@@ -182,8 +222,10 @@ def main():
         print(f"  {u}: mae={r['rating_mae']:.4f} recall@50={r['recall@50']:.3f} median_rank={r['median_rank']:.0f}")
     for b, a in report["by_bucket"].items():
         print(f"  [{b}] n={a['n_profiles']} mae={a['rating_mae']:.4f} recall@50={a['recall@50']:.3f} median_rank={a['median_rank']:.0f}")
-    o = report["overall"]
-    print(f"  overall: n={o['n_profiles']} mae={o['rating_mae']:.4f} recall@50={o['recall@50']:.3f} median_rank={o['median_rank']:.0f}")
+    for key in ["overall", "overall_v1", "overall_v2"]:
+        o = report[key]
+        if o["n_profiles"]:
+            print(f"  {key}: n={o['n_profiles']} mae={o['rating_mae']:.4f} recall@50={o['recall@50']:.3f} median_rank={o['median_rank']:.0f}")
     print(f"report written to {out_path}")
 
 

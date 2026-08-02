@@ -1,11 +1,18 @@
 //! AVX-512 vector math: exp/log2/swish/softmax/pow. ~1e-7 relative accuracy,
 //! plenty vs. the f32 model itself.
+//!
+//! Every function containing intrinsics carries `#[target_feature]`. Without it LLVM
+//! refuses to inline the `_mm512_*` intrinsics and emits out-of-line calls that shuffle
+//! each __m512 through the stack in 128-bit pieces (~4x slower). `-C target-cpu=znver4`
+//! also fixes that, but only when the build actually picks up .cargo/config.toml; the
+//! attribute makes the codegen independent of build configuration.
 
 #![allow(clippy::excessive_precision)]
 
 use std::arch::x86_64::*;
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "avx512f")]
 pub unsafe fn exp_ps(x: __m512) -> __m512 {
     // Cephes expf: e^x = 2^n * e^r with r = x - n*ln2 (Cody-Waite)
     let x = _mm512_max_ps(_mm512_set1_ps(-87.336), _mm512_min_ps(_mm512_set1_ps(88.722), x));
@@ -27,7 +34,8 @@ pub unsafe fn exp_ps(x: __m512) -> __m512 {
     _mm512_mul_ps(y, pow2n)
 }
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "avx512f")]
 pub unsafe fn log2_ps(x: __m512) -> __m512 {
     // mant in [0.75, 1.5) so the poly argument straddles 0; e = getexp(x * 4/3)
     let m = _mm512_getmant_ps::<_MM_MANT_NORM_P75_1P5, _MM_MANT_SIGN_ZERO>(x);
@@ -45,7 +53,8 @@ pub unsafe fn log2_ps(x: __m512) -> __m512 {
     _mm512_fmadd_ps(y, r, e)
 }
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "avx512f")]
 pub unsafe fn swish_ps(x: __m512) -> __m512 {
     let sig = _mm512_div_ps(
         _mm512_set1_ps(1.0),
@@ -55,106 +64,122 @@ pub unsafe fn swish_ps(x: __m512) -> __m512 {
 }
 
 /// out = x^w elementwise (x >= 0; x == 0 maps to ~0 for w > 0)
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "avx512f")]
 pub unsafe fn pow_ps(x: __m512, w: __m512) -> __m512 {
     const LN2: f32 = 0.6931471805599453;
     exp_ps(_mm512_mul_ps(_mm512_mul_ps(w, _mm512_set1_ps(LN2)), log2_ps(x)))
 }
 
 pub fn swish_slice(xs: &mut [f32]) {
-    unsafe {
-        let n = xs.len();
-        let mut i = 0;
-        while i + 16 <= n {
-            let v = _mm512_loadu_ps(xs.as_ptr().add(i));
-            _mm512_storeu_ps(xs.as_mut_ptr().add(i), swish_ps(v));
-            i += 16;
-        }
-        if i < n {
-            let mask = (1u16 << (n - i)) - 1;
-            let v = _mm512_maskz_loadu_ps(mask, xs.as_ptr().add(i));
-            _mm512_mask_storeu_ps(xs.as_mut_ptr().add(i), mask, swish_ps(v));
-        }
+    unsafe { swish_slice_avx(xs) }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn swish_slice_avx(xs: &mut [f32]) {
+    let n = xs.len();
+    let mut i = 0;
+    while i + 16 <= n {
+        let v = _mm512_loadu_ps(xs.as_ptr().add(i));
+        _mm512_storeu_ps(xs.as_mut_ptr().add(i), swish_ps(v));
+        i += 16;
+    }
+    if i < n {
+        let mask = (1u16 << (n - i)) - 1;
+        let v = _mm512_maskz_loadu_ps(mask, xs.as_ptr().add(i));
+        _mm512_mask_storeu_ps(xs.as_mut_ptr().add(i), mask, swish_ps(v));
     }
 }
 
 /// Returns (rowmax, sum of exp(x - rowmax)); does not write probabilities.
 pub fn softmax_stats(xs: &[f32]) -> (f32, f32) {
-    unsafe {
-        let n = xs.len();
-        debug_assert_eq!(n % 16, 0);
-        let mut vmax = _mm512_set1_ps(f32::NEG_INFINITY);
-        let mut i = 0;
-        while i < n {
-            vmax = _mm512_max_ps(vmax, _mm512_loadu_ps(xs.as_ptr().add(i)));
-            i += 16;
-        }
-        let max = _mm512_reduce_max_ps(vmax);
-        let maxv = _mm512_set1_ps(max);
-        let mut vsum = _mm512_setzero_ps();
-        i = 0;
-        while i < n {
-            let e = exp_ps(_mm512_sub_ps(_mm512_loadu_ps(xs.as_ptr().add(i)), maxv));
-            vsum = _mm512_add_ps(vsum, e);
-            i += 16;
-        }
-        (max, _mm512_reduce_add_ps(vsum))
+    unsafe { softmax_stats_avx(xs) }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn softmax_stats_avx(xs: &[f32]) -> (f32, f32) {
+    let n = xs.len();
+    debug_assert_eq!(n % 16, 0);
+    let mut vmax = _mm512_set1_ps(f32::NEG_INFINITY);
+    let mut i = 0;
+    while i < n {
+        vmax = _mm512_max_ps(vmax, _mm512_loadu_ps(xs.as_ptr().add(i)));
+        i += 16;
     }
+    let max = _mm512_reduce_max_ps(vmax);
+    let maxv = _mm512_set1_ps(max);
+    let mut vsum = _mm512_setzero_ps();
+    i = 0;
+    while i < n {
+        let e = exp_ps(_mm512_sub_ps(_mm512_loadu_ps(xs.as_ptr().add(i)), maxv));
+        vsum = _mm512_add_ps(vsum, e);
+        i += 16;
+    }
+    (max, _mm512_reduce_add_ps(vsum))
 }
 
 /// probs[i] = exp(x[i] - max) / sum
 pub fn softmax_into(xs: &[f32], max: f32, sum: f32, out: &mut [f32]) {
-    unsafe {
-        let inv = _mm512_set1_ps(1.0 / sum);
-        let maxv = _mm512_set1_ps(max);
-        let mut i = 0;
-        while i < xs.len() {
-            let e = exp_ps(_mm512_sub_ps(_mm512_loadu_ps(xs.as_ptr().add(i)), maxv));
-            _mm512_storeu_ps(out.as_mut_ptr().add(i), _mm512_mul_ps(e, inv));
-            i += 16;
-        }
+    unsafe { softmax_into_avx(xs, max, sum, out) }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn softmax_into_avx(xs: &[f32], max: f32, sum: f32, out: &mut [f32]) {
+    let inv = _mm512_set1_ps(1.0 / sum);
+    let maxv = _mm512_set1_ps(max);
+    let mut i = 0;
+    while i < xs.len() {
+        let e = exp_ps(_mm512_sub_ps(_mm512_loadu_ps(xs.as_ptr().add(i)), maxv));
+        _mm512_storeu_ps(out.as_mut_ptr().add(i), _mm512_mul_ps(e, inv));
+        i += 16;
     }
 }
 
 /// Default ranking score for a full row: probs^w * max(ratings+1, 0.001)^(1-w).
 /// `probs` input holds softmax probabilities.
 pub fn combined_score_into(probs: &[f32], ratings: &[f32], w: f32, out: &mut [f32]) {
-    unsafe {
-        let wv = _mm512_set1_ps(w);
-        let iw = _mm512_set1_ps(1.0 - w);
-        let one = _mm512_set1_ps(1.0);
-        let floor = _mm512_set1_ps(0.001);
-        let mut i = 0;
-        while i < probs.len() {
-            let p = _mm512_loadu_ps(probs.as_ptr().add(i));
-            let r = _mm512_loadu_ps(ratings.as_ptr().add(i));
-            let rb = _mm512_max_ps(_mm512_add_ps(r, one), floor);
-            let s = _mm512_mul_ps(pow_ps(p, wv), pow_ps(rb, iw));
-            _mm512_storeu_ps(out.as_mut_ptr().add(i), s);
-            i += 16;
-        }
+    unsafe { combined_score_into_avx(probs, ratings, w, out) }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn combined_score_into_avx(probs: &[f32], ratings: &[f32], w: f32, out: &mut [f32]) {
+    let wv = _mm512_set1_ps(w);
+    let iw = _mm512_set1_ps(1.0 - w);
+    let one = _mm512_set1_ps(1.0);
+    let floor = _mm512_set1_ps(0.001);
+    let mut i = 0;
+    while i < probs.len() {
+        let p = _mm512_loadu_ps(probs.as_ptr().add(i));
+        let r = _mm512_loadu_ps(ratings.as_ptr().add(i));
+        let rb = _mm512_max_ps(_mm512_add_ps(r, one), floor);
+        let s = _mm512_mul_ps(pow_ps(p, wv), pow_ps(rb, iw));
+        _mm512_storeu_ps(out.as_mut_ptr().add(i), s);
+        i += 16;
     }
 }
 
 pub fn mean_std_512(xs: &[f32]) -> (f32, f32) {
-    unsafe {
-        let mut s = _mm512_setzero_ps();
-        let mut i = 0;
-        while i < xs.len() {
-            s = _mm512_add_ps(s, _mm512_loadu_ps(xs.as_ptr().add(i)));
-            i += 16;
-        }
-        let mean = _mm512_reduce_add_ps(s) / xs.len() as f32;
-        let mv = _mm512_set1_ps(mean);
-        let mut v = _mm512_setzero_ps();
-        i = 0;
-        while i < xs.len() {
-            let d = _mm512_sub_ps(_mm512_loadu_ps(xs.as_ptr().add(i)), mv);
-            v = _mm512_fmadd_ps(d, d, v);
+    unsafe { mean_std_512_avx(xs) }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn mean_std_512_avx(xs: &[f32]) -> (f32, f32) {
+    let mut s = _mm512_setzero_ps();
+    let mut i = 0;
+    while i < xs.len() {
+        s = _mm512_add_ps(s, _mm512_loadu_ps(xs.as_ptr().add(i)));
         i += 16;
-        }
-        (mean, (_mm512_reduce_add_ps(v) / xs.len() as f32).sqrt())
     }
+    let mean = _mm512_reduce_add_ps(s) / xs.len() as f32;
+    let mv = _mm512_set1_ps(mean);
+    let mut v = _mm512_setzero_ps();
+    i = 0;
+    while i < xs.len() {
+        let d = _mm512_sub_ps(_mm512_loadu_ps(xs.as_ptr().add(i)), mv);
+        v = _mm512_fmadd_ps(d, d, v);
+        i += 16;
+    }
+    (mean, (_mm512_reduce_add_ps(v) / xs.len() as f32).sqrt())
 }
 
 /// Scores + softmax probs at a gathered subset of columns for one output row.
@@ -197,17 +222,30 @@ pub fn row_scores_gathered(
 pub fn alt_score_into(logits: &[f32], ratings: &[f32], w: f32, out: &mut [f32]) {
     let (lm, ls) = mean_std_512(logits);
     let (rm, rs) = mean_std_512(ratings);
-    unsafe {
-        let a = _mm512_set1_ps(w / (ls + 1e-6));
-        let b = _mm512_set1_ps((1.0 - w) / (rs + 1e-6));
-        let lmv = _mm512_set1_ps(lm);
-        let rmv = _mm512_set1_ps(rm);
-        let mut i = 0;
-        while i < logits.len() {
-            let l = _mm512_sub_ps(_mm512_loadu_ps(logits.as_ptr().add(i)), lmv);
-            let r = _mm512_sub_ps(_mm512_loadu_ps(ratings.as_ptr().add(i)), rmv);
-            _mm512_storeu_ps(out.as_mut_ptr().add(i), _mm512_fmadd_ps(l, a, _mm512_mul_ps(r, b)));
-            i += 16;
-        }
+    unsafe { alt_score_into_avx(logits, ratings, w, out, lm, ls, rm, rs) }
+}
+
+#[target_feature(enable = "avx512f")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn alt_score_into_avx(
+    logits: &[f32],
+    ratings: &[f32],
+    w: f32,
+    out: &mut [f32],
+    lm: f32,
+    ls: f32,
+    rm: f32,
+    rs: f32,
+) {
+    let a = _mm512_set1_ps(w / (ls + 1e-6));
+    let b = _mm512_set1_ps((1.0 - w) / (rs + 1e-6));
+    let lmv = _mm512_set1_ps(lm);
+    let rmv = _mm512_set1_ps(rm);
+    let mut i = 0;
+    while i < logits.len() {
+        let l = _mm512_sub_ps(_mm512_loadu_ps(logits.as_ptr().add(i)), lmv);
+        let r = _mm512_sub_ps(_mm512_loadu_ps(ratings.as_ptr().add(i)), rmv);
+        _mm512_storeu_ps(out.as_mut_ptr().add(i), _mm512_fmadd_ps(l, a, _mm512_mul_ps(r, b)));
+        i += 16;
     }
 }

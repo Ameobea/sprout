@@ -10,6 +10,7 @@ P=$(grep '^MYSQL_PASSWORD' ../.env | cut -d= -f2-)
 STAGE="dumps/${TABLE}.tsv.zst"
 QUERY="SELECT * FROM \`$TABLE\`${LIMIT:+ LIMIT $LIMIT}"
 
-ssh debian@ameo.dev "mkdir -p dumps && docker exec mysql_main_mariadb mariadb -u'$U' -p'$P' --batch --raw anime-atlas -e '$QUERY' | zstd -T0 -3 -f -o $STAGE"
+# --quick streams rows instead of buffering the full result set in the client (OOMs the box otherwise)
+ssh debian@ameo.dev "set -o pipefail; mkdir -p dumps && docker exec mysql_main_mariadb mariadb -u'$U' -p'$P' --batch --raw --quick anime-atlas -e '$QUERY' | zstd -T0 -3 -f -o $STAGE"
 rsync -P "debian@ameo.dev:$STAGE" "$OUT"
 echo "done: $OUT ($(du -h "$OUT" | cut -f1)); decompress-stream with: zstd -dc $OUT"
