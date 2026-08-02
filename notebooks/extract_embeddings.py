@@ -47,7 +47,11 @@ def get_item_embeddings(model_path):
 
 # Usage
 if __name__ == "__main__":
-    embeddings = get_item_embeddings("../data/jax_model.msgpack")
+    import sys
+
+    model_path = sys.argv[1] if len(sys.argv) > 1 else "../data/jax_model.msgpack"
+    out_path = sys.argv[2] if len(sys.argv) > 2 else "../data/anime_embeddings.npy"
+    embeddings = get_item_embeddings(model_path)
 
     # Optional: L2 Normalize before saving (helps UMAP significantly)
     norms = jnp.linalg.norm(embeddings, axis=1, keepdims=True)
@@ -56,4 +60,4 @@ if __name__ == "__main__":
     print(f"Extracted embeddings shape: {embeddings.shape}")
 
     # Save for your visualization tool
-    np.save("../data/anime_embeddings.npy", np.array(embeddings))
+    np.save(out_path, np.array(embeddings))

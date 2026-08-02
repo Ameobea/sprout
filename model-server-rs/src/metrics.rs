@@ -21,7 +21,16 @@ pub mod recommend {
     #[ctor = HistogramBuilder {
         buckets: &[0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5],
     }]
-    pub fn inference_time_seconds() -> TimeHistogram;
+    pub fn inference_time_seconds(model: &'static str) -> TimeHistogram;
+
+    /// Recommend requests per served model (after default resolution)
+    pub fn requests_by_model_total(model: &'static str) -> Counter;
+
+    /// Requests naming a model that is not loaded
+    pub fn unknown_model_total() -> Counter;
+
+    /// Number of models loaded at startup
+    pub fn models_loaded() -> Gauge;
 
     /// Time spent waiting to acquire the inference lock
     #[ctor = HistogramBuilder {

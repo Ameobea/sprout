@@ -7,6 +7,7 @@ import { DEFAULT_MODEL_NAME, DEFAULT_PROFILE_SOURCE, validateModelName } from 's
 import { typify } from 'src/components/recommendation/utils';
 import type { ProfileFetchErrorKind } from 'src/helpers';
 import { getAnimesByID, type AnimeDetails } from 'src/malAPI';
+import { AnimeID, boundedArray, MAX_EXCLUDED_IDS } from 'src/validation';
 import { submitServerAnalyticsEvent } from 'src/serverAnalytics';
 import {
   getGenresDB,
@@ -26,7 +27,7 @@ export type RecommendationsResponse =
     }
   | { type: 'error'; error: string; kind?: ProfileFetchErrorKind };
 
-const ExcludedIDs = t.array(t.number);
+const ExcludedIDs = boundedArray(AnimeID, MAX_EXCLUDED_IDS, 'ExcludedIDs');
 
 const parseExcludedIDs = (searchParamKey: string, url: URL): Either<{ status: number; body: string }, number[]> => {
   const rawExcludedIDs = url.searchParams.getAll(searchParamKey);

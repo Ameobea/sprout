@@ -7,9 +7,10 @@ import { typify } from 'src/components/recommendation/utils';
 import { getRecommendations, ProfileSourceValidator } from './recommendation';
 import { validateModelName } from 'src/components/recommendation/conf';
 import { getAnimesByID, type AnimeDetails } from 'src/malAPI';
+import { AnimeID, boundedArray, MAX_EXCLUDED_IDS, MAX_PROFILE_ENTRIES } from 'src/validation';
 
 const RecommendationRequest = t.type({
-  availableAnimeMetadataIDs: t.array(t.number),
+  availableAnimeMetadataIDs: boundedArray(AnimeID, MAX_PROFILE_ENTRIES, 'AvailableAnimeMetadataIDs'),
   dataSource: t.union([
     t.type({
       type: t.literal('username'),
@@ -17,11 +18,15 @@ const RecommendationRequest = t.type({
     }),
     t.type({
       type: t.literal('rawProfile'),
-      profile: t.array(t.type({ animeID: t.number, score: t.number })),
+      profile: boundedArray(
+        t.type({ animeID: AnimeID, score: t.number }),
+        MAX_PROFILE_ENTRIES,
+        'RawProfile'
+      ),
     }),
   ]),
-  excludedRankingAnimeIDs: t.array(t.number),
-  excludedGenreIDs: t.array(t.number),
+  excludedRankingAnimeIDs: boundedArray(AnimeID, MAX_EXCLUDED_IDS, 'ExcludedRankingAnimeIDs'),
+  excludedGenreIDs: boundedArray(AnimeID, MAX_EXCLUDED_IDS, 'ExcludedGenreIDs'),
   modelName: t.string,
   includeContributors: t.boolean,
   includeExtraSeasons: t.boolean,
@@ -36,7 +41,10 @@ const RecommendationRequest = t.type({
 });
 
 export const POST: RequestHandler = async ({ request }) => {
-  const parsed = RecommendationRequest.decode(await request.json());
+  const body = await request.json().catch(() => {
+    error(400, 'Invalid JSON body');
+  });
+  const parsed = RecommendationRequest.decode(body);
   if (isLeft(parsed)) {
     const errors = PathReporter.report(parsed);
     error(400, errors.join(', '));

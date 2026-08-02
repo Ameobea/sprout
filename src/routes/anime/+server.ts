@@ -1,13 +1,14 @@
 import { error, json, type RequestHandler } from '@sveltejs/kit';
 
 import { getAnimesByID } from 'src/malAPI';
+import { isValidAnimeID } from 'src/validation';
 
 export const GET: RequestHandler = async ({ url }) => {
   const id = url.searchParams.get('id');
   if (!id) {
     error(400, 'Missing id param');
   }
-  if (isNaN(+id)) {
+  if (!isValidAnimeID(+id)) {
     error(400, 'Invalid id param');
   }
 

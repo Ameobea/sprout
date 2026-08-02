@@ -1,9 +1,18 @@
-import type { RequestHandler } from '@sveltejs/kit';
+import { error, type RequestHandler } from '@sveltejs/kit';
 
+import { ADMIN_API_TOKEN } from 'src/conf';
 import { DbPool } from 'src/dbUtil';
 import { fetchAnimeFromMALAPI } from 'src/malAPI';
 
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ url }) => {
+  const token = url.searchParams.get('token');
+  if (!token) {
+    error(400, 'Missing token');
+  }
+  if (token !== ADMIN_API_TOKEN) {
+    error(403, 'Invalid token');
+  }
+
   const query =
     'SELECT id FROM `anime-metadata` WHERE update_timestamp < now() - interval 20 DAY ORDER BY update_timestamp DESC LIMIT 4';
   const ids = await new Promise<number[]>((resolve, reject) => {

@@ -239,6 +239,8 @@ export interface ModelServerInput {
     rating: number;
     watch_status: string;
   }[];
+  /** Model-server model name; omitted = server default */
+  model?: string;
   top_k: number;
   /**
    * Controls how the recommendation score is computed from both the presence probability
@@ -324,7 +326,7 @@ export interface NormalizationStats {
 }
 
 const performInferrence = async ({
-  modelName: _modelName,
+  modelName,
   profile,
   count,
   computeContributions,
@@ -356,6 +358,7 @@ const performInferrence = async ({
       rating: entry.list_status.score,
       watch_status: entry.list_status.status,
     })),
+    model: modelName,
     top_k: requestCount,
     logit_weight: logitWeight,
     include_profile_holdout: false,

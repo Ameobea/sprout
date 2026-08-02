@@ -70,9 +70,16 @@ impl LruCache {
 }
 
 pub struct AppState {
-    pub md: Arc<ModelData>,
+    pub models: HashMap<&'static str, Arc<ModelData>>,
+    pub default_model: &'static str,
     pub cache: Mutex<LruCache>,
     pub infer_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+impl AppState {
+    fn resolve(&self, requested: Option<&str>) -> Option<&Arc<ModelData>> {
+        self.models.get(requested.unwrap_or(self.default_model))
+    }
 }
 
 fn err(status: StatusCode, detail: &str) -> Response {
@@ -92,6 +99,7 @@ async fn track_request(req: Request, next: Next) -> Response {
     let endpoint = match req.uri().path() {
         "/recommend" => "recommend",
         "/health" => "health",
+        "/models" => "models",
         "/corpus" => "corpus",
         "/cache/stats" => "cache_stats",
         "/cache/clear" => "cache_clear",
@@ -108,7 +116,8 @@ async fn track_request(req: Request, next: Next) -> Response {
     resp
 }
 
-fn record_request_shape(req: &RecommendRequest) {
+fn record_request_shape(model: &'static str, req: &RecommendRequest) {
+    recommend_metrics::requests_by_model_total(model).inc();
     recommend_metrics::profile_size().observe(req.profile.len() as f64);
     if req.include_profile_holdout {
         recommend_metrics::feature_requests_total("profile_holdout").inc();
@@ -122,11 +131,21 @@ fn record_request_shape(req: &RecommendRequest) {
     if req.niche_boost_factor > 0.0 {
         recommend_metrics::feature_requests_total("niche_boost").inc();
     }
+    if req.include_raw_logits {
+        recommend_metrics::feature_requests_total("raw_logits").inc();
+    }
 }
 
 async fn recommend_handler(State(state): State<Arc<AppState>>, Json(req): Json<RecommendRequest>) -> Response {
-    record_request_shape(&req);
-    let key = cache_key(&req);
+    let md = match state.resolve(req.model.as_deref()) {
+        Some(m) => m.clone(),
+        None => {
+            recommend_metrics::unknown_model_total().inc();
+            return err(StatusCode::NOT_FOUND, &format!("unknown model: {}", req.model.as_deref().unwrap_or("")));
+        }
+    };
+    record_request_shape(md.name, &req);
+    let key = format!("{}|{}", md.name, cache_key(&req));
     if let Some(cached) = state.cache.lock().unwrap().get(&key) {
         cache_metrics::hits_total().inc();
         return json_bytes(cached);
@@ -137,7 +156,6 @@ async fn recommend_handler(State(state): State<Arc<AppState>>, Json(req): Json<R
         return err(StatusCode::BAD_REQUEST, "profile must be a non-empty list");
     }
 
-    let md = state.md.clone();
     let prep = match recommend::preprocess(&md, &req.profile) {
         Ok(p) => p,
         Err(e) => {
@@ -151,7 +169,7 @@ async fn recommend_handler(State(state): State<Arc<AppState>>, Json(req): Json<R
         let t0 = Instant::now();
         let _guard = lock.blocking_lock();
         recommend_metrics::queue_wait_seconds().observe(t0.elapsed().as_nanos() as u64);
-        let timer = recommend_metrics::inference_time_seconds().start_timer();
+        let timer = recommend_metrics::inference_time_seconds(md.name).start_timer();
         let (recommendations, profile_holdout) = recommend::run_inference(&md, &prep, &req);
         timer.stop_and_record();
         recommend::RecommendResponse {
@@ -180,8 +198,35 @@ async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
-async fn corpus(State(state): State<Arc<AppState>>) -> Json<Value> {
-    Json(json!({ "corpus_ids": state.md.corpus_ids, "corpus_size": state.md.corpus_ids.len() }))
+async fn models_list(State(state): State<Arc<AppState>>) -> Json<Value> {
+    let list: Vec<Value> = state
+        .models
+        .values()
+        .map(|m| {
+            json!({
+                "name": m.name,
+                "serving": format!("{:?}", m.serving).to_lowercase(),
+                "corpus_size": m.corpus_ids.len(),
+                "default": m.name == state.default_model,
+            })
+        })
+        .collect();
+    Json(json!({ "models": list }))
+}
+
+async fn corpus(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>,
+) -> Response {
+    match state.resolve(q.get("model").map(String::as_str)) {
+        Some(md) => Json(json!({
+            "model": md.name,
+            "corpus_ids": md.corpus_ids,
+            "corpus_size": md.corpus_ids.len(),
+        }))
+        .into_response(),
+        None => err(StatusCode::NOT_FOUND, "unknown model"),
+    }
 }
 
 async fn cache_stats(State(state): State<Arc<AppState>>) -> Json<Value> {
@@ -194,15 +239,17 @@ async fn cache_clear(State(state): State<Arc<AppState>>) -> Json<Value> {
     Json(json!({ "status": "ok", "message": "Cache cleared" }))
 }
 
-pub fn build_router(md: Arc<ModelData>) -> Router {
+pub fn build_router(models: HashMap<&'static str, Arc<ModelData>>, default_model: &'static str) -> Router {
     let state = Arc::new(AppState {
-        md,
+        models,
+        default_model,
         cache: Mutex::new(LruCache::new(500)),
         infer_lock: Arc::new(tokio::sync::Mutex::new(())),
     });
     Router::new()
         .route("/recommend", post(recommend_handler))
         .route("/health", get(health))
+        .route("/models", get(models_list))
         .route("/corpus", get(corpus))
         .route("/cache/stats", get(cache_stats))
         .route("/cache/clear", post(cache_clear))

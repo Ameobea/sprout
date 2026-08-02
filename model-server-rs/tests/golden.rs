@@ -27,6 +27,10 @@ fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max)
 }
 
+fn golden_path() -> String {
+    std::env::var("GOLDEN_PATH").unwrap_or("testdata/forward_golden.json".into())
+}
+
 #[test]
 fn norm_matches_python() {
     let cases: Vec<NormCase> =
@@ -51,7 +55,7 @@ fn forward_ref_matches_numpy_f64() {
     }
     let params = Params::load(Path::new(&model_path));
     let cases: Vec<ForwardCase> =
-        serde_json::from_str(&std::fs::read_to_string("testdata/forward_golden.json").unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(golden_path()).unwrap()).unwrap();
     for c in &cases {
         let x = refimpl::make_dense_profile(&c.idxs, &c.vals);
         let (logits, ratings) = refimpl::forward_ref(&params, &x);
@@ -71,7 +75,7 @@ fn bf16_engine_close_to_golden() {
     }
     let params = Params::load(Path::new(&model_path));
     let cases: Vec<ForwardCase> =
-        serde_json::from_str(&std::fs::read_to_string("testdata/forward_golden.json").unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(golden_path()).unwrap()).unwrap();
     let engine = Engine::new(&params, 4, KernCfg { nr: 32, mr: 8 }, None, Precision::Bf16);
     for c in &cases {
         let items: Vec<(u32, f32)> = c.idxs.iter().copied().zip(c.vals.iter().copied()).collect();
@@ -93,7 +97,7 @@ fn engine_matches_golden_and_ref_holdout() {
     }
     let params = Params::load(Path::new(&model_path));
     let cases: Vec<ForwardCase> =
-        serde_json::from_str(&std::fs::read_to_string("testdata/forward_golden.json").unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(golden_path()).unwrap()).unwrap();
 
     for cfg in [KernCfg { nr: 64, mr: 6 }, KernCfg { nr: 32, mr: 8 }] {
         let engine = Engine::new(&params, 4, cfg, None, Precision::F32);

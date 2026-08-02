@@ -15,13 +15,16 @@ RUN cargo build --release --bin serve
 
 FROM debian:bookworm-slim
 COPY --from=build /src/target/release/serve /usr/local/bin/model-server
-COPY data/jax_model.msgpack /opt/model/jax_model.msgpack
-COPY data/corpus_ids.json /opt/model/corpus_ids.json
-COPY data/processed-metadata.csv /opt/model/processed-metadata.csv
+COPY model-server-rs/deploy/models.json /opt/model/models.json
+COPY data/aug2026/jax_model_fresh_logq.msgpack /opt/model/2026-logq/weights.msgpack
+COPY data/corpus_ids_aug2026.json /opt/model/2026-logq/corpus_ids.json
+COPY data/processed-metadata_aug2026.csv /opt/model/2026-logq/processed-metadata.csv
+COPY data/aug2026/train_counts_2026logq.json /opt/model/2026-logq/train_counts.json
+COPY data/jax_model_dec2025.msgpack /opt/model/2025-jax/weights.msgpack
+COPY data/corpus_ids-dec2025.json /opt/model/2025-jax/corpus_ids.json
+COPY data/processed-metadata-dec2025.csv /opt/model/2025-jax/processed-metadata.csv
 
-ENV MODEL_PATH=/opt/model/jax_model.msgpack
-ENV CORPUS_PATH=/opt/model/corpus_ids.json
-ENV METADATA_PATH=/opt/model/processed-metadata.csv
+ENV MODELS_CONFIG=/opt/model/models.json
 ENV PORT=8000
 ENV METRICS_PORT=5709
 ENV INFER_THREADS=8

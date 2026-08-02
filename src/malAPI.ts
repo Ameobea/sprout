@@ -5,6 +5,7 @@ import { delay } from './util';
 import NodeCache from 'node-cache';
 import { DbPool } from './dbUtil';
 import { AsyncSemaphore } from './util/asyncSemaphore';
+import { isValidAnimeID } from './validation';
 
 export class MALAPIError extends Error {
   public statusCode: number;
@@ -19,17 +20,24 @@ export class MALAPIError extends Error {
 const MAX_CONCURRENT_MAL_API_REQUESTS = 4;
 const MALAPIConcurrencyLimiter = new AsyncSemaphore(MAX_CONCURRENT_MAL_API_REQUESTS);
 
-const makeMALRequestInner = async (url: string, retryCount?: number) => {
+const MAX_MAL_RETRIES = 5;
+const MAX_RETRY_AFTER_SECS = 60;
+
+const makeMALRequestInner = async (url: string, retryCount = 0) => {
   const res = await fetch(url, { headers: { 'X-MAL-CLIENT-ID': MAL_CLIENT_ID } });
   if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
-    console.log(`Retryable error ${res.status} for ${url}`);
-    const retryAfter = res.headers.get('Retry-After');
-    if (!retryAfter) {
-      await delay(1000);
-    } else {
-      await delay(+retryAfter * 1000);
+    if (retryCount >= MAX_MAL_RETRIES) {
+      throw new MALAPIError(`MAL API returned ${res.status} after ${MAX_MAL_RETRIES} retries`, res.status);
     }
-    return makeMALRequestInner(url, (retryCount ?? 0) + 1);
+    console.log(`Retryable error ${res.status} for ${url} (retry ${retryCount + 1}/${MAX_MAL_RETRIES})`);
+    // Retry-After may legally be an HTTP-date, which parses to NaN; delay(NaN) fires immediately
+    const retryAfterSecs = Number(res.headers.get('Retry-After'));
+    const backoffMs =
+      Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
+        ? Math.min(retryAfterSecs, MAX_RETRY_AFTER_SECS) * 1000
+        : Math.min(2 ** retryCount * 1000, 30_000);
+    await delay(backoffMs);
+    return makeMALRequestInner(url, retryCount + 1);
   } else if (!res.ok) {
     throw new MALAPIError(`MAL API returned ${res.status}: ${await res.text()}`, res.status);
   }
@@ -254,6 +262,9 @@ export interface AnimeDetails {
 const AnimeDetailsCache = new NodeCache({ stdTTL: 24 * 60 * 60 * 1000 });
 
 export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | null> => {
+  if (!isValidAnimeID(id)) {
+    return null;
+  }
   const fieldsToFetch = [
     'main_picture',
     'alternative_titles',
@@ -304,16 +315,18 @@ export const fetchAnimeFromMALAPI = async (id: number): Promise<AnimeDetails | n
 };
 
 const fetchAnimesFromDB = async (ids: number[]): Promise<(AnimeDetails | null)[]> => {
-  if (ids.length === 0) {
-    return [];
+  // NaN/Infinity would render as bare SQL identifiers and error the whole query
+  const queryIDs = ids.filter(isValidAnimeID);
+  if (queryIDs.length === 0) {
+    return ids.map(() => null);
   }
 
   const entries = await new Promise<{ id: number; metadata: string; update_timestamp: string }[]>((resolve, reject) => {
-    const replacers = ids.map(() => '?').join(',');
+    const replacers = queryIDs.map(() => '?').join(',');
     // Re-fetch from MAL if older than 30 days
     const query = `SELECT id, metadata, update_timestamp FROM \`anime-metadata\` WHERE update_timestamp >= now() - interval 30 DAY AND id IN (${replacers}) AND metadata is not null AND metadata != ''`;
 
-    DbPool.query(query, ids, (err, res) => {
+    DbPool.query(query, queryIDs, (err, res) => {
       if (err) {
         reject(err);
       } else {
@@ -417,6 +430,23 @@ const loadLocalMetadataDump = (): Map<number, AnimeDetails> | null => {
 
 let metadataDBDisabledUntil = 0;
 
+/**
+ * Only genuine connectivity failures may trip the 60s breaker. Tripping on query-level errors
+ * lets any malformed-input request disable the metadata DB process-wide.
+ */
+const CONNECTION_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENOTFOUND',
+  'EPIPE',
+  'ETIMEDOUT',
+  'PROTOCOL_CONNECTION_LOST',
+  'PROTOCOL_SEQUENCE_TIMEOUT',
+  'POOL_CLOSED',
+  'ER_CON_COUNT_ERROR',
+]);
+
 const fetchAnimesByID = async (ids: number[]): Promise<(AnimeDetails | null)[]> => {
   let fromDB: (AnimeDetails | null)[];
   let dbUnavailable = Date.now() < metadataDBDisabledUntil;
@@ -424,9 +454,13 @@ const fetchAnimesByID = async (ids: number[]): Promise<(AnimeDetails | null)[]> 
     fromDB = ids.map(() => null);
   } else {
     fromDB = await fetchAnimesFromDB(ids).catch((err) => {
-      metadataDBDisabledUntil = Date.now() + 60_000;
-      dbUnavailable = true;
-      console.error('Anime metadata DB unavailable; falling back to local dump + MAL API for 60s:', err?.code ?? err);
+      if (CONNECTION_ERROR_CODES.has(err?.code)) {
+        metadataDBDisabledUntil = Date.now() + 60_000;
+        dbUnavailable = true;
+        console.error('Anime metadata DB unavailable; falling back to local dump + MAL API for 60s:', err?.code);
+      } else {
+        console.error('Anime metadata DB query failed (breaker not tripped):', err?.code ?? err);
+      }
       return ids.map(() => null);
     });
   }
@@ -492,8 +526,9 @@ export const getAnimesByID = async (
 export const refreshAllMetadataInDB = async (delayMs: number = 1200) => {
   console.log('Refreshing all anime metadata in DB from MAL API...');
   // fetch all IDs
+  // Least-recently-updated first so an interrupted run resumes where it left off
   const ids: number[] = await new Promise((resolve, reject) => {
-    DbPool.query('SELECT id FROM `anime-metadata`', (err, res) => {
+    DbPool.query('SELECT id FROM `anime-metadata` ORDER BY update_timestamp ASC', (err, res) => {
       if (err) {
         reject(err);
       } else {

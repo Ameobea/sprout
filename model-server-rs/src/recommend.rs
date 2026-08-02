@@ -20,6 +20,8 @@ pub struct ProfileEntry {
 #[derive(Deserialize, Serialize, Clone)]
 pub struct RecommendRequest {
     pub profile: Vec<ProfileEntry>,
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default = "d_top_k")]
     pub top_k: usize,
     #[serde(default)]
@@ -34,6 +36,8 @@ pub struct RecommendRequest {
     pub use_alt_ranking: bool,
     #[serde(default)]
     pub niche_boost_factor: f32,
+    #[serde(default)]
+    pub include_raw_logits: bool,
 }
 
 fn d_top_k() -> usize {
@@ -57,6 +61,8 @@ pub struct Recommendation {
     pub score: f32,
     pub probability: f32,
     pub predicted_rating: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_logit: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_contributors: Option<Vec<Contributor>>,
 }
@@ -99,11 +105,51 @@ pub struct RecommendResponse {
     pub normalization_stats: NormStatsOut,
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum ServingFamily {
+    /// dec2025-era: raw logits ranked, optional post-hoc surprise boost.
+    Legacy,
+    /// lift-trained model: serve_logits = lam·lift + α·log_pop, (α,k) from the knob remap.
+    Logq,
+}
+
 pub struct ModelData {
+    pub name: &'static str,
+    pub serving: ServingFamily,
     pub engine: Engine,
     pub corpus_ids: Vec<i64>,
     pub id_to_idx: HashMap<i64, u32>,
+    /// Metadata-derived popularity distribution; legacy niche_boost only.
     pub popularity: Option<Vec<f32>>,
+    /// Training-set item counts (must byte-match the deployed weights' training data).
+    pub train_counts: Option<Vec<f32>>,
+    /// ln(max(count, 1)) over train_counts.
+    pub log_pop: Option<Vec<f32>>,
+}
+
+/// Niche slider t → (α, k): α piecewise-linear, k log-interpolated through the
+/// product anchors locked in logq-presence-prior.md. t=0 is clean-mainstream
+/// (α=1 reproduces the unboosted model), t=1 is full niche (α floor 0.25).
+const PATH_ANCHORS: [(f32, f32, f32); 3] = [(0.0, 1.0, 10_000.0), (0.35, 0.7, 2_750.0), (1.0, 0.25, 2_250.0)];
+
+pub fn alpha_k(t: f32) -> (f32, f32) {
+    let t = t.clamp(0.0, 1.0);
+    let (lo, hi) = if t <= PATH_ANCHORS[1].0 {
+        (PATH_ANCHORS[0], PATH_ANCHORS[1])
+    } else {
+        (PATH_ANCHORS[1], PATH_ANCHORS[2])
+    };
+    let f = (t - lo.0) / (hi.0 - lo.0);
+    let alpha = lo.1 + f * (hi.1 - lo.1);
+    let k = (lo.2.ln() + f * (hi.2.ln() - lo.2.ln())).exp();
+    (alpha, k)
+}
+
+fn logq_transform(lift: &[f32], counts: &[f32], log_pop: &[f32], alpha: f32, k: f32, out: &mut [f32]) {
+    for i in 0..lift.len() {
+        let lam = counts[i] / (counts[i] + k);
+        out[i] = lam * lift[i] + alpha * log_pop[i];
+    }
 }
 
 pub struct Prepped {
@@ -187,14 +233,31 @@ fn effective_boost(f: f32) -> f32 {
 pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> (Vec<Recommendation>, Option<ProfileHoldout>) {
     let w = req.logit_weight.unwrap_or(DEFAULT_LOGIT_WEIGHT);
     let alt = req.use_alt_ranking;
-    let boost_active = req.niche_boost_factor > 0.0 && md.popularity.is_some();
+    let logq = md.serving == ServingFamily::Logq && md.train_counts.is_some();
+    let (lq_alpha, lq_k) = if logq { alpha_k(req.niche_boost_factor) } else { (1.0, 0.0) };
+    let boost_active = !logq && req.niche_boost_factor > 0.0 && md.popularity.is_some();
     let expanded_k = if boost_active { (req.top_k * 3).min(500) } else { req.top_k };
     let need_holdout = req.include_profile_holdout || req.include_contribution_analysis;
 
     let out = md.engine.forward(&prep.enc_items, need_holdout.then_some(&prep.deltas[..]));
     let base_row = out.rows - 1;
-    let base_logits = out.logits_row(base_row);
+    let raw_logits = out.logits_row(base_row);
     let base_ratings = out.ratings_row(base_row);
+
+    let mut serve_buf = vec![0.0f32; CORPUS];
+    let base_logits: &[f32] = if logq {
+        logq_transform(
+            raw_logits,
+            md.train_counts.as_ref().unwrap(),
+            md.log_pop.as_ref().unwrap(),
+            lq_alpha,
+            lq_k,
+            &mut serve_buf,
+        );
+        &serve_buf
+    } else {
+        raw_logits
+    };
 
     // Full score/prob rows for the baseline
     let mut base_probs = vec![0.0f32; CORPUS];
@@ -216,6 +279,7 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
             score: base_scores[ci as usize],
             probability: base_probs[ci as usize],
             predicted_rating: base_ratings[ci as usize],
+            raw_logit: req.include_raw_logits.then(|| raw_logits[ci as usize]),
             top_contributors: None,
         })
         .collect();
@@ -263,14 +327,23 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
             let gather_ref = &gather;
             let out_ref = &out;
             let prep_ref = &prep;
+            let counts_ref = md.train_counts.as_deref();
+            let log_pop_ref = md.log_pop.as_deref();
             md.engine.pool.run(&move |tid| {
                 let nt = md.engine.pool.n_threads();
                 let rows = unsafe { std::slice::from_raw_parts_mut(rows_addr as *mut Option<RowRes>, n) };
                 let mut g = gather_ref.clone();
+                let mut serve_row = vec![0.0f32; CORPUS];
                 let mut r = tid;
                 while r < n {
                     g[0] = prep_ref.corpus_indices[r];
-                    let logits = out_ref.logits_row(r);
+                    let raw_row = out_ref.logits_row(r);
+                    let logits: &[f32] = if logq {
+                        logq_transform(raw_row, counts_ref.unwrap(), log_pop_ref.unwrap(), lq_alpha, lq_k, &mut serve_row);
+                        &serve_row
+                    } else {
+                        raw_row
+                    };
                     let ratings = out_ref.ratings_row(r);
                     // Python quirk kept for parity: compute_profile_holdout_analysis never
                     // forwards use_alt_ranking, so holdout scores/impact always use the
@@ -366,5 +439,50 @@ pub fn norm_stats_out(stats: &NormStats) -> NormStatsOut {
         alpha: stats.alpha,
         zscore_norm: stats.zscore.clone(),
         absolute_norm: stats.absolute.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alpha_k_anchors() {
+        for &(t, a, k) in &PATH_ANCHORS {
+            let (ra, rk) = alpha_k(t);
+            assert!((ra - a).abs() < 1e-6 && (rk - k).abs() < 0.5, "anchor t={t}: got ({ra}, {rk})");
+        }
+        let (a0, _) = alpha_k(-1.0);
+        let (a1, _) = alpha_k(2.0);
+        assert_eq!(a0, 1.0);
+        assert_eq!(a1, 0.25);
+        // monotone in t on both segments
+        let mut prev_a = f32::INFINITY;
+        let mut prev_k = f32::INFINITY;
+        for i in 0..=20 {
+            let (a, k) = alpha_k(i as f32 / 20.0);
+            assert!(a <= prev_a + 1e-6, "alpha not monotone at t={}", i as f32 / 20.0);
+            assert!(k <= prev_k + 1e-3, "k not monotone at t={}", i as f32 / 20.0);
+            prev_a = a;
+            prev_k = k;
+        }
+    }
+
+    #[test]
+    fn logq_transform_math() {
+        let lift = [2.0f32, -1.0, 0.5];
+        let counts = [30_000.0f32, 100.0, 0.0];
+        let log_pop: Vec<f32> = counts.iter().map(|&c| c.max(1.0).ln()).collect();
+        let mut out = [0.0f32; 3];
+        logq_transform(&lift, &counts, &log_pop, 0.7, 2750.0, &mut out);
+        for i in 0..3 {
+            let lam = counts[i] / (counts[i] + 2750.0);
+            assert!((out[i] - (lam * lift[i] + 0.7 * log_pop[i])).abs() < 1e-6);
+        }
+        // zero-count item: no lift contribution, log_pop clamped to ln(1)=0
+        assert_eq!(out[2], 0.0);
+        // alpha=1, huge count ≈ raw logits + log_pop (standard serving)
+        logq_transform(&lift, &[1e9, 1e9, 1e9], &log_pop, 1.0, 2750.0, &mut out);
+        assert!((out[0] - (lift[0] + log_pop[0])).abs() < 0.02);
     }
 }

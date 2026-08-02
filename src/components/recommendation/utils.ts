@@ -17,6 +17,7 @@ import {
   DEFAULT_MODEL_NAME,
   DEFAULT_POPULARITY_ATTENUATION_FACTOR,
   DEFAULT_PROFILE_SOURCE,
+  getDefaultNicheBoostFactor,
   ModelName,
   ProfileSource,
 } from './conf';
@@ -38,8 +39,9 @@ export interface RecommendationControlParams {
 
 export const getDefaultRecommendationControlParams = (): RecommendationControlParams => {
   const queryParams = new URLSearchParams(browser ? window.location.search : '');
+  const modelName: ModelName = (queryParams.get('model') as any) ?? DEFAULT_MODEL_NAME;
   return {
-    modelName: (queryParams.get('model') as any) ?? DEFAULT_MODEL_NAME,
+    modelName,
     excludedRankingAnimeIDs: Array.from(new Set(queryParams.getAll('eid').map((eid) => +eid))),
     excludedGenreIDs: Array.from(new Set(queryParams.getAll('egid').map((egid) => +egid))),
     includeExtraSeasons: queryParams.get('exs') === 'true',
@@ -49,7 +51,10 @@ export const getDefaultRecommendationControlParams = (): RecommendationControlPa
     profileSource: (queryParams.get('source') as ProfileSource | null) ?? ProfileSource.MyAnimeList,
     filterPlanToWatch: queryParams.get('fptw') === 'true',
     logitWeight: Math.max(0, Math.min(1, parseFloat(queryParams.get('lw') ?? '0.4'))),
-    nicheBoostFactor: Math.max(0, Math.min(1, parseFloat(queryParams.get('nb') ?? '0'))),
+    nicheBoostFactor: Math.max(
+      0,
+      Math.min(1, parseFloat(queryParams.get('nb') ?? `${getDefaultNicheBoostFactor(modelName)}`))
+    ),
     popularityAttenuationFactor: Math.max(
       0,
       Math.min(0.01, parseFloat(queryParams.get('paf') ?? `${DEFAULT_POPULARITY_ATTENUATION_FACTOR}`))
@@ -103,8 +108,8 @@ export const updateQueryParams = (params: RecommendationControlParams) => {
   if (params.logitWeight !== 0.4) {
     url.searchParams.set('lw', params.logitWeight.toFixed(1));
   }
-  if (params.nicheBoostFactor !== 0) {
-    url.searchParams.set('nb', params.nicheBoostFactor.toFixed(1));
+  if (params.nicheBoostFactor !== getDefaultNicheBoostFactor(params.modelName)) {
+    url.searchParams.set('nb', params.nicheBoostFactor.toFixed(2));
   }
   if (params.popularityAttenuationFactor !== DEFAULT_POPULARITY_ATTENUATION_FACTOR) {
     url.searchParams.set('paf', params.popularityAttenuationFactor.toString());

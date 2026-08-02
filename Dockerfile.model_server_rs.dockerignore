@@ -3,6 +3,10 @@
 model-server-rs/target/
 model-server-rs/jax_model.msgpack
 model-server-rs/testdata/
-!data/jax_model.msgpack
-!data/corpus_ids.json
-!data/processed-metadata.csv
+!data/jax_model_dec2025.msgpack
+!data/corpus_ids-dec2025.json
+!data/processed-metadata-dec2025.csv
+!data/corpus_ids_aug2026.json
+!data/processed-metadata_aug2026.csv
+!data/aug2026/jax_model_fresh_logq.msgpack
+!data/aug2026/train_counts_2026logq.json

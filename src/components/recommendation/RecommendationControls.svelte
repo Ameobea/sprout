@@ -1,8 +1,9 @@
 <script lang="ts" context="module">
-  import { ModelName, PopularityAttenuationFactor } from './conf';
+  import { getDefaultNicheBoostFactor, ModelName, PopularityAttenuationFactor } from './conf';
 
   const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
-    { id: ModelName.Model_2025_jax, text: 'V2 - 2025' },
+    { id: ModelName.Model_2026_logq, text: 'Aug. 2026' },
+    { id: ModelName.Model_2025_jax, text: 'Dec. 2025' },
     { id: ModelName.Legacy_2023, text: 'Legacy (2023)' },
   ];
 
@@ -124,6 +125,10 @@
                     subcategory: 'model_select',
                     payload: { model, surface: getSurface() },
                   });
+                  if ($params.nicheBoostFactor === getDefaultNicheBoostFactor($params.modelName)) {
+                    $params.nicheBoostFactor = getDefaultNicheBoostFactor(model);
+                    localNicheBoostFactor = getDefaultNicheBoostFactor(model);
+                  }
                 }
                 $params.modelName = model;
               }}
