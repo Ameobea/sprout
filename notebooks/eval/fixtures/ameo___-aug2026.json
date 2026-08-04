@@ -1,0 +1,686 @@
+[
+ {
+  "node": {
+   "id": 12291
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 32977
+  },
+  "list_status": {
+   "status": "dropped",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 47
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 18893
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 477
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 66
+  },
+  "list_status": {
+   "status": "watching",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 5081
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 10490
+  },
+  "list_status": {
+   "status": "dropped",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 47917
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 61006
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 1689
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 16169
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 59898
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 1535
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 293
+  },
+  "list_status": {
+   "status": "watching",
+   "score": 9
+  }
+ },
+ {
+  "node": {
+   "id": 33049
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 2
+  }
+ },
+ {
+  "node": {
+   "id": 10087
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 11741
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 5
+  }
+ },
+ {
+  "node": {
+   "id": 33731
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 37105
+  },
+  "list_status": {
+   "status": "watching",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 387
+  },
+  "list_status": {
+   "status": "watching",
+   "score": 9
+  }
+ },
+ {
+  "node": {
+   "id": 21855
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 60658
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 1852
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 9
+  }
+ },
+ {
+  "node": {
+   "id": 3165
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 3604
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 7062
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 11239
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 35557
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 34542
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 50789
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 36906
+  },
+  "list_status": {
+   "status": "watching",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 12679
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 44084
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 18679
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 11079
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 32281
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 9260
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 31757
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 31758
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 33206
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 39247
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 43
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 58125
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 1887
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 4472
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 50709
+  },
+  "list_status": {
+   "status": "watching",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 54440
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 34599
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 17074
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 15689
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 31953
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 34914
+  },
+  "list_status": {
+   "status": "dropped",
+   "score": 6
+  }
+ },
+ {
+  "node": {
+   "id": 10165
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 8857
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 9
+  }
+ },
+ {
+  "node": {
+   "id": 11597
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 5957
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 31181
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 35247
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 13359
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 31240
+  },
+  "list_status": {
+   "status": "dropped",
+   "score": 2
+  }
+ },
+ {
+  "node": {
+   "id": 6675
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 199
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 9
+  }
+ },
+ {
+  "node": {
+   "id": 38957
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 58426
+  },
+  "list_status": {
+   "status": "watching",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 16498
+  },
+  "list_status": {
+   "status": "dropped",
+   "score": 5
+  }
+ },
+ {
+  "node": {
+   "id": 35838
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 9253
+  },
+  "list_status": {
+   "status": "dropped",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 36108
+  },
+  "list_status": {
+   "status": "plan_to_watch",
+   "score": 0
+  }
+ },
+ {
+  "node": {
+   "id": 4107
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 6
+  }
+ },
+ {
+  "node": {
+   "id": 4565
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 7
+  }
+ },
+ {
+  "node": {
+   "id": 6213
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 28025
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ },
+ {
+  "node": {
+   "id": 63403
+  },
+  "list_status": {
+   "status": "watching",
+   "score": 10
+  }
+ },
+ {
+  "node": {
+   "id": 15911
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 9
+  }
+ },
+ {
+  "node": {
+   "id": 36999
+  },
+  "list_status": {
+   "status": "completed",
+   "score": 8
+  }
+ }
+]

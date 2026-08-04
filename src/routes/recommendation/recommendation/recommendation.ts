@@ -56,7 +56,8 @@ interface GetRecommendationsArgs {
   filterPlanToWatch: boolean;
   /**
    * Controls how the recommendation score is computed from both the presence probability
-   * and the predicted rating (0.0 = only ratings, 1.0 = only presence probability, default = 0.4)
+   * and the predicted rating (0.0 = only ratings, 1.0 = only presence probability, default = 0.6).
+   * Ignored for non-rater profiles, which are always scored presence-only.
    */
   logitWeight: number;
   /**
@@ -244,7 +245,7 @@ export interface ModelServerInput {
   top_k: number;
   /**
    * Controls how the recommendation score is computed from both the presence probability
-   * and the predicted rating (0.0 = only ratings, 1.0 = only presence probability, default = 0.4)
+   * and the predicted rating (0.0 = only ratings, 1.0 = only presence probability)
    */
   logit_weight?: number;
   include_profile_holdout: boolean;
@@ -332,6 +333,7 @@ const performInferrence = async ({
   computeContributions,
   logitWeight,
   nicheBoostFactor,
+  presenceOnly,
 }: {
   modelName: ModelName;
   profile: CompatAnimeListEntry[];
@@ -339,12 +341,16 @@ const performInferrence = async ({
   computeContributions: boolean;
   logitWeight: number;
   nicheBoostFactor: number;
+  presenceOnly: boolean;
 }): Promise<ModelServerOutput> => {
   // Request extra recommendations to account for filtering later
   const requestCount = count * 3;
 
   const useAltRanking = false; // TODO: testing
-  if (!useAltRanking) {
+  if (presenceOnly) {
+    // Non-rater profiles: rating predictions carry no real signal, so score on presence alone
+    logitWeight = 1;
+  } else if (!useAltRanking) {
     // since the original rating system works with presence probabilities after passing them
     // through softmax, this makes the lower values more extreme, while compressing the higher values.
     const before = logitWeight;
@@ -488,6 +494,8 @@ export const getRecommendations = async (
     console.log(`Excluding ${excludedRankingAnimeIDs.size} rankings`);
   }
 
+  const ratingStats = computeProfileRatingStats(profile);
+
   console.log(`Generating recommendations for user ${username} with ${profile.length} profile entries...`);
   const output = await performInferrence({
     modelName,
@@ -496,6 +504,7 @@ export const getRecommendations = async (
     computeContributions,
     logitWeight,
     nicheBoostFactor,
+    presenceOnly: ratingStats.isNonRater,
   });
 
   // Build a map from anime_id to embedding index for filtering
@@ -570,8 +579,6 @@ export const getRecommendations = async (
 
   // Build a map of profile entries by anime ID for contributor sign determination
   const profileAnimeByID = new Map(profile.map((entry) => [entry.node.id, entry]));
-
-  const ratingStats = computeProfileRatingStats(profile);
 
   const recommendations = filteredRecommendations.slice(0, count).map((rec) => {
     const reco: Recommendation = {

@@ -3,6 +3,7 @@
 
   const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
     { id: ModelName.Model_2026_logq, text: 'Aug. 2026' },
+    { id: ModelName.Model_2026_hybrid, text: 'Aug. 2026 Hybrid (Beta)' },
     { id: ModelName.Model_2025_jax, text: 'Dec. 2025' },
     { id: ModelName.Legacy_2023, text: 'Legacy (2023)' },
   ];
@@ -36,7 +37,8 @@
   export let forceHideTopBar: boolean | undefined = false;
   /**
    * Hides the presence/rating weight slider entirely for non-rater profiles, where rating
-   * predictions are too unreliable for the control to be meaningful.
+   * predictions are too unreliable for the control to be meaningful; the server scores those
+   * profiles presence-only regardless of the param.
    */
   export let hideLogitWeight = false;
 

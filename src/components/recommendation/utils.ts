@@ -14,6 +14,7 @@ export type Typify<T> = { [K in keyof T]: Typify<T[K]> };
 export const typify = <T>(obj: T): Typify<T> => obj;
 
 import {
+  DEFAULT_LOGIT_WEIGHT,
   DEFAULT_MODEL_NAME,
   DEFAULT_POPULARITY_ATTENUATION_FACTOR,
   DEFAULT_PROFILE_SOURCE,
@@ -50,7 +51,7 @@ export const getDefaultRecommendationControlParams = (): RecommendationControlPa
     includeMusic: queryParams.get('music') === 'true',
     profileSource: (queryParams.get('source') as ProfileSource | null) ?? ProfileSource.MyAnimeList,
     filterPlanToWatch: queryParams.get('fptw') === 'true',
-    logitWeight: Math.max(0, Math.min(1, parseFloat(queryParams.get('lw') ?? '0.4'))),
+    logitWeight: Math.max(0, Math.min(1, parseFloat(queryParams.get('lw') ?? `${DEFAULT_LOGIT_WEIGHT}`))),
     nicheBoostFactor: Math.max(
       0,
       Math.min(1, parseFloat(queryParams.get('nb') ?? `${getDefaultNicheBoostFactor(modelName)}`))
@@ -105,7 +106,7 @@ export const updateQueryParams = (params: RecommendationControlParams) => {
   if (params.filterPlanToWatch) {
     url.searchParams.set('fptw', 'true');
   }
-  if (params.logitWeight !== 0.4) {
+  if (params.logitWeight !== DEFAULT_LOGIT_WEIGHT) {
     url.searchParams.set('lw', params.logitWeight.toFixed(1));
   }
   if (params.nicheBoostFactor !== getDefaultNicheBoostFactor(params.modelName)) {

@@ -28,7 +28,7 @@ fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
 }
 
 fn golden_path() -> String {
-    std::env::var("GOLDEN_PATH").unwrap_or("testdata/forward_golden.json".into())
+    std::env::var("GOLDEN_PATH").unwrap_or("testdata/forward_golden_2026logq.json".into())
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn norm_matches_python() {
 
 #[test]
 fn forward_ref_matches_numpy_f64() {
-    let model_path = std::env::var("MODEL_PATH").unwrap_or("../data/jax_model.msgpack".into());
+    let model_path = std::env::var("MODEL_PATH").unwrap_or("../data/aug2026/jax_model_fresh_logq.msgpack".into());
     if !Path::new(&model_path).exists() {
         eprintln!("skipping: no model at {model_path}");
         return;
@@ -69,7 +69,7 @@ fn forward_ref_matches_numpy_f64() {
 
 #[test]
 fn bf16_engine_close_to_golden() {
-    let model_path = std::env::var("MODEL_PATH").unwrap_or("../data/jax_model.msgpack".into());
+    let model_path = std::env::var("MODEL_PATH").unwrap_or("../data/aug2026/jax_model_fresh_logq.msgpack".into());
     if !Path::new(&model_path).exists() {
         return;
     }
@@ -90,7 +90,7 @@ fn bf16_engine_close_to_golden() {
 
 #[test]
 fn engine_matches_golden_and_ref_holdout() {
-    let model_path = std::env::var("MODEL_PATH").unwrap_or("../data/jax_model.msgpack".into());
+    let model_path = std::env::var("MODEL_PATH").unwrap_or("../data/aug2026/jax_model_fresh_logq.msgpack".into());
     if !Path::new(&model_path).exists() {
         eprintln!("skipping: no model at {model_path}");
         return;
@@ -134,4 +134,53 @@ fn engine_matches_golden_and_ref_holdout() {
             assert!(dl < 0.02 && dr < 0.01, "holdout row {i} diverged: {dl} {dr}");
         }
     }
+}
+
+#[derive(Deserialize)]
+struct GraftCase {
+    idxs: Vec<u32>,
+    vals: Vec<f32>,
+    logits_head: Vec<f32>,
+    ratings_head: Vec<f32>,
+    logits_sum: f64,
+    ratings_sum: f64,
+    ease_head: Vec<f32>,
+}
+
+#[test]
+fn graft_engine_matches_numpy_f64() {
+    let model_path =
+        std::env::var("GRAFT_MODEL_PATH").unwrap_or("../data/aug2026/jax_model_hybrid_concat.msgpack".into());
+    let b_path = std::env::var("EASE_B_PATH").unwrap_or("../data/aug2026/serve/ease_B6k_lam200.f32bin".into());
+    let golden = std::env::var("GRAFT_GOLDEN_PATH")
+        .unwrap_or("../data/aug2026/serve/forward_golden_graft_concat.json".into());
+    if !Path::new(&model_path).exists() || !Path::new(&b_path).exists() {
+        eprintln!("skipping: graft model or B not present");
+        return;
+    }
+    let params = Params::load(Path::new(&model_path));
+    assert!(params.ease_proj.is_some(), "expected graft checkpoint");
+    let bytes = std::fs::read(&b_path).unwrap();
+    let ease_b: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
+    let c: GraftCase = serde_json::from_str(&std::fs::read_to_string(&golden).unwrap()).unwrap();
+
+    let engine =
+        Engine::new_with_ease(&params, Some(ease_b), 4, KernCfg { nr: 32, mr: 8 }, None, Precision::F32);
+    let items: Vec<(u32, f32)> = c.idxs.iter().copied().zip(c.vals.iter().copied()).collect();
+    let out = engine.forward(&items, None);
+    let logits = out.logits_row(out.rows - 1);
+    let ratings = out.ratings_row(out.rows - 1);
+
+    let e = out.ease_full_raw.as_ref().unwrap();
+    let de = max_abs_diff(&e[..c.ease_head.len()], &c.ease_head);
+    let dl = max_abs_diff(&logits[..c.logits_head.len()], &c.logits_head);
+    let dr = max_abs_diff(&ratings[..c.ratings_head.len()], &c.ratings_head);
+    let ls: f64 = logits.iter().map(|&v| v as f64).sum();
+    let rs: f64 = ratings.iter().map(|&v| v as f64).sum();
+    println!("graft max_diff ease={de:.2e} logits={dl:.2e} ratings={dr:.2e} sums Δ={:.3e}/{:.3e}",
+        (ls - c.logits_sum).abs(), (rs - c.ratings_sum).abs());
+    assert!(de < 1e-3, "ease channel diverged: {de}");
+    assert!(dl < 0.02, "graft logits diverged: {dl}");
+    assert!(dr < 0.01, "graft ratings diverged: {dr}");
+    assert!((ls - c.logits_sum).abs() / c.logits_sum.abs().max(1.0) < 1e-3);
 }

@@ -3,7 +3,12 @@ import { type Either, isLeft, mapLeft } from 'fp-ts/lib/Either.js';
 import * as t from 'io-ts';
 import { PathReporter } from 'io-ts/lib/PathReporter.js';
 
-import { DEFAULT_MODEL_NAME, DEFAULT_PROFILE_SOURCE, validateModelName } from 'src/components/recommendation/conf';
+import {
+  DEFAULT_LOGIT_WEIGHT,
+  DEFAULT_MODEL_NAME,
+  DEFAULT_PROFILE_SOURCE,
+  validateModelName,
+} from 'src/components/recommendation/conf';
 import { typify } from 'src/components/recommendation/utils';
 import type { ProfileFetchErrorKind } from 'src/helpers';
 import { getAnimesByID, type AnimeDetails } from 'src/malAPI';
@@ -68,7 +73,7 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
   const includeMovies = url.searchParams.get('movies') === 'true';
   const includeMusic = url.searchParams.get('music') === 'true';
   const filterPlanToWatch = url.searchParams.get('fptw') === 'true';
-  const logitWeight = Math.max(0, Math.min(1, parseFloat(url.searchParams.get('lw') ?? '0.4')));
+  const logitWeight = Math.max(0, Math.min(1, parseFloat(url.searchParams.get('lw') ?? `${DEFAULT_LOGIT_WEIGHT}`)));
   const nicheBoostFactor = Math.max(0, Math.min(1, parseFloat(url.searchParams.get('nb') ?? '0')));
   const popularityAttenuationFactor = Math.max(0, Math.min(0.01, parseFloat(url.searchParams.get('paf') ?? '0.0008')));
   const rawProfileSource = url.searchParams.get('source') ?? DEFAULT_PROFILE_SOURCE;

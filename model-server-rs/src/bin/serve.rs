@@ -27,8 +27,21 @@ struct ModelCfg {
     train_counts: Option<String>,
     #[serde(default)]
     serving: Option<String>,
+    /// Graft checkpoints: raw f32 LE row-major 6000x6000 EASE B matrix.
+    #[serde(default)]
+    ease_b: Option<String>,
+    /// Optional with ease_b: raw f32 LE 6000-vector of reference-mean EASE scores
+    /// (enables the stack_weight dev flag).
+    #[serde(default)]
+    ease_mu: Option<String>,
     #[serde(default)]
     default: bool,
+}
+
+fn load_f32bin(path: &str, expect: usize) -> Vec<f32> {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    assert_eq!(bytes.len(), expect * 4, "{path}: expected {expect} f32s");
+    bytes.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect()
 }
 
 fn load_popularity(path: &str, corpus_ids: &[i64]) -> Option<Vec<f32>> {
@@ -81,10 +94,18 @@ fn load_model(cfg: &ModelCfg, threads: usize, pin: bool, prec: Precision) -> Arc
 
     let t0 = std::time::Instant::now();
     let params = Params::load(Path::new(&cfg.weights));
+    let ease_b = cfg.ease_b.as_ref().map(|p| load_f32bin(p, CORPUS * CORPUS));
+    let ease_mu = cfg.ease_mu.as_ref().map(|p| load_f32bin(p, CORPUS));
+    let graft = ease_b.is_some();
     let pins: Vec<usize> = (0..threads).collect();
-    let engine = Engine::new(&params, threads, DEFAULT_CFG, pin.then_some(&pins[..]), prec);
+    let engine = Engine::new_with_ease(&params, ease_b, threads, DEFAULT_CFG, pin.then_some(&pins[..]), prec);
     drop(params);
-    println!("[{}] loaded + packed in {:.2}s ({serving:?})", cfg.name, t0.elapsed().as_secs_f64());
+    println!(
+        "[{}] loaded + packed in {:.2}s ({serving:?}{})",
+        cfg.name,
+        t0.elapsed().as_secs_f64(),
+        if graft { ", graft" } else { "" }
+    );
 
     Arc::new(ModelData {
         name: Box::leak(cfg.name.clone().into_boxed_str()),
@@ -95,6 +116,7 @@ fn load_model(cfg: &ModelCfg, threads: usize, pin: bool, prec: Precision) -> Arc
         popularity,
         train_counts,
         log_pop,
+        ease_mu,
     })
 }
 
@@ -117,6 +139,8 @@ fn main() {
             metadata: envv("METADATA_PATH", "/opt/model/processed-metadata.csv"),
             train_counts: None,
             serving: None,
+            ease_b: None,
+            ease_mu: None,
             default: true,
         }],
     };

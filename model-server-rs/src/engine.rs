@@ -2,7 +2,7 @@ use crate::kernels::{self, AVec, AnyPacked, GemmOp, KernCfg};
 use crate::pool::Pool;
 use crate::simd::swish_slice;
 use crate::weights::{Mat, Params};
-use crate::{BOTTLENECK, CORPUS, DEC_MID, HIDDEN};
+use crate::{BOTTLENECK, CORPUS, DEC_MID, EASE_PROJ, HIDDEN};
 use std::arch::x86_64::*;
 
 pub const OUT_LD: usize = 6016; // CORPUS padded to panel multiple
@@ -20,6 +20,9 @@ pub struct ForwardOut {
     pub logits: AVec,
     pub ratings: AVec,
     pub rows: usize,
+    /// Graft models only: the full-profile row's raw EASE score vector (pre-norm),
+    /// for serve-side stack scoring (ease_lift = e - mu).
+    pub ease_full_raw: Option<Vec<f32>>,
 }
 
 impl ForwardOut {
@@ -49,6 +52,9 @@ pub struct Engine {
     rat_up1: AnyPacked,
     rat_up2: AnyPacked,
     rat_out: AnyPacked,
+    /// Graft (concat) models: packed 6000x256 projection + row-major EASE B (6000x6000).
+    ease_proj: Option<AnyPacked>,
+    ease_b: Option<Vec<f32>>,
     pub pool: Pool,
     pub cfg: KernCfg,
 }
@@ -67,13 +73,56 @@ unsafe fn axpy2(out: &mut [f32], row_p: &[f32], row_v: &[f32], pc: f32, vc: f32)
     }
 }
 
+#[target_feature(enable = "avx512f")]
+unsafe fn axpy1(out: &mut [f32], row: &[f32], c: f32) {
+    let cv = _mm512_set1_ps(c);
+    let mut i = 0;
+    let n16 = out.len() & !15;
+    while i < n16 {
+        let o = _mm512_loadu_ps(out.as_ptr().add(i));
+        _mm512_storeu_ps(out.as_mut_ptr().add(i), _mm512_fmadd_ps(cv, _mm512_loadu_ps(row.as_ptr().add(i)), o));
+        i += 16;
+    }
+    while i < out.len() {
+        out[i] += c * row[i];
+        i += 1;
+    }
+}
+
+/// Per-row z-norm matching the training-side ease_channel: (e - mean) / (std + 1e-6).
+fn znorm_row(x: &mut [f32]) {
+    let n = x.len() as f64;
+    let mean = x.iter().map(|&v| v as f64).sum::<f64>() / n;
+    let var = x.iter().map(|&v| (v as f64 - mean) * (v as f64 - mean)).sum::<f64>() / n;
+    let inv = 1.0 / (var.sqrt() + 1e-6);
+    let (m32, i32_) = (mean as f32, inv as f32);
+    for v in x.iter_mut() {
+        *v = (*v - m32) * i32_;
+    }
+}
+
 impl Engine {
     pub fn new(p: &Params, nthreads: usize, cfg: KernCfg, pin: Option<&[usize]>, prec: Precision) -> Engine {
+        Self::new_with_ease(p, None, nthreads, cfg, pin, prec)
+    }
+
+    pub fn new_with_ease(
+        p: &Params,
+        ease_b: Option<Vec<f32>>,
+        nthreads: usize,
+        cfg: KernCfg,
+        pin: Option<&[usize]>,
+        prec: Precision,
+    ) -> Engine {
         let nr = cfg.nr;
         let pk = |l: &crate::weights::Layer| match prec {
             Precision::F32 => AnyPacked::F32(kernels::pack(&l.w, &l.b, nr)),
             Precision::Bf16 => AnyPacked::Bf16(kernels::pack_bf16(&l.w, &l.b, 32)),
         };
+        if p.ease_proj.is_some() {
+            let b = ease_b.as_ref().expect("graft checkpoint requires an EASE B matrix");
+            assert_eq!(b.len(), CORPUS * CORPUS, "EASE B shape");
+        }
         Engine {
             bott: pk(&p.bott),
             item_up1: pk(&p.item_up1),
@@ -82,11 +131,17 @@ impl Engine {
             rat_up1: pk(&p.rat_up1),
             rat_up2: pk(&p.rat_up2),
             rat_out: pk(&p.rat_out),
+            ease_proj: p.ease_proj.as_ref().map(&pk),
+            ease_b: if p.ease_proj.is_some() { ease_b } else { None },
             enc_w: Mat { k: p.enc1.w.k, n: p.enc1.w.n, w: p.enc1.w.w.clone() },
             enc_b: p.enc1.b.clone(),
             pool: Pool::new(nthreads, pin),
             cfg,
         }
+    }
+
+    pub fn is_graft(&self) -> bool {
+        self.ease_proj.is_some()
     }
 
     fn enc_row(&self, idx: usize) -> (&[f32], &[f32]) {
@@ -139,7 +194,65 @@ impl Engine {
 
         let mut d1 = AVec::zeroed(rows * DEC_MID);
         let mut d2 = AVec::zeroed(rows * DEC_MID);
-        self.gemm2(&z, BOTTLENECK, rows, &self.item_up1, &mut d1, &self.rat_up1, &mut d2, DEC_MID, true);
+        let mut ease_full_raw = None;
+        if let Some(ease_proj) = &self.ease_proj {
+            let b = self.ease_b.as_ref().unwrap();
+            let mut e_full = vec![0.0f32; CORPUS];
+            for &(idx, _) in items {
+                unsafe { axpy1(&mut e_full, &b[idx as usize * CORPUS..(idx as usize + 1) * CORPUS], 1.0) };
+            }
+            ease_full_raw = Some(e_full.clone());
+
+            let mut a_ease = AVec::zeroed(rows * CORPUS);
+            {
+                let a_addr = a_ease.as_mut_slice().as_mut_ptr() as usize;
+                let e_full = &e_full;
+                self.pool.run(&move |tid| {
+                    let nt = self.pool.n_threads();
+                    let a = unsafe { std::slice::from_raw_parts_mut(a_addr as *mut f32, rows * CORPUS) };
+                    let mut r = tid;
+                    while r < rows {
+                        let dst = &mut a[r * CORPUS..(r + 1) * CORPUS];
+                        dst.copy_from_slice(e_full);
+                        if r < h {
+                            let d = &holdout.unwrap()[r];
+                            if d.presence_removed {
+                                let bb = self.ease_b.as_ref().unwrap();
+                                unsafe {
+                                    axpy1(dst, &bb[d.idx as usize * CORPUS..(d.idx as usize + 1) * CORPUS], -1.0)
+                                };
+                            }
+                        }
+                        znorm_row(dst);
+                        r += nt;
+                    }
+                });
+            }
+
+            let mut ep = AVec::zeroed(rows * EASE_PROJ);
+            self.gemm1(&a_ease, CORPUS, rows, ease_proj, &mut ep, EASE_PROJ, true);
+
+            let zc_ld = BOTTLENECK + EASE_PROJ;
+            let mut zc = AVec::zeroed(rows * zc_ld);
+            {
+                let zs = z.as_slice();
+                let eps = ep.as_slice();
+                let zcs = zc.as_mut_slice();
+                for r in 0..rows {
+                    zcs[r * zc_ld..r * zc_ld + BOTTLENECK].copy_from_slice(&zs[r * BOTTLENECK..(r + 1) * BOTTLENECK]);
+                    zcs[r * zc_ld + BOTTLENECK..(r + 1) * zc_ld]
+                        .copy_from_slice(&eps[r * EASE_PROJ..(r + 1) * EASE_PROJ]);
+                }
+            }
+            self.gemm_pair(
+                (&zc, zc_ld, &self.item_up1, &mut d1, DEC_MID),
+                (&z, BOTTLENECK, &self.rat_up1, &mut d2, DEC_MID),
+                rows,
+                true,
+            );
+        } else {
+            self.gemm2(&z, BOTTLENECK, rows, &self.item_up1, &mut d1, &self.rat_up1, &mut d2, DEC_MID, true);
+        }
 
         let mut d1b = AVec::zeroed(rows * HIDDEN);
         let mut d2b = AVec::zeroed(rows * HIDDEN);
@@ -159,7 +272,7 @@ impl Engine {
             false,
         );
 
-        ForwardOut { logits, ratings, rows }
+        ForwardOut { logits, ratings, rows, ease_full_raw }
     }
 
     fn gemm1(&self, a: &AVec, lda: usize, m: usize, b: &AnyPacked, c: &mut AVec, ldc: usize, act: bool) {

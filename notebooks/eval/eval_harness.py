@@ -34,6 +34,7 @@ from model import (
     Recommender,
     batch_holdout_predict,
     compute_recommendation_ranking_score,
+    create_holdout_batch,
 )
 from profile_preprocessing import filter_profile_entries, vectorize_entries
 
@@ -95,11 +96,45 @@ def load_params(weights_path, bf16_sim=False):
     return params
 
 
-def eval_profile(params, idxs, vals, original, statuses, corpus_size, device, serve_prior=None):
+def load_graft(weights_path, ease_b_path, bf16_sim=False):
+    # B stays f32 under bf16_sim, matching the Rust engine (packed weights bf16, B f32)
+    from analysis.train_probe_graft import GraftRecommender
+
+    cs = CONF["corpus_size"]
+    model = GraftRecommender(mode="concat")
+    rng = random.PRNGKey(0)
+    params = model.init(
+        {"params": rng, "noise": rng}, jnp.ones((1, cs * 2)), jnp.ones((1, cs))
+    )["params"]
+    with open(weights_path, "rb") as f:
+        params = serialization.from_bytes(params, f.read())
+    if bf16_sim:
+        params = jax.tree_util.tree_map(
+            lambda a: a.astype(jnp.bfloat16).astype(a.dtype), params
+        )
+    Bj = jnp.asarray(np.load(ease_b_path), dtype=jnp.float32)
+
+    @jax.jit
+    def fwd(p, x):
+        e = x[:, :cs] @ Bj
+        e = (e - jnp.mean(e, axis=1, keepdims=True)) / (jnp.std(e, axis=1, keepdims=True) + 1e-6)
+        out = model.apply({"params": p}, x, e, training=False)
+        return out[0], out[1]
+
+    return params, fwd
+
+
+def eval_profile(params, idxs, vals, original, statuses, corpus_size, device, serve_prior=None,
+                 graft_fwd=None):
     n = len(idxs)
-    item_logits, rating_pred = batch_holdout_predict(
-        params, idxs, vals, corpus_size, device=device, aux=build_aux(original, statuses)
-    )
+    if graft_fwd is not None:
+        batch, _, _, _ = create_holdout_batch(idxs, vals, corpus_size)
+        item_logits, rating_pred = graft_fwd(params, jnp.asarray(batch))
+        item_logits, rating_pred = item_logits[:n], rating_pred[:n]
+    else:
+        item_logits, rating_pred = batch_holdout_predict(
+            params, idxs, vals, corpus_size, device=device, aux=build_aux(original, statuses)
+        )
     item_logits = np.array(item_logits)
     if serve_prior is not None:
         item_logits = item_logits + serve_prior[None, :]
@@ -157,6 +192,7 @@ def main():
     ap.add_argument("--popularity", default=str(Path(__file__).parent / "../../data/item_popularity_dec2025.npy"))
     ap.add_argument("--bf16-sim", action="store_true",
                     help="round-trip weights through bf16 to simulate prod serving numerics")
+    ap.add_argument("--graft-ease-b", help="EASE B .npy; loads weights as a concat-graft model")
     args = ap.parse_args()
     CONF["input_channels"] = args.input_channels
 
@@ -176,7 +212,11 @@ def main():
             restrict_ids = set(json.load(f)) & set(corpus_ids)
         print(f"restricting to corpus intersection: {len(restrict_ids)} items")
 
-    params = load_params(args.weights, bf16_sim=args.bf16_sim)
+    graft_fwd = None
+    if args.graft_ease_b:
+        params, graft_fwd = load_graft(args.weights, args.graft_ease_b, bf16_sim=args.bf16_sim)
+    else:
+        params = load_params(args.weights, bf16_sim=args.bf16_sim)
     profiles = load_fixture_profiles()
 
     per_profile = {}
@@ -189,7 +229,8 @@ def main():
         per_profile[username] = {
             "bucket": p["bucket"],
             "coverage": len(idxs) / max(1, len(p["items"])),
-            **eval_profile(params, idxs, vals, original, statuses, CONF["corpus_size"], args.device, serve_prior),
+            **eval_profile(params, idxs, vals, original, statuses, CONF["corpus_size"], args.device,
+                           serve_prior, graft_fwd),
         }
         if (i + 1) % 20 == 0:
             print(f"{i + 1}/{len(profiles)} profiles evaluated")
@@ -201,6 +242,7 @@ def main():
         "input_channels": CONF["input_channels"],
         "corpus": str(args.corpus),
         "restrict_corpus": args.restrict_corpus,
+        "graft_ease_b": args.graft_ease_b,
         "skipped_too_small": skipped,
         "sentinels": {u: per_profile[u] for u in SENTINELS if u in per_profile},
         "by_bucket": {

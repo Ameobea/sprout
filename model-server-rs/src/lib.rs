@@ -15,4 +15,5 @@ pub const IN_DIM: usize = CORPUS * 2;
 pub const HIDDEN: usize = 2048;
 pub const BOTTLENECK: usize = 512;
 pub const DEC_MID: usize = HIDDEN / 2;
+pub const EASE_PROJ: usize = 256;
 pub const DEFAULT_LOGIT_WEIGHT: f32 = 0.3;

@@ -38,6 +38,11 @@ pub struct RecommendRequest {
     pub niche_boost_factor: f32,
     #[serde(default)]
     pub include_raw_logits: bool,
+    /// Dev flag, graft models only: blend w of z-normed EASE-lift into the z-normed
+    /// presence lift before the (α,k) transform. Applies to the base row only —
+    /// holdout analysis stays unstacked.
+    #[serde(default)]
+    pub stack_weight: Option<f32>,
 }
 
 fn d_top_k() -> usize {
@@ -125,6 +130,8 @@ pub struct ModelData {
     pub train_counts: Option<Vec<f32>>,
     /// ln(max(count, 1)) over train_counts.
     pub log_pop: Option<Vec<f32>>,
+    /// Graft models: per-item mean full-profile EASE score over reference users (for stack scoring).
+    pub ease_mu: Option<Vec<f32>>,
 }
 
 /// Niche slider t → (α, k): α piecewise-linear, k log-interpolated through the
@@ -149,6 +156,31 @@ fn logq_transform(lift: &[f32], counts: &[f32], log_pop: &[f32], alpha: f32, k: 
     for i in 0..lift.len() {
         let lam = counts[i] / (counts[i] + k);
         out[i] = lam * lift[i] + alpha * log_pop[i];
+    }
+}
+
+fn znorm_into(x: &[f32], out: &mut [f32]) {
+    let n = x.len() as f64;
+    let mean = x.iter().map(|&v| v as f64).sum::<f64>() / n;
+    let var = x.iter().map(|&v| (v as f64 - mean) * (v as f64 - mean)).sum::<f64>() / n;
+    let inv = (1.0 / (var.sqrt() + 1e-9)) as f32;
+    let m = mean as f32;
+    for (o, &v) in out.iter_mut().zip(x) {
+        *o = (v - m) * inv;
+    }
+}
+
+/// (1-w)·z(lift_NN) + w·z(e - mu). NOTE: z-normed units — the (α,k) anchors were fit
+/// on raw lift scale, so knob feel shifts under stacking; dev-flag territory until the
+/// remap re-anchor (decision artifact §7 phase 2).
+fn stack_lift(raw_logits: &[f32], e: &[f32], mu: &[f32], w: f32, out: &mut [f32]) {
+    let mut zl = vec![0.0f32; raw_logits.len()];
+    znorm_into(raw_logits, &mut zl);
+    let lift_e: Vec<f32> = e.iter().zip(mu).map(|(&ev, &mv)| ev - mv).collect();
+    let mut ze = vec![0.0f32; lift_e.len()];
+    znorm_into(&lift_e, &mut ze);
+    for i in 0..out.len() {
+        out[i] = (1.0 - w) * zl[i] + w * ze[i];
     }
 }
 
@@ -244,10 +276,18 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
     let raw_logits = out.logits_row(base_row);
     let base_ratings = out.ratings_row(base_row);
 
+    let mut stack_buf = vec![0.0f32; CORPUS];
+    let lift: &[f32] = match (req.stack_weight, out.ease_full_raw.as_ref(), md.ease_mu.as_ref()) {
+        (Some(w), Some(e), Some(mu)) if w > 0.0 => {
+            stack_lift(raw_logits, e, mu, w.clamp(0.0, 1.0), &mut stack_buf);
+            &stack_buf
+        }
+        _ => raw_logits,
+    };
     let mut serve_buf = vec![0.0f32; CORPUS];
     let base_logits: &[f32] = if logq {
         logq_transform(
-            raw_logits,
+            lift,
             md.train_counts.as_ref().unwrap(),
             md.log_pop.as_ref().unwrap(),
             lq_alpha,
@@ -256,7 +296,7 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
         );
         &serve_buf
     } else {
-        raw_logits
+        lift
     };
 
     // Full score/prob rows for the baseline

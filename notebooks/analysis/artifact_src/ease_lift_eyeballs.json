@@ -1,0 +1,314 @@
+{
+ "ameo___": {
+  "alpha0.6": [
+   {
+    "title": "Koyomimonogatari",
+    "pop_rank": 914,
+    "franchise": true
+   },
+   {
+    "title": "Fate/stay night: Heaven's Feel - I. Presage Flower",
+    "pop_rank": 433,
+    "franchise": true
+   },
+   {
+    "title": "Fate/stay night: Heaven's Feel - III. Spring Song",
+    "pop_rank": 533,
+    "franchise": true
+   },
+   {
+    "title": "The Melancholy of Haruhi-chan Suzumiya",
+    "pop_rank": 2938,
+    "franchise": false
+   },
+   {
+    "title": "A Certain Scientific Railgun S",
+    "pop_rank": 747,
+    "franchise": true
+   },
+   {
+    "title": "Gurren Lagann",
+    "pop_rank": 142,
+    "franchise": false
+   },
+   {
+    "title": "Serial Experiments Lain",
+    "pop_rank": 400,
+    "franchise": false
+   },
+   {
+    "title": "Lucky\u2606Star OVA",
+    "pop_rank": 2100,
+    "franchise": true
+   },
+   {
+    "title": "Blood-C: The Last Dark",
+    "pop_rank": 2300,
+    "franchise": true
+   },
+   {
+    "title": "Monogatari Series: Off & Monster Season",
+    "pop_rank": 1982,
+    "franchise": true
+   },
+   {
+    "title": "FLCL",
+    "pop_rank": 385,
+    "franchise": false
+   },
+   {
+    "title": "Acchi Kocchi: Place=Princess",
+    "pop_rank": 2868,
+    "franchise": true
+   },
+   {
+    "title": "New Game! Watashi, Shain Ryokou tte Hajimete nanode...",
+    "pop_rank": 2472,
+    "franchise": true
+   },
+   {
+    "title": "BLEND-S",
+    "pop_rank": 319,
+    "franchise": false
+   },
+   {
+    "title": "Joshiraku",
+    "pop_rank": 2048,
+    "franchise": false
+   }
+  ],
+  "alpha0.3": [
+   {
+    "title": "Koyomimonogatari",
+    "pop_rank": 914,
+    "franchise": true
+   },
+   {
+    "title": "The Melancholy of Haruhi-chan Suzumiya",
+    "pop_rank": 2938,
+    "franchise": false
+   },
+   {
+    "title": "Fate/stay night: Heaven's Feel - I. Presage Flower",
+    "pop_rank": 433,
+    "franchise": true
+   },
+   {
+    "title": "Fate/stay night: Heaven's Feel - III. Spring Song",
+    "pop_rank": 533,
+    "franchise": true
+   },
+   {
+    "title": "A Certain Scientific Railgun S",
+    "pop_rank": 747,
+    "franchise": true
+   },
+   {
+    "title": "Gurren Lagann",
+    "pop_rank": 142,
+    "franchise": false
+   },
+   {
+    "title": "Serial Experiments Lain",
+    "pop_rank": 400,
+    "franchise": false
+   },
+   {
+    "title": "Lucky\u2606Star OVA",
+    "pop_rank": 2100,
+    "franchise": true
+   },
+   {
+    "title": "Blood-C: The Last Dark",
+    "pop_rank": 2300,
+    "franchise": true
+   },
+   {
+    "title": "Monogatari Series: Off & Monster Season",
+    "pop_rank": 1982,
+    "franchise": true
+   },
+   {
+    "title": "Acchi Kocchi: Place=Princess",
+    "pop_rank": 2868,
+    "franchise": true
+   },
+   {
+    "title": "New Game! Watashi, Shain Ryokou tte Hajimete nanode...",
+    "pop_rank": 2472,
+    "franchise": true
+   },
+   {
+    "title": "FLCL",
+    "pop_rank": 385,
+    "franchise": false
+   },
+   {
+    "title": "Joshiraku",
+    "pop_rank": 2048,
+    "franchise": false
+   },
+   {
+    "title": "Dropkick On My Devil! Episode 12",
+    "pop_rank": 3245,
+    "franchise": true
+   }
+  ]
+ },
+ "snapsauce": {
+  "alpha0.6": [
+   {
+    "title": "Non Non Biyori",
+    "pop_rank": 818,
+    "franchise": true
+   },
+   {
+    "title": "Bunny Drop",
+    "pop_rank": 720,
+    "franchise": false
+   },
+   {
+    "title": "Summer Wars",
+    "pop_rank": 648,
+    "franchise": false
+   },
+   {
+    "title": "Danganronpa: The Animation",
+    "pop_rank": 264,
+    "franchise": true
+   },
+   {
+    "title": "Fighting Spirit: Rising",
+    "pop_rank": 1120,
+    "franchise": true
+   },
+   {
+    "title": "WataMote: No Matter How I Look At It, It's You Guys' Fault I'm Not Popular!",
+    "pop_rank": 468,
+    "franchise": false
+   },
+   {
+    "title": "Golden Boy",
+    "pop_rank": 640,
+    "franchise": false
+   },
+   {
+    "title": "Gosick",
+    "pop_rank": 709,
+    "franchise": false
+   },
+   {
+    "title": "Mobile Suit Gundam: Iron-Blooded Orphans 2nd Season",
+    "pop_rank": 1586,
+    "franchise": true
+   },
+   {
+    "title": "The Garden of Words",
+    "pop_rank": 229,
+    "franchise": false
+   },
+   {
+    "title": "Land of the Lustrous",
+    "pop_rank": 624,
+    "franchise": false
+   },
+   {
+    "title": "Servant x Service",
+    "pop_rank": 1456,
+    "franchise": false
+   },
+   {
+    "title": "Natsume's Book of Friends Season 6",
+    "pop_rank": 1745,
+    "franchise": true
+   },
+   {
+    "title": "D-Frag!",
+    "pop_rank": 802,
+    "franchise": false
+   },
+   {
+    "title": "Is It Wrong to Try to Pick Up Girls in a Dungeon? II",
+    "pop_rank": 162,
+    "franchise": true
+   }
+  ],
+  "alpha0.3": [
+   {
+    "title": "Non Non Biyori",
+    "pop_rank": 818,
+    "franchise": true
+   },
+   {
+    "title": "Bunny Drop",
+    "pop_rank": 720,
+    "franchise": false
+   },
+   {
+    "title": "Summer Wars",
+    "pop_rank": 648,
+    "franchise": false
+   },
+   {
+    "title": "Fighting Spirit: Rising",
+    "pop_rank": 1120,
+    "franchise": true
+   },
+   {
+    "title": "Danganronpa: The Animation",
+    "pop_rank": 264,
+    "franchise": true
+   },
+   {
+    "title": "WataMote: No Matter How I Look At It, It's You Guys' Fault I'm Not Popular!",
+    "pop_rank": 468,
+    "franchise": false
+   },
+   {
+    "title": "Mobile Suit Gundam: Iron-Blooded Orphans 2nd Season",
+    "pop_rank": 1586,
+    "franchise": true
+   },
+   {
+    "title": "Golden Boy",
+    "pop_rank": 640,
+    "franchise": false
+   },
+   {
+    "title": "Gosick",
+    "pop_rank": 709,
+    "franchise": false
+   },
+   {
+    "title": "Servant x Service",
+    "pop_rank": 1456,
+    "franchise": false
+   },
+   {
+    "title": "Natsume's Book of Friends Season 6",
+    "pop_rank": 1745,
+    "franchise": true
+   },
+   {
+    "title": "Land of the Lustrous",
+    "pop_rank": 624,
+    "franchise": false
+   },
+   {
+    "title": "Cromartie High School",
+    "pop_rank": 2371,
+    "franchise": false
+   },
+   {
+    "title": "The Garden of Words",
+    "pop_rank": 229,
+    "franchise": false
+   },
+   {
+    "title": "Clannad: After Story - Another World, Kyou Chapter",
+    "pop_rank": 1048,
+    "franchise": false
+   }
+  ]
+ }
+}

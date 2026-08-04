@@ -9,6 +9,16 @@
     "default": true
   },
   {
+    "name": "2026-hybrid",
+    "weights": "/opt/model/2026-hybrid/weights.msgpack",
+    "corpus": "/opt/model/2026-hybrid/corpus_ids.json",
+    "metadata": "/opt/model/2026-hybrid/processed-metadata.csv",
+    "train_counts": "/opt/model/2026-hybrid/train_counts.json",
+    "serving": "logq",
+    "ease_b": "/opt/model/2026-hybrid/ease_B.f32bin",
+    "ease_mu": "/opt/model/2026-hybrid/ease_mu.f32bin"
+  },
+  {
     "name": "2025-jax",
     "weights": "/opt/model/2025-jax/weights.msgpack",
     "corpus": "/opt/model/2025-jax/corpus_ids.json",
