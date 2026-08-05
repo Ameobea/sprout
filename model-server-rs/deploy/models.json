@@ -6,7 +6,9 @@
     "metadata": "/opt/model/2026-logq/processed-metadata.csv",
     "train_counts": "/opt/model/2026-logq/train_counts.json",
     "serving": "logq",
-    "default": true
+    "default": true,
+    "rating_b": "/opt/model/shared/rating_resid_B.f32bin",
+    "rating_imean": "/opt/model/shared/rating_imean.f32bin"
   },
   {
     "name": "2026-hybrid",
@@ -16,7 +18,9 @@
     "train_counts": "/opt/model/2026-hybrid/train_counts.json",
     "serving": "logq",
     "ease_b": "/opt/model/2026-hybrid/ease_B.f32bin",
-    "ease_mu": "/opt/model/2026-hybrid/ease_mu.f32bin"
+    "ease_mu": "/opt/model/2026-hybrid/ease_mu.f32bin",
+    "rating_b": "/opt/model/shared/rating_resid_B.f32bin",
+    "rating_imean": "/opt/model/shared/rating_imean.f32bin"
   },
   {
     "name": "2025-jax",

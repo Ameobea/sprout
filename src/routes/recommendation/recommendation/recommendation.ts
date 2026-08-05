@@ -239,6 +239,8 @@ export interface ModelServerInput {
     anime_id: number;
     rating: number;
     watch_status: string;
+    /** Epoch seconds of the entry's last list update; enables server-side era debias */
+    updated_at?: number;
   }[];
   /** Model-server model name; omitted = server default */
   model?: string;
@@ -359,11 +361,15 @@ const performInferrence = async ({
   }
 
   const requestBody: ModelServerInput = {
-    profile: profile.map((entry) => ({
-      anime_id: entry.node.id,
-      rating: entry.list_status.score,
-      watch_status: entry.list_status.status,
-    })),
+    profile: profile.map((entry) => {
+      const ts = entry.list_status.updated_at ? Math.floor(Date.parse(entry.list_status.updated_at) / 1000) : NaN;
+      return {
+        anime_id: entry.node.id,
+        rating: entry.list_status.score,
+        watch_status: entry.list_status.status,
+        ...(Number.isFinite(ts) && ts > 0 ? { updated_at: ts } : {}),
+      };
+    }),
     model: modelName,
     top_k: requestCount,
     logit_weight: logitWeight,

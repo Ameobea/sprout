@@ -15,6 +15,9 @@ pub struct ProfileEntry {
     pub rating: f32,
     #[serde(default)]
     pub watch_status: String,
+    /// Epoch seconds of the entry's last list update (0 = unknown); feeds era debias.
+    #[serde(default)]
+    pub updated_at: i64,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -43,6 +46,13 @@ pub struct RecommendRequest {
     /// holdout analysis stays unstacked.
     #[serde(default)]
     pub stack_weight: Option<f32>,
+    /// Scale on the rating-side residual-EASE blend weight 0.5·min(σᵤ,1)
+    /// (models with rating_b artifacts only). None = 1.0; 0 disables the stack.
+    #[serde(default)]
+    pub rating_stack_scale: Option<f32>,
+    /// None = on when ≥3 rated entries carry updated_at.
+    #[serde(default)]
+    pub era_debias: Option<bool>,
 }
 
 fn d_top_k() -> usize {
@@ -108,6 +118,8 @@ pub struct RecommendResponse {
     pub recommendations: Vec<Recommendation>,
     pub profile_holdout: Option<ProfileHoldout>,
     pub normalization_stats: NormStatsOut,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating_stack: Option<RatingStackOut>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -132,6 +144,9 @@ pub struct ModelData {
     pub log_pop: Option<Vec<f32>>,
     /// Graft models: per-item mean full-profile EASE score over reference users (for stack scoring).
     pub ease_mu: Option<Vec<f32>>,
+    /// Rating-side residual-EASE B (row-major 6000x6000, diag 0) + shrunk item means.
+    pub rating_b: Option<Vec<f32>>,
+    pub rating_imean: Option<Vec<f32>>,
 }
 
 /// Niche slider t → (α, k): α piecewise-linear, k log-interpolated through the
@@ -184,6 +199,121 @@ fn stack_lift(raw_logits: &[f32], e: &[f32], mu: &[f32], w: f32, out: &mut [f32]
     }
 }
 
+#[derive(Serialize, Clone, Copy)]
+pub struct RatingStackOut {
+    pub blend_w: f32,
+    pub era_slope: f32,
+    pub era_correction_now: f32,
+    pub n_dated: usize,
+}
+
+pub struct RatingStack {
+    pub ratings: Vec<f32>,
+    pub scores: Vec<f32>,
+    pub w: f32,
+    pub era_slope: f32,
+    pub era_mean: f32,
+    /// Per valid-entry era rank in (0,1]; NAN = undated/unrated.
+    pub eras: Vec<f32>,
+    pub out: RatingStackOut,
+}
+
+fn avgrank(keys: &[i64]) -> Vec<f32> {
+    let mut order: Vec<usize> = (0..keys.len()).collect();
+    order.sort_by_key(|&i| keys[i]);
+    let mut ranks = vec![0.0f32; keys.len()];
+    let mut s = 0;
+    while s < order.len() {
+        let mut e = s;
+        while e < order.len() && keys[order[e]] == keys[order[s]] {
+            e += 1;
+        }
+        let r = (s + e + 1) as f32 / 2.0;
+        for &i in &order[s..e] {
+            ranks[i] = r;
+        }
+        s = e;
+    }
+    ranks
+}
+
+const ERA_SLOPE_SHRINK: f32 = 30.0;
+
+pub fn compute_rating_stack(
+    b: &[f32],
+    imean: &[f32],
+    prep: &Prepped,
+    scale: f32,
+    era_on: bool,
+    base_ratings: &[f32],
+) -> Option<RatingStack> {
+    if scale <= 0.0 {
+        return None;
+    }
+
+    let mut scores = vec![0.0f32; CORPUS];
+    for (&(idx, val), &rated) in prep.enc_items.iter().zip(&prep.enc_rated) {
+        if !rated {
+            continue;
+        }
+        let r = val - imean[idx as usize];
+        unsafe { crate::engine::axpy1(&mut scores, &b[idx as usize * CORPUS..(idx as usize + 1) * CORPUS], r) };
+    }
+    let w = scale * 0.5 * prep.stats.sigma.min(1.0);
+    let mut ratings: Vec<f32> = base_ratings.to_vec();
+    for (o, &s) in ratings.iter_mut().zip(&scores) {
+        *o += w * s;
+    }
+
+    let n = prep.corpus_indices.len();
+    let mut eras = vec![f32::NAN; n];
+    let mut era_slope = 0.0f32;
+    let mut era_mean = 0.0f32;
+    let mut n_dated = 0usize;
+    if era_on {
+        let dated: Vec<usize> = (0..n)
+            .filter(|&i| prep.original[i] > 0.0 && prep.updated_at[i] > 0)
+            .collect();
+        n_dated = dated.len();
+        if n_dated >= 3 {
+            let keys: Vec<i64> = dated.iter().map(|&i| prep.updated_at[i]).collect();
+            let ranks = avgrank(&keys);
+            for (j, &i) in dated.iter().enumerate() {
+                eras[i] = ranks[j] / n_dated as f32;
+            }
+            let errs: Vec<f32> = dated
+                .iter()
+                .map(|&i| ratings[prep.corpus_indices[i] as usize] - prep.normalized[i])
+                .collect();
+            era_mean = dated.iter().map(|&i| eras[i]).sum::<f32>() / n_dated as f32;
+            let mut num = 0.0f64;
+            let mut den = 0.0f64;
+            for (j, &i) in dated.iter().enumerate() {
+                let ec = (eras[i] - era_mean) as f64;
+                num += ec * errs[j] as f64;
+                den += ec * ec;
+            }
+            if den > 1e-9 {
+                era_slope = (num / den) as f32 * n_dated as f32 / (n_dated as f32 + ERA_SLOPE_SHRINK);
+            }
+        }
+    }
+    let corr_now = era_slope * (1.0 - era_mean);
+    for o in ratings.iter_mut() {
+        *o -= corr_now;
+    }
+
+    Some(RatingStack {
+        ratings,
+        scores,
+        w,
+        era_slope,
+        era_mean,
+        eras,
+        out: RatingStackOut { blend_w: w, era_slope, era_correction_now: corr_now, n_dated },
+    })
+}
+
 pub struct Prepped {
     pub anime_ids: Vec<i64>,
     pub corpus_indices: Vec<u32>,
@@ -191,18 +321,20 @@ pub struct Prepped {
     pub normalized: Vec<f32>,
     pub stats: NormStats,
     pub enc_items: Vec<(u32, f32)>,
+    pub enc_rated: Vec<bool>,
+    pub updated_at: Vec<i64>,
     pub deltas: Vec<HoldoutDelta>,
     pub rated_mask: Vec<bool>,
 }
 
 pub fn preprocess(md: &ModelData, profile: &[ProfileEntry]) -> Result<Prepped, String> {
-    let mut valid: Vec<(u32, i64, f32, bool)> = profile
+    let mut valid: Vec<(u32, i64, f32, bool, i64)> = profile
         .iter()
         .filter_map(|e| {
             let &idx = md.id_to_idx.get(&e.anime_id)?;
             let dropped = e.watch_status == "dropped";
             if e.rating > 0.0 || matches!(e.watch_status.as_str(), "completed" | "watching" | "dropped") {
-                Some((idx, e.anime_id, e.rating, dropped))
+                Some((idx, e.anime_id, e.rating, dropped, e.updated_at))
             } else {
                 None
             }
@@ -215,18 +347,26 @@ pub fn preprocess(md: &ModelData, profile: &[ProfileEntry]) -> Result<Prepped, S
 
     let corpus_indices: Vec<u32> = valid.iter().map(|v| v.0).collect();
     let anime_ids: Vec<i64> = valid.iter().map(|v| v.1).collect();
+    let updated_at: Vec<i64> = valid.iter().map(|v| v.4).collect();
     let original: Vec<f32> = valid
         .iter()
-        .map(|&(_, _, rating, dropped)| if dropped && rating == 0.0 { -2.0 } else { rating })
+        .map(|&(_, _, rating, dropped, _)| if dropped && rating == 0.0 { -2.0 } else { rating })
         .collect();
     let (normalized, stats) = normalize_ratings(&original);
 
     // Dense-input set semantics: presence set once per index; last write wins for values.
     let mut enc_items: Vec<(u32, f32)> = Vec::with_capacity(valid.len());
+    let mut enc_rated: Vec<bool> = Vec::with_capacity(valid.len());
     for (i, &idx) in corpus_indices.iter().enumerate() {
         match enc_items.last_mut() {
-            Some(last) if last.0 == idx => last.1 = normalized[i],
-            _ => enc_items.push((idx, normalized[i])),
+            Some(last) if last.0 == idx => {
+                last.1 = normalized[i];
+                *enc_rated.last_mut().unwrap() = original[i] > 0.0;
+            }
+            _ => {
+                enc_items.push((idx, normalized[i]));
+                enc_rated.push(original[i] > 0.0);
+            }
         }
     }
 
@@ -254,7 +394,7 @@ pub fn preprocess(md: &ModelData, profile: &[ProfileEntry]) -> Result<Prepped, S
         rated_mask[idx as usize] = true;
     }
 
-    Ok(Prepped { anime_ids, corpus_indices, original, normalized, stats, enc_items, deltas, rated_mask })
+    Ok(Prepped { anime_ids, corpus_indices, original, normalized, stats, enc_items, enc_rated, updated_at, deltas, rated_mask })
 }
 
 fn effective_boost(f: f32) -> f32 {
@@ -262,7 +402,11 @@ fn effective_boost(f: f32) -> f32 {
     if f <= 0.5 { f } else { 0.5 + (f - 0.5) * (4.62 * (f - 0.5)).exp() }
 }
 
-pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> (Vec<Recommendation>, Option<ProfileHoldout>) {
+pub fn run_inference(
+    md: &ModelData,
+    prep: &Prepped,
+    req: &RecommendRequest,
+) -> (Vec<Recommendation>, Option<ProfileHoldout>, Option<RatingStackOut>) {
     let w = req.logit_weight.unwrap_or(DEFAULT_LOGIT_WEIGHT);
     let alt = req.use_alt_ranking;
     let logq = md.serving == ServingFamily::Logq && md.train_counts.is_some();
@@ -275,6 +419,19 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
     let base_row = out.rows - 1;
     let raw_logits = out.logits_row(base_row);
     let base_ratings = out.ratings_row(base_row);
+
+    let rstack = match (md.rating_b.as_ref(), md.rating_imean.as_ref()) {
+        (Some(b), Some(im)) => compute_rating_stack(
+            b,
+            im,
+            prep,
+            req.rating_stack_scale.unwrap_or(1.0),
+            req.era_debias != Some(false),
+            base_ratings,
+        ),
+        _ => None,
+    };
+    let base_ratings: &[f32] = rstack.as_ref().map_or(base_ratings, |s| &s.ratings[..]);
 
     let mut stack_buf = vec![0.0f32; CORPUS];
     let lift: &[f32] = match (req.stack_weight, out.ease_full_raw.as_ref(), md.ease_mu.as_ref()) {
@@ -361,6 +518,21 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
         let impact_baseline: Vec<f32> = recommendations[..num_impact].iter().map(|r| r.score).collect();
         let raw_baseline_at_recs: Vec<f32> = rec_idxs.iter().map(|&ci| base_scores[ci as usize]).collect();
 
+        // Held entry's blend residual to remove per row; B diag 0 keeps the held
+        // position itself exact either way. Duplicate-index rows keep the full blend.
+        let row_resid: Vec<f32> = prep
+            .deltas
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                if rstack.is_some() && d.presence_removed && prep.original[i] > 0.0 {
+                    prep.normalized[i] - md.rating_imean.as_ref().unwrap()[d.idx as usize]
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+
         let mut rows: Vec<Option<RowRes>> = (0..n).map(|_| None).collect();
         {
             let rows_addr = rows.as_mut_ptr() as usize;
@@ -369,11 +541,15 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
             let prep_ref = &prep;
             let counts_ref = md.train_counts.as_deref();
             let log_pop_ref = md.log_pop.as_deref();
+            let rstack_ref = rstack.as_ref();
+            let row_resid_ref = &row_resid;
+            let rating_b_ref = md.rating_b.as_deref();
             md.engine.pool.run(&move |tid| {
                 let nt = md.engine.pool.n_threads();
                 let rows = unsafe { std::slice::from_raw_parts_mut(rows_addr as *mut Option<RowRes>, n) };
                 let mut g = gather_ref.clone();
                 let mut serve_row = vec![0.0f32; CORPUS];
+                let mut rat_row = vec![0.0f32; CORPUS];
                 let mut r = tid;
                 while r < n {
                     g[0] = prep_ref.corpus_indices[r];
@@ -384,7 +560,24 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
                     } else {
                         raw_row
                     };
-                    let ratings = out_ref.ratings_row(r);
+                    let mut corr_now = 0.0f32;
+                    let ratings: &[f32] = if let Some(st) = rstack_ref {
+                        corr_now = st.era_slope * (1.0 - st.era_mean);
+                        rat_row.copy_from_slice(out_ref.ratings_row(r));
+                        for (o, &s) in rat_row.iter_mut().zip(&st.scores) {
+                            *o += st.w * s - corr_now;
+                        }
+                        if row_resid_ref[r] != 0.0 {
+                            let idx = g[0] as usize;
+                            let b = rating_b_ref.unwrap();
+                            unsafe {
+                                crate::engine::axpy1(&mut rat_row, &b[idx * CORPUS..(idx + 1) * CORPUS], -st.w * row_resid_ref[r])
+                            };
+                        }
+                        &rat_row
+                    } else {
+                        out_ref.ratings_row(r)
+                    };
                     // Python quirk kept for parity: compute_profile_holdout_analysis never
                     // forwards use_alt_ranking, so holdout scores/impact always use the
                     // default ranking; contributions honor the flag.
@@ -401,8 +594,15 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
                     let impact = (0..num_impact)
                         .map(|j| (impact_baseline[j] - scores[impact_base + j]).abs())
                         .sum();
+                    let mut pred = ratings[g[0] as usize];
+                    if let Some(st) = rstack_ref {
+                        pred += corr_now;
+                        if !st.eras[r].is_nan() {
+                            pred -= st.era_slope * (st.eras[r] - st.era_mean);
+                        }
+                    }
                     rows[r] = Some(RowRes {
-                        pred_rating: ratings[g[0] as usize],
+                        pred_rating: pred,
                         presence_prob: probs[0],
                         rec_score: scores[0],
                         impact,
@@ -469,7 +669,7 @@ pub fn run_inference(md: &ModelData, prep: &Prepped, req: &RecommendRequest) -> 
         }
     }
 
-    (recommendations, profile_holdout)
+    (recommendations, profile_holdout, rstack.map(|s| s.out))
 }
 
 pub fn norm_stats_out(stats: &NormStats) -> NormStatsOut {

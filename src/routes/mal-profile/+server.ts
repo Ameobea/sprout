@@ -14,7 +14,11 @@ export const GET: RequestHandler = async ({ url }) => {
     const profile = await getUserAnimeList(username);
     const compatProfile: CompatAnimeListEntry[] = profile.map((entry) => ({
       node: { id: entry.node.id },
-      list_status: { status: entry.list_status.status, score: entry.list_status.score },
+      list_status: {
+        status: entry.list_status.status,
+        score: entry.list_status.score,
+        updated_at: entry.list_status.updated_at,
+      },
     }));
     return json(typify(compatProfile));
   } catch (err) {

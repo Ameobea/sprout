@@ -34,6 +34,12 @@ struct ModelCfg {
     /// (enables the stack_weight dev flag).
     #[serde(default)]
     ease_mu: Option<String>,
+    /// Rating-side residual-EASE stack: raw f32 LE row-major 6000x6000 B (diag 0)
+    /// + 6000-vector of shrunk item means. Both required to enable the stack.
+    #[serde(default)]
+    rating_b: Option<String>,
+    #[serde(default)]
+    rating_imean: Option<String>,
     #[serde(default)]
     default: bool,
 }
@@ -97,6 +103,9 @@ fn load_model(cfg: &ModelCfg, threads: usize, pin: bool, prec: Precision) -> Arc
     let ease_b = cfg.ease_b.as_ref().map(|p| load_f32bin(p, CORPUS * CORPUS));
     let ease_mu = cfg.ease_mu.as_ref().map(|p| load_f32bin(p, CORPUS));
     let graft = ease_b.is_some();
+    let rating_b = cfg.rating_b.as_ref().map(|p| load_f32bin(p, CORPUS * CORPUS));
+    let rating_imean = cfg.rating_imean.as_ref().map(|p| load_f32bin(p, CORPUS));
+    assert_eq!(rating_b.is_some(), rating_imean.is_some(), "{}: rating_b and rating_imean must come together", cfg.name);
     let pins: Vec<usize> = (0..threads).collect();
     let engine = Engine::new_with_ease(&params, ease_b, threads, DEFAULT_CFG, pin.then_some(&pins[..]), prec);
     drop(params);
@@ -117,6 +126,8 @@ fn load_model(cfg: &ModelCfg, threads: usize, pin: bool, prec: Precision) -> Arc
         train_counts,
         log_pop,
         ease_mu,
+        rating_b,
+        rating_imean,
     })
 }
 
@@ -141,6 +152,8 @@ fn main() {
             serving: None,
             ease_b: None,
             ease_mu: None,
+            rating_b: None,
+            rating_imean: None,
             default: true,
         }],
     };

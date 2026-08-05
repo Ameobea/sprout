@@ -30,6 +30,7 @@ def main():
     ap.add_argument("--min-shared-rated", type=int, default=8)
     ap.add_argument("--out", required=True)
     ap.add_argument("--pairs-out", default=None)
+    ap.add_argument("--user-mask", default=None, help="bool npy; only pairs with both users True")
     args = ap.parse_args()
 
     d = np.load(args.vectors)
@@ -111,8 +112,11 @@ def main():
     acc = np.zeros((len(j_edges) - 1, len(ctx_edges) - 1, 4))  # cnt, sum|dz|, sum dz^2, sum m
 
     pair_records = []
+    umask = np.load(args.user_mask) if args.user_mask else None
 
     def process_pair(a, b, jacc):
+        if umask is not None and not (umask[a] and umask[b]):
+            return
         sa, la = starts[a], lengths[a]
         sb, lb = starts[b], lengths[b]
         ia = indices[sa : sa + la]

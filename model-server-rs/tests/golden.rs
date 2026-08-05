@@ -1,6 +1,6 @@
 use model_server_rs::engine::{Engine, HoldoutDelta, Precision};
 use model_server_rs::kernels::KernCfg;
-use model_server_rs::{norm, refimpl, weights::Params, CORPUS};
+use model_server_rs::{norm, recommend, refimpl, weights::Params, CORPUS};
 use serde::Deserialize;
 use std::path::Path;
 
@@ -183,4 +183,71 @@ fn graft_engine_matches_numpy_f64() {
     assert!(dl < 0.02, "graft logits diverged: {dl}");
     assert!(dr < 0.01, "graft ratings diverged: {dr}");
     assert!((ls - c.logits_sum).abs() / c.logits_sum.abs().max(1.0) < 1e-3);
+}
+
+#[test]
+fn rating_stack_matches_numpy_f64() {
+    let golden_p = "../data/aug2026/serve/rating_stack_golden.json";
+    let b_p = "../data/aug2026/serve/rating_resid_B6k.f32bin";
+    let im_p = "../data/aug2026/serve/rating_imean6k.f32bin";
+    if !Path::new(golden_p).exists() || !Path::new(b_p).exists() {
+        eprintln!("skipping: rating stack artifacts missing");
+        return;
+    }
+    #[derive(Deserialize)]
+    struct StackCase {
+        idxs: Vec<u32>,
+        raw: Vec<f32>,
+        updated_at: Vec<i64>,
+        base_ratings: Vec<f32>,
+        sigma: f32,
+        w: f32,
+        era_slope: f32,
+        era_corr_now: f32,
+        scores_head: Vec<f32>,
+        final_head: Vec<f32>,
+        final_sum: f64,
+    }
+    let c: StackCase = serde_json::from_str(&std::fs::read_to_string(golden_p).unwrap()).unwrap();
+    let load = |p: &str, n: usize| -> Vec<f32> {
+        let bytes = std::fs::read(p).unwrap();
+        assert_eq!(bytes.len(), n * 4);
+        bytes.chunks_exact(4).map(|ch| f32::from_le_bytes(ch.try_into().unwrap())).collect()
+    };
+    let b = load(b_p, CORPUS * CORPUS);
+    let imean = load(im_p, CORPUS);
+
+    let (normalized, stats) = norm::normalize_ratings(&c.raw);
+    assert!((stats.sigma - c.sigma).abs() < 1e-4);
+    let enc_items: Vec<(u32, f32)> = c.idxs.iter().copied().zip(normalized.iter().copied()).collect();
+    let enc_rated: Vec<bool> = c.raw.iter().map(|&r| r > 0.0).collect();
+    let mut rated_mask = vec![false; CORPUS];
+    for &(i, _) in &enc_items {
+        rated_mask[i as usize] = true;
+    }
+    let prep = recommend::Prepped {
+        anime_ids: c.idxs.iter().map(|&i| i as i64).collect(),
+        corpus_indices: c.idxs.clone(),
+        original: c.raw.clone(),
+        normalized,
+        stats,
+        enc_items,
+        enc_rated,
+        updated_at: c.updated_at.clone(),
+        deltas: Vec::new(),
+        rated_mask,
+    };
+    let st = recommend::compute_rating_stack(&b, &imean, &prep, 1.0, true, &c.base_ratings).unwrap();
+    assert!((st.w - c.w).abs() < 1e-5, "w {} vs {}", st.w, c.w);
+    assert!(max_abs_diff(&st.scores[..16], &c.scores_head) < 2e-3, "resid scores mismatch");
+    assert!((st.era_slope - c.era_slope).abs() < 1e-3, "slope {} vs {}", st.era_slope, c.era_slope);
+    assert!(
+        (st.out.era_correction_now - c.era_corr_now).abs() < 1e-3,
+        "corr {} vs {}",
+        st.out.era_correction_now,
+        c.era_corr_now
+    );
+    assert!(max_abs_diff(&st.ratings[..16], &c.final_head) < 2e-3, "final ratings mismatch");
+    let sum: f64 = st.ratings.iter().map(|&v| v as f64).sum();
+    assert!((sum - c.final_sum).abs() < 0.05, "final sum {} vs {}", sum, c.final_sum);
 }

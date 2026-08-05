@@ -1,0 +1,213 @@
+<title>HP &amp; Optimizer Sweep — Anime Atlas</title>
+<style>
+:root {
+  --paper: #f6f7f9; --card: #ffffff; --ink: #22272e; --ink-2: #59616b; --ink-3: #8a939e;
+  --grid: #e3e6ea; --line: #ced3d9;
+  --violet: #6741d9; --violet-soft: #efe9fd;
+  --teal: #0b7a63; --teal-soft: #e2f5f0;
+  --red: #c2255c; --red-soft: #fceff4;
+  --amber: #b08004;
+}
+:root[data-theme="dark"] { --paper: #14161a; --card: #1c1f24; --ink: #e4e7eb; --ink-2: #9aa3ad;
+  --ink-3: #6b7480; --grid: #2a2e34; --line: #343a41; --violet: #9775fa; --violet-soft: #2a2140;
+  --teal: #38b596; --teal-soft: #123028; --red: #f06595; --red-soft: #381a26; --amber: #d9a62e; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --paper: #14161a; --card: #1c1f24; --ink: #e4e7eb; --ink-2: #9aa3ad;
+    --ink-3: #6b7480; --grid: #2a2e34; --line: #343a41; --violet: #9775fa; --violet-soft: #2a2140;
+    --teal: #38b596; --teal-soft: #123028; --red: #f06595; --red-soft: #381a26; --amber: #d9a62e; }
+}
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); margin: 0;
+  font: 15.5px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background-image: repeating-linear-gradient(var(--grid) 0 1px, transparent 1px 28px);
+  background-size: 100% 28px; }
+main { max-width: 980px; margin: 0 auto; padding: 42px 22px 90px; }
+h1 { font-size: 30px; line-height: 1.15; letter-spacing: -0.5px; margin: 6px 0 4px; text-wrap: balance; }
+h2 { font-size: 19px; letter-spacing: -0.2px; margin: 44px 0 10px; }
+.mono, td.n, .kpi .value { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums; }
+.eyebrow { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--violet);
+  font-weight: 650; }
+.sub { color: var(--ink-2); margin: 2px 0 0; max-width: 68ch; }
+.banner { margin: 22px 0 0; padding: 11px 16px; border-left: 3px solid var(--amber);
+  background: var(--card); border-radius: 0 8px 8px 0; color: var(--ink-2); font-size: 14.5px; }
+.banner b { color: var(--ink); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 26px 0 0; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; }
+.kpi .label { font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.kpi .value { font-size: 25px; font-weight: 700; margin-top: 3px; }
+.kpi .detail { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 18px 20px 16px; margin-top: 14px; }
+.card h3 { margin: 0 0 4px; font-size: 16px; }
+.subtitle { color: var(--ink-3); font-size: 13px; margin: 0 0 12px; }
+.tablewrap { overflow-x: auto; }
+table.data { border-collapse: collapse; width: 100%; font-size: 13.8px; }
+table.data th { text-align: right; font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--ink-3); padding: 5px 10px; border-bottom: 1px solid var(--line); }
+table.data th:first-child, table.data td:first-child { text-align: left; padding-left: 2px; }
+table.data td { padding: 5.5px 10px; border-bottom: 1px solid var(--grid); text-align: right; }
+td.n { font-size: 13.2px; }
+.chip { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; border-radius: 999px; padding: 2px 9px; margin-left: 8px; vertical-align: 1px; }
+.chip.win { background: var(--violet-soft); color: var(--violet); }
+.chip.win-small { background: var(--teal-soft); color: var(--teal); }
+.chip.fail, .chip.worse { background: var(--red-soft); color: var(--red); }
+.chip.null, .chip.baseline { background: var(--grid); color: var(--ink-2); }
+.chip.pend { background: var(--grid); color: var(--amber); }
+tr.r-win td { background: var(--violet-soft); }
+tr.r-win td:first-child { font-weight: 650; }
+.note { color: var(--ink-2); font-size: 14px; max-width: 72ch; }
+.callout { border-left: 3px solid var(--violet); background: var(--card); padding: 12px 16px;
+  border-radius: 0 8px 8px 0; margin-top: 14px; font-size: 14.5px; color: var(--ink-2); }
+.callout b { color: var(--ink); }
+ul.tight { margin: 8px 0 0; padding-left: 20px; }
+ul.tight li { margin-bottom: 7px; color: var(--ink-2); }
+ul.tight li b { color: var(--ink); }
+.legend { display: flex; gap: 18px; font-size: 12.5px; color: var(--ink-2); margin: 4px 0 8px; flex-wrap: wrap; }
+.sw { display: inline-block; width: 20px; height: 3px; border-radius: 2px; vertical-align: 3px; margin-right: 6px; }
+.footnote { font-size: 12.8px; color: var(--ink-3); max-width: 76ch; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<main>
+<div class="eyebrow">Anime Atlas · model foundation experiments · 2026-08-05</div>
+<h1>Hyperparameter &amp; optimizer sweep</h1>
+<p class="sub">First-ever systematic pass over the training foundations — learning rate, LR schedule,
+batch size, activation, and modern optimizers — after two nights of model- and data-side work
+found the rating head sitting on its information floor. Question: is there free performance in
+the recipe itself?</p>
+<div class="banner" id="status-banner"><b>Status: PAUSED — resumes tonight.</b> Muon's desktop-crushing
+GPU contention met an in-use workstation; the two deciding runs (muon @ batch 1024, muon @ 50k steps)
+are queued for the next idle window.</div>
+
+<div class="kpis" id="kpis"></div>
+
+<h2>Every run, one table</h2>
+<p class="note">Protocol: identical to every probe this span — production multitask recipe, seed-999
+holdout, 20k-user floors dump. Judged on trusted-user rating MAE + within-user ρ and presence
+held-out NLL, against two control seeds (band ≈ ±0.001 MAE / ±0.005 NLL). Wall-clock includes the
+eval dump.</p>
+<div class="card"><div class="tablewrap"><div id="runs-table"></div></div></div>
+
+<h2>The muon story</h2>
+<div class="card">
+  <h3>Rating error vs training step<span class="chip win">4× step efficiency</span></h3>
+  <p class="subtitle">held-out rating MAE (fixed 2048-user eval) across training · lower is better</p>
+  <div class="legend" id="curve-legend"></div>
+  <div id="ch-curves"></div>
+</div>
+<div class="callout"><b>Muon (Newton–Schulz orthogonalized momentum) is the only thing tried that
+beats the adam ceiling — on both heads at once, twice.</b> Two independent seeds landed within
+0.0002 of each other (0.4459 / 0.4457 trusted MAE, ρ 0.6098 / 0.6099, presence NLL 7.0545 both) at
+just 60% of the control's step budget. Nothing else in two nights of experiments moved both heads
+together. The catch: NS runs five large dense GEMMs per step on the 12000×2048 and 2048×6000
+weight matrices — <b>~10× wall-clock</b> on this GPU and enough sustained occupancy to crash the
+desktop environment sharing it (a first).</div>
+
+<h2>Verdicts</h2>
+<div class="card">
+<ul class="tight">
+  <li><b>Muon: tentative policy — not the everyday recipe, but likely worth paying once per model
+  cycle</b> for the final production retrain (overnight, machine idle): a permanent, serve-free
+  quality gain roughly the size of an entire experiment span's winnings.
+  <span class="chip pend">DECIDER PENDING</span> The batch-1024 muon run decides: NS cost is
+  per-step, so doubling the batch should roughly halve wall-clock at equal sample count. If
+  quality holds at ~3–5× adam's wall-clock, muon becomes the final-retrain recipe; if not, it's
+  dropped without regret.</li>
+  <li><b>Cosine schedule beats reduce-on-plateau — confirmed on two seeds</b> (0.4499/0.4497 vs
+  0.4507/0.4516), presence equal-or-better, LR-insensitive between 3e-4 and 4.5e-4, and free.
+  Adopt for all future training regardless of the muon decision.</li>
+  <li><b>The current adam recipe was already at its optimum.</b> 2× LR hurts under plateau; 3.3×
+  diverges outright under cosine. Drop-in optimizer swaps at sensible LRs — ademamix, lion,
+  schedule-free adamw — all lose. Gelu ≈ swish. The recipe wasn't leaving easy performance on
+  the table; it took a different optimization <i>geometry</i> to move.</li>
+  <li><b>Batch 1024 ties control at half the steps</b> (samples-fair) — neutral on quality, and
+  the lever that may rescue muon's wall-clock.</li>
+</ul>
+</div>
+
+<h2>Methods</h2>
+<p class="footnote" id="methods">
+<span class="mono">analysis/train_probe_hp.py</span> — production multitask recipe (uncertainty
+weighting kept; separately shown to be load-bearing), configurable lr / schedule / batch /
+optimizer / activation via optax 0.2.8 (muon = optax.contrib.muon, cosine =
+warmup_cosine_decay, warmup 1000). Judgment: rating_floors_dump (20k probe-holdout users,
+corrupt seed 555) → trusted-user MAE + within-user Spearman ρ via
+<span class="mono">rating_floors_analyze.py</span>; presence via held-out NLL on the fixed
+2048-user corrupt eval (identical FixedEvalSet as the control probes — directly comparable).
+Controls: probe_frac1.0 + b512_seed2. Step counts samples-fair at batch 512 except muon
+(12k/30k — step-efficiency was the question) and bs1024 (25k). Sweep runners:
+<span class="mono">hp_sweep_wave{1,2,3}.sh</span>, sequential GPU queue in the rocm_jax
+container. Wave 3 paused after the muon seed-2 confirmation; bs1024-muon + 50k-muon pending.
+</p>
+</main>
+
+<script>
+const DATA = __DATA__;
+(function(){
+const $ = id => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function svg(w, h) { const s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", `0 0 ${w} ${h}`); s.setAttribute("width", "100%");
+  s.style.maxWidth = w + "px"; s.style.display = "block"; return s; }
+function el(p, n, at, txt) { const e = document.createElementNS(NS, n);
+  for (const k in at) e.setAttribute(k, at[k]); if (txt != null) e.textContent = txt;
+  p.appendChild(e); return e; }
+
+const best = DATA.rows.filter(r => r.cls === "win").reduce((a, b) => a.mae < b.mae ? a : b);
+$("kpis").innerHTML = [
+  { label: "best trusted MAE", value: best.mae.toFixed(4), detail: "muon 5e-3 · two seeds within 0.0002 · control 0.4507" },
+  { label: "ordering ρ", value: best.rho.toFixed(4), detail: "vs 0.6044 control — ~5% added to the head's whole value-add" },
+  { label: "step efficiency", value: "4×", detail: "muon matches adam's 50k-step endpoint by step 12k" },
+  { label: "wall-clock cost", value: "10×", detail: "the open problem — batch-1024 run tonight decides" },
+].map(k => `<div class="kpi"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="detail">${k.detail}</div></div>`).join("");
+
+const CHIP = { win: "WIN", "win-small": "small win", worse: "worse", fail: "diverged", null: "null", baseline: "control", pend: "pending" };
+let html = `<table class="data"><tr><th>run</th><th>trusted MAE</th><th>Δ</th><th>ρ</th><th>presence NLL</th><th>steps</th><th>wall-clock</th></tr>`;
+for (const r of DATA.rows) {
+  const d = r.mae - 0.4507;
+  html += `<tr class="r-${r.cls}"><td>${r.name}<span class="chip ${r.cls}">${CHIP[r.cls]}</span></td>` +
+    `<td class="n">${r.mae.toFixed(4)}</td>` +
+    `<td class="n" style="color:${d < -0.0015 ? css("--violet") : d > 0.0015 ? css("--red") : "var(--ink-3)"}">${(d >= 0 ? "+" : "") + d.toFixed(4)}</td>` +
+    `<td class="n">${r.rho.toFixed(4)}</td><td class="n">${r.nll ? r.nll.toFixed(4) : "—"}</td>` +
+    `<td class="n">${(r.steps / 1000) | 0}k</td><td class="n">${r.mins >= 60 ? (r.mins / 60).toFixed(1) + "h" : r.mins + "m"}</td></tr>`;
+}
+html += `<tr><td>muon @ batch 1024 (15k)<span class="chip pend">PENDING — tonight</span></td><td class="n" colspan="6" style="text-align:left;color:var(--ink-3)">the wall-clock decider</td></tr>`;
+html += `<tr><td>muon @ 50k steps<span class="chip pend">PENDING — tonight</span></td><td class="n" colspan="6" style="text-align:left;color:var(--ink-3)">does the gap widen further?</td></tr>`;
+$("runs-table").innerHTML = html + "</table>";
+
+const COLORS = { "adam control": css("--ink-3"), "adam cosine": css("--teal"), "muon 5e-3": css("--violet") };
+$("curve-legend").innerHTML = Object.entries(COLORS).map(([k, c]) =>
+  `<span><span class="sw" style="background:${c}"></span>${k}</span>`).join("");
+(function(){
+  const W = 900, H = 300, padL = 56, padR = 16, padT = 14, padB = 34;
+  const s = svg(W, H);
+  const xmax = 50000, ylo = 0.435, yhi = 0.50;
+  const x = v => padL + (W - padL - padR) * v / xmax;
+  const y = v => padT + (H - padT - padB) * (1 - (v - ylo) / (yhi - ylo));
+  for (let g = 0.44; g <= 0.499; g += 0.01) {
+    el(s, "line", { x1: x(0), y1: y(g), x2: x(xmax), y2: y(g), stroke: "var(--grid)" });
+    el(s, "text", { x: padL - 8, y: y(g) + 4, "text-anchor": "end", fill: "var(--ink-3)", "font-size": 11.5,
+      "font-family": "ui-monospace,monospace" }, g.toFixed(2));
+  }
+  [10000, 20000, 30000, 40000, 50000].forEach(g => {
+    el(s, "line", { x1: x(g), y1: padT, x2: x(g), y2: H - padB, stroke: "var(--grid)" });
+    el(s, "text", { x: x(g), y: H - 12, "text-anchor": "middle", fill: "var(--ink-3)", "font-size": 11.5,
+      "font-family": "ui-monospace,monospace" }, (g / 1000) + "k");
+  });
+  el(s, "line", { x1: x(0), y1: y(0.4507), x2: x(xmax), y2: y(0.4507), stroke: "var(--ink-3)",
+    "stroke-dasharray": "5 4", opacity: 0.7 });
+  el(s, "text", { x: x(xmax) - 4, y: y(0.4507) - 6, "text-anchor": "end", fill: "var(--ink-3)",
+    "font-size": 11.5 }, "adam 50k final");
+  for (const [name, pts] of Object.entries(DATA.curves)) {
+    const flt = pts.filter(p => p[1] < 0.52 && p[0] >= 2000);
+    const d = flt.map((p, i) => (i ? "L" : "M") + x(p[0]).toFixed(1) + " " + y(Math.min(p[1], yhi)).toFixed(1)).join(" ");
+    el(s, "path", { d, fill: "none", stroke: COLORS[name], "stroke-width": name.startsWith("muon") ? 2.6 : 1.8 });
+    const last = flt[flt.length - 1];
+    el(s, "circle", { cx: x(last[0]), cy: y(last[1]), r: 3.5, fill: COLORS[name] });
+  }
+  $("ch-curves").appendChild(s);
+})();
+})();
+</script>

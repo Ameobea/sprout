@@ -74,7 +74,7 @@ unsafe fn axpy2(out: &mut [f32], row_p: &[f32], row_v: &[f32], pc: f32, vc: f32)
 }
 
 #[target_feature(enable = "avx512f")]
-unsafe fn axpy1(out: &mut [f32], row: &[f32], c: f32) {
+pub(crate) unsafe fn axpy1(out: &mut [f32], row: &[f32], c: f32) {
     let cv = _mm512_set1_ps(c);
     let mut i = 0;
     let n16 = out.len() & !15;

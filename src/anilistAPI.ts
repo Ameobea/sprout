@@ -12,7 +12,8 @@ const AnilistAPIConcurrencyLimiter = new AsyncSemaphore(1);
 
 export interface CompatAnimeListEntry {
   node: { id: number };
-  list_status: { score: number; status: AnimeListStatusCode };
+  /** `updated_at`: date string when the source provides it (MAL: ISO 8601); feeds era debias */
+  list_status: { score: number; status: AnimeListStatusCode; updated_at?: string };
 }
 
 const convertAniListMediaStatusToMALFormat = (
@@ -80,6 +81,7 @@ const convertAniListAnimeListToMALFormat = (entries: anilist.ListEntry[]): Compa
       list_status: {
         score: Math.round((entry.score || 0) / scoreDivisor),
         status: convertAniListMediaStatusToMALFormat(entry.status),
+        updated_at: entry.dates?.updatedAt || undefined,
       },
     }));
 };
