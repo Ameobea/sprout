@@ -23,6 +23,9 @@ RUNS = [
     ("muon 5e-3 (12k)", "rating_floors_hp_muon_lr5e3.json", "probe/hp_muon_lr5e3", "win-small", 12000, 60),
     ("muon 5e-3 (30k)", "rating_floors_hp_muon_lr5e3_30k.json", "probe/hp_muon_lr5e3_30k", "win", 30000, 267),
     ("muon 5e-3 (30k) seed 2", "rating_floors_hp_muon_lr5e3_30k_s2.json", "probe/hp_muon_lr5e3_30k_s2", "win", 30000, 235),
+    ("muon 7e-3 @ batch 1024 (15k)", "rating_floors_hp_muon_bs1024_lr7e3.json", "probe/hp_muon_bs1024_lr7e3", "win", 15000, 71),
+    ("muon 1e-2 @ batch 2048 (7.5k)", "rating_floors_hp_muon_bs2048_lr1e2.json", "probe/hp_muon_bs2048_lr1e2", "win", 7500, 50),
+    ("muon 5e-3 (50k)", "rating_floors_hp_muon_lr5e3_50k.json", "probe/hp_muon_lr5e3_50k", "win", 50000, 252),
 ]
 
 
@@ -45,7 +48,7 @@ for name, fj, pf, cls, steps, mins in RUNS:
 
 curves = {}
 for key, pf in [("adam control", "probe/probe_frac1.0"), ("adam cosine", "probe/hp_cosine_lr3e4"),
-                ("muon 5e-3", "probe/hp_muon_lr5e3_30k")]:
+                ("muon 5e-3", "probe/hp_muon_lr5e3_50k")]:
     pts = [(r["step"], r["holdout"]["corrupt"]["mae_drop_per_item"]) for r in jsonl_records(pf)
            if "holdout" in r]
     curves[key] = pts

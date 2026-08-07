@@ -3,7 +3,7 @@
 
   const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
     { id: ModelName.Model_2026_logq, text: 'Aug. 2026' },
-    { id: ModelName.Model_2026_hybrid, text: 'Aug. 2026 Hybrid (Beta)' },
+    { id: ModelName.Model_2026_rc, text: 'Aug. 2026 v2 (Beta)' },
     { id: ModelName.Model_2025_jax, text: 'Dec. 2025' },
     { id: ModelName.Legacy_2023, text: 'Legacy (2023)' },
   ];

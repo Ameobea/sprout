@@ -75,6 +75,10 @@ fn layer_flex_k(root: &Value, name: &str, n: usize) -> Layer {
 }
 
 impl Params {
+    pub fn in_channels(&self) -> usize {
+        self.enc1.w.k / crate::CORPUS
+    }
+
     pub fn load(path: &Path) -> Params {
         let bytes = fs::read(path).unwrap();
         let root = rmpv::decode::read_value(&mut &bytes[..]).unwrap();
@@ -83,8 +87,14 @@ impl Params {
         let item_up1 = layer_flex_k(&root, "dec_item_up1", crate::DEC_MID);
         let expect_k = if ease_proj.is_some() { crate::BOTTLENECK + crate::EASE_PROJ } else { crate::BOTTLENECK };
         assert_eq!(item_up1.w.k, expect_k, "dec_item_up1 in dim vs ease_proj presence");
+        let enc1 = layer_flex_k(&root, "Dense_0", crate::HIDDEN);
+        assert!(
+            enc1.w.k % crate::CORPUS == 0 && (2..=3).contains(&(enc1.w.k / crate::CORPUS)),
+            "Dense_0 in dim {} is not 2 or 3 input channels",
+            enc1.w.k
+        );
         Params {
-            enc1: layer(&root, "Dense_0", crate::IN_DIM, crate::HIDDEN),
+            enc1,
             bott: layer(&root, "bottleneck", crate::HIDDEN, crate::BOTTLENECK),
             item_up1,
             item_up2: layer(&root, "dec_item_up2", crate::DEC_MID, crate::HIDDEN),

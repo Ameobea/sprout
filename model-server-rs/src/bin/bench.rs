@@ -37,7 +37,7 @@ fn make_profile(n: usize, seed: u64) -> Vec<(u32, f32)> {
 }
 
 fn holdout_deltas(items: &[(u32, f32)]) -> Vec<HoldoutDelta> {
-    items.iter().map(|&(idx, val)| HoldoutDelta { idx, presence_removed: true, dval: val }).collect()
+    items.iter().map(|&(idx, val)| HoldoutDelta { idx, presence_removed: true, dval: val, dabs: 0.0 }).collect()
 }
 
 fn bench_one(engine: &Engine, n: usize, iters: usize, holdout: bool) -> (f64, f64) {
@@ -48,7 +48,7 @@ fn bench_one(engine: &Engine, n: usize, iters: usize, holdout: bool) -> (f64, f6
     let mut sink = 0.0f32;
     for _ in 0..iters {
         let t0 = Instant::now();
-        let out = engine.forward(&items, hd);
+        let out = engine.forward(&items, None, hd);
         times.push(t0.elapsed().as_secs_f64() * 1e3);
         sink += out.logits_row(out.rows - 1)[0];
     }

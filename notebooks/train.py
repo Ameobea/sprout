@@ -24,32 +24,51 @@ EVAL_PROFILE_MIN_RATINGS = 50
 EVAL_PROFILE_MAX_RATINGS = 300
 
 
-def data_generator(all_users, batch_size=32):
+def data_generator(all_users, batch_size=32, prefetch=3):
+    """Vectorized flat-scatter batch assembly on a prefetch thread; output is
+    bit-identical to the historical per-user loop (incl. duplicate-index
+    last-write-wins)."""
+    import queue
+    import threading
+
     cs = CONF["corpus_size"]
     nch = CONF["input_channels"]
+    idxs_a = [np.asarray(u[0], dtype=np.int32) for u in all_users]
+    vals_a = [u[1] for u in all_users]
+    rated_a = [u[2] for u in all_users]
+    st_a = [u[3] for u in all_users] if nch == 5 else None
+    lens = np.array([len(a) for a in idxs_a], dtype=np.int64)
+
+    def build(sel):
+        n = len(sel)
+        rows = np.repeat(np.arange(n, dtype=np.int64), lens[sel])
+        cols = np.concatenate([idxs_a[u] for u in sel])
+        rats = np.concatenate([rated_a[u] for u in sel]).astype(np.float32)
+        bt = np.zeros(n * cs * nch, dtype=np.float32)
+        base = rows * (cs * nch) + cols
+        bt[base] = 1.0
+        bt[base + cs] = np.concatenate([vals_a[u] for u in sel])
+        if nch >= 3:
+            bt[base + 2 * cs] = rats
+        if nch == 5:
+            sts = np.concatenate([st_a[u] for u in sel])
+            bt[base + 3 * cs] = (sts == 3).astype(np.float32)
+            bt[base + 4 * cs] = ((sts == 1) | (sts == 2)).astype(np.float32)
+        rm = np.zeros(n * cs, dtype=np.float32)
+        rm[rows * cs + cols] = rats
+        return bt.reshape(n, cs * nch), rm.reshape(n, cs)
+
+    q = queue.Queue(maxsize=prefetch)
+
+    def producer():
+        while True:
+            perm = np.random.permutation(len(all_users))
+            for b_idx in range(0, len(all_users), batch_size):
+                q.put(build(perm[b_idx : b_idx + batch_size]))
+
+    threading.Thread(target=producer, daemon=True).start()
     while True:
-        # the list of users is shuffled each epoch
-        perm = np.random.permutation(len(all_users))
-
-        for b_idx in range(0, len(all_users), batch_size):
-            batch_indices = perm[b_idx : b_idx + batch_size]
-
-            current_batch_size = len(batch_indices)
-            batch_tensor = np.zeros((current_batch_size, cs * nch), dtype=np.float32)
-            rated_mask_tensor = np.zeros((current_batch_size, cs), dtype=np.float32)
-
-            for i, u_idx in enumerate(batch_indices):
-                idxs, vals, rated, statuses = all_users[u_idx]
-                batch_tensor[i, idxs] = 1.0
-                batch_tensor[i, cs + idxs] = vals
-                rated_mask_tensor[i, idxs] = rated.astype(np.float32)
-                if nch >= 3:
-                    batch_tensor[i, 2 * cs + idxs] = rated
-                if nch == 5:
-                    batch_tensor[i, 3 * cs + idxs] = statuses == 3
-                    batch_tensor[i, 4 * cs + idxs] = (statuses == 1) | (statuses == 2)
-
-            yield batch_tensor, rated_mask_tensor
+        yield q.get()
 
 
 def profile_aux(rated, statuses):

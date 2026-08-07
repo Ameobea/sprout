@@ -124,12 +124,64 @@ def load_graft(weights_path, ease_b_path, bf16_sim=False):
     return params, fwd
 
 
+def load_rc(weights_path, ease_b_path, bf16_sim=False):
+    """3ch [presence | z-mix | abs] + concat graft (train_probe_rc.RCRecommender)."""
+    from analysis.train_probe_rc import RCRecommender
+
+    cs = CONF["corpus_size"]
+    model = RCRecommender()
+    rng = random.PRNGKey(0)
+    params = model.init(
+        {"params": rng, "noise": rng}, jnp.ones((1, cs * 3)), jnp.ones((1, cs))
+    )["params"]
+    with open(weights_path, "rb") as f:
+        params = serialization.from_bytes(params, f.read())
+    if bf16_sim:
+        params = jax.tree_util.tree_map(
+            lambda a: a.astype(jnp.bfloat16).astype(a.dtype), params
+        )
+    Bj = jnp.asarray(np.load(ease_b_path), dtype=jnp.float32)
+
+    @jax.jit
+    def fwd(p, x):
+        e = x[:, :cs] @ Bj
+        e = (e - jnp.mean(e, axis=1, keepdims=True)) / (jnp.std(e, axis=1, keepdims=True) + 1e-6)
+        out = model.apply({"params": p}, x, e, training=False)
+        return out[0], out[1]
+
+    return params, fwd
+
+
+def rc_abs_aux(original):
+    return np.where(original > 0, (original - 5.5) / 2.5, 0.0).astype(np.float32)[None, :]
+
+
+GRAFT_CHUNK = 256
+
+
+def graft_fwd_chunked(graft_fwd, params, batch):
+    """Fixed-shape chunks so the jit compiles once (mirrors _batch_holdout_predict_gpu;
+    variable shapes recompile per profile and intermittently emit bad HSACOs on gfx1201)."""
+    n, d = batch.shape
+    logits, ratings = [], []
+    for s in range(0, n, GRAFT_CHUNK):
+        chunk = batch[s : s + GRAFT_CHUNK]
+        if chunk.shape[0] < GRAFT_CHUNK:
+            chunk = np.concatenate([chunk, np.zeros((GRAFT_CHUNK - chunk.shape[0], d), dtype=chunk.dtype)])
+        lg, rt = graft_fwd(params, jnp.asarray(chunk))
+        take = min(GRAFT_CHUNK, n - s)
+        logits.append(np.asarray(lg)[:take])
+        ratings.append(np.asarray(rt)[:take])
+    return np.concatenate(logits), np.concatenate(ratings)
+
+
 def eval_profile(params, idxs, vals, original, statuses, corpus_size, device, serve_prior=None,
                  graft_fwd=None):
     n = len(idxs)
     if graft_fwd is not None:
-        batch, _, _, _ = create_holdout_batch(idxs, vals, corpus_size)
-        item_logits, rating_pred = graft_fwd(params, jnp.asarray(batch))
+        aux = rc_abs_aux(original) if CONF["input_channels"] == 3 else None
+        batch, _, _, _ = create_holdout_batch(idxs, vals, corpus_size, aux=aux)
+        item_logits, rating_pred = graft_fwd_chunked(graft_fwd, params, np.asarray(batch))
         item_logits, rating_pred = item_logits[:n], rating_pred[:n]
     else:
         item_logits, rating_pred = batch_holdout_predict(
@@ -213,7 +265,9 @@ def main():
         print(f"restricting to corpus intersection: {len(restrict_ids)} items")
 
     graft_fwd = None
-    if args.graft_ease_b:
+    if args.graft_ease_b and args.input_channels == 3:
+        params, graft_fwd = load_rc(args.weights, args.graft_ease_b, bf16_sim=args.bf16_sim)
+    elif args.graft_ease_b:
         params, graft_fwd = load_graft(args.weights, args.graft_ease_b, bf16_sim=args.bf16_sim)
     else:
         params = load_params(args.weights, bf16_sim=args.bf16_sim)

@@ -252,7 +252,7 @@ fn bench_enc(m: &Wide, profs: &[Profile], mode: Mode, fast: bool, iters: usize, 
     for it in 0..iters {
         let p = &profs[it % profs.len()];
         if let Some(e) = cold {
-            let o = e.forward(&[], None);
+            let o = e.forward(&[], None, None);
             sink += o.logits_row(0)[0];
         }
         let t0 = Instant::now();
@@ -270,7 +270,7 @@ fn bench_decoder_fixed(e: &Engine, iters: usize) -> (f64, f64) {
     let mut sink = 0.0f32;
     for _ in 0..iters {
         let t0 = Instant::now();
-        let o = e.forward(&[], None);
+        let o = e.forward(&[], None, None);
         ts.push(t0.elapsed().as_secs_f64() * 1e3);
         sink += o.logits_row(0)[0];
     }
@@ -286,7 +286,7 @@ fn bench_fwd(e: &Engine, profs: &[Profile], holdout: bool, iters: usize) -> (f64
     let deltas: Vec<Vec<HoldoutDelta>> = items
         .iter()
         .map(|is| {
-            is.iter().map(|&(idx, dval)| HoldoutDelta { idx, presence_removed: true, dval }).collect()
+            is.iter().map(|&(idx, dval)| HoldoutDelta { idx, presence_removed: true, dval, dabs: 0.0 }).collect()
         })
         .collect();
     let mut ts = Vec::with_capacity(iters);
@@ -295,7 +295,7 @@ fn bench_fwd(e: &Engine, profs: &[Profile], holdout: bool, iters: usize) -> (f64
         let k = it % profs.len();
         let hd = if holdout { Some(&deltas[k][..]) } else { None };
         let t0 = Instant::now();
-        let out = e.forward(&items[k], hd);
+        let out = e.forward(&items[k], None, hd);
         ts.push(t0.elapsed().as_secs_f64() * 1e3);
         sink += out.logits_row(out.rows - 1)[0];
     }
@@ -365,12 +365,12 @@ fn diag(engine: &Engine, m2: &Wide, profs: &[Profile], iters: usize) {
     for it in 0..iters {
         let k = it % profs.len();
         let t = Instant::now();
-        let o = engine.forward(&items[k], None);
+        let o = engine.forward(&items[k], None, None);
         ta.push(t.elapsed().as_secs_f64() * 1e3);
         sink += o.logits_row(0)[0];
 
         let t = Instant::now();
-        let o = engine.forward(&[], None);
+        let o = engine.forward(&[], None, None);
         tb.push(t.elapsed().as_secs_f64() * 1e3);
         sink += o.logits_row(0)[0];
 
@@ -379,14 +379,14 @@ fn diag(engine: &Engine, m2: &Wide, profs: &[Profile], iters: usize) {
         tc.push(t.elapsed().as_secs_f64() * 1e3);
         sink += out[0];
 
-        let o = engine.forward(&[], None);
+        let o = engine.forward(&[], None, None);
         sink += o.logits_row(0)[0];
         let t = Instant::now();
         enc_gather_replica(m2, &profs[k], &mut out);
         td.push(t.elapsed().as_secs_f64() * 1e3);
         sink += out[0];
 
-        let o = engine.forward(&[], None);
+        let o = engine.forward(&[], None, None);
         sink += o.logits_row(0)[0];
         let t = Instant::now();
         enc_gather_tf(m2, &profs[k], &mut out);

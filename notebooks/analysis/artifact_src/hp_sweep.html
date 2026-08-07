@@ -76,9 +76,10 @@ ul.tight li b { color: var(--ink); }
 batch size, activation, and modern optimizers — after two nights of model- and data-side work
 found the rating head sitting on its information floor. Question: is there free performance in
 the recipe itself?</p>
-<div class="banner" id="status-banner"><b>Status: PAUSED — resumes tonight.</b> Muon's desktop-crushing
-GPU contention met an in-use workstation; the two deciding runs (muon @ batch 1024, muon @ 50k steps)
-are queued for the next idle window.</div>
+<div class="banner" id="status-banner" style="border-left-color: var(--teal)"><b>Status: COMPLETE.</b>
+The deciding runs landed overnight: batch-1024 muon holds full quality at 3.2× adam's wall-clock
+(71 min), and the 50k-step run shows the gap <i>widening</i>. Muon is adopted for production
+retrains; policy recorded in README_training.</div>
 
 <div class="kpis" id="kpis"></div>
 
@@ -107,13 +108,14 @@ desktop environment sharing it (a first).</div>
 <h2>Verdicts</h2>
 <div class="card">
 <ul class="tight">
-  <li><b>Muon: tentative policy — not the everyday recipe, but likely worth paying once per model
-  cycle</b> for the final production retrain (overnight, machine idle): a permanent, serve-free
-  quality gain roughly the size of an entire experiment span's winnings.
-  <span class="chip pend">DECIDER PENDING</span> The batch-1024 muon run decides: NS cost is
-  per-step, so doubling the batch should roughly halve wall-clock at equal sample count. If
-  quality holds at ~3–5× adam's wall-clock, muon becomes the final-retrain recipe; if not, it's
-  dropped without regret.</li>
+  <li><b>Muon: adopted for production retrains.</b><span class="chip win">DECIDER PASSED</span>
+  The amortization thesis held: batch-1024 muon matches bs512 quality (+0.0004) in 71 minutes —
+  3.2× adam — and batch-2048 holds too at ~50. The 50k run widened the lead to −0.0069 MAE /
+  +0.0075 ρ / −0.010 nats. Final recipe: <b>muon + cosine @ batch 1024–2048, ~25k steps
+  (≈2h), overnight/idle-machine only</b> — the NS contention that crashed the desktop is real
+  and permanent; it's a scheduling constraint, not a bug. Everyday experimentation stays
+  adam + cosine (22 min). Expected next-retrain gain, composing with the abs-channel + graft +
+  serve stack: the largest single training-side improvement of the whole campaign.</li>
   <li><b>Cosine schedule beats reduce-on-plateau — confirmed on two seeds</b> (0.4499/0.4497 vs
   0.4507/0.4516), presence equal-or-better, LR-insensitive between 3e-4 and 4.5e-4, and free.
   Adopt for all future training regardless of the muon decision.</li>
@@ -157,10 +159,10 @@ function el(p, n, at, txt) { const e = document.createElementNS(NS, n);
 
 const best = DATA.rows.filter(r => r.cls === "win").reduce((a, b) => a.mae < b.mae ? a : b);
 $("kpis").innerHTML = [
-  { label: "best trusted MAE", value: best.mae.toFixed(4), detail: "muon 5e-3 · two seeds within 0.0002 · control 0.4507" },
-  { label: "ordering ρ", value: best.rho.toFixed(4), detail: "vs 0.6044 control — ~5% added to the head's whole value-add" },
-  { label: "step efficiency", value: "4×", detail: "muon matches adam's 50k-step endpoint by step 12k" },
-  { label: "wall-clock cost", value: "10×", detail: "the open problem — batch-1024 run tonight decides" },
+  { label: "best trusted MAE", value: best.mae.toFixed(4), detail: "muon 50k · control 0.4507 · 30k confirmed on 2 seeds within 0.0002" },
+  { label: "ordering ρ", value: best.rho.toFixed(4), detail: "vs 0.6044 control — ~7% added to the head's whole value-add" },
+  { label: "presence NLL", value: best.nll.toFixed(3), detail: "vs 7.061 control — the only change that moved BOTH heads" },
+  { label: "wall-clock, tamed", value: "3.2×", detail: "batch-1024 muon: 71 min at full quality (was 10× at bs512)" },
 ].map(k => `<div class="kpi"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="detail">${k.detail}</div></div>`).join("");
 
 const CHIP = { win: "WIN", "win-small": "small win", worse: "worse", fail: "diverged", null: "null", baseline: "control", pend: "pending" };
@@ -173,8 +175,6 @@ for (const r of DATA.rows) {
     `<td class="n">${r.rho.toFixed(4)}</td><td class="n">${r.nll ? r.nll.toFixed(4) : "—"}</td>` +
     `<td class="n">${(r.steps / 1000) | 0}k</td><td class="n">${r.mins >= 60 ? (r.mins / 60).toFixed(1) + "h" : r.mins + "m"}</td></tr>`;
 }
-html += `<tr><td>muon @ batch 1024 (15k)<span class="chip pend">PENDING — tonight</span></td><td class="n" colspan="6" style="text-align:left;color:var(--ink-3)">the wall-clock decider</td></tr>`;
-html += `<tr><td>muon @ 50k steps<span class="chip pend">PENDING — tonight</span></td><td class="n" colspan="6" style="text-align:left;color:var(--ink-3)">does the gap widen further?</td></tr>`;
 $("runs-table").innerHTML = html + "</table>";
 
 const COLORS = { "adam control": css("--ink-3"), "adam cosine": css("--teal"), "muon 5e-3": css("--violet") };

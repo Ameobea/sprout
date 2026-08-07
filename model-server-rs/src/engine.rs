@@ -8,12 +8,14 @@ use std::arch::x86_64::*;
 pub const OUT_LD: usize = 6016; // CORPUS padded to panel multiple
 
 /// Per-holdout-row delta vs. the full profile: removing entry i drops the presence
-/// bit unless a duplicate corpus_idx remains, and shifts the rating input by dval.
+/// bit unless a duplicate corpus_idx remains, and shifts the rating input by dval
+/// (and the abs channel by dabs on 3-channel models).
 #[derive(Clone, Copy, Debug)]
 pub struct HoldoutDelta {
     pub idx: u32,
     pub presence_removed: bool,
     pub dval: f32,
+    pub dabs: f32,
 }
 
 pub struct ForwardOut {
@@ -55,6 +57,7 @@ pub struct Engine {
     /// Graft (concat) models: packed 6000x256 projection + row-major EASE B (6000x6000).
     ease_proj: Option<AnyPacked>,
     ease_b: Option<Vec<f32>>,
+    in_ch: usize,
     pub pool: Pool,
     pub cfg: KernCfg,
 }
@@ -135,6 +138,7 @@ impl Engine {
             ease_b: if p.ease_proj.is_some() { ease_b } else { None },
             enc_w: Mat { k: p.enc1.w.k, n: p.enc1.w.n, w: p.enc1.w.w.clone() },
             enc_b: p.enc1.b.clone(),
+            in_ch: p.in_channels(),
             pool: Pool::new(nthreads, pin),
             cfg,
         }
@@ -142,6 +146,10 @@ impl Engine {
 
     pub fn is_graft(&self) -> bool {
         self.ease_proj.is_some()
+    }
+
+    pub fn in_channels(&self) -> usize {
+        self.in_ch
     }
 
     fn enc_row(&self, idx: usize) -> (&[f32], &[f32]) {
@@ -152,18 +160,31 @@ impl Engine {
         )
     }
 
+    fn enc_row_abs(&self, idx: usize) -> &[f32] {
+        let n = HIDDEN;
+        &self.enc_w.w[(2 * CORPUS + idx) * n..(2 * CORPUS + idx + 1) * n]
+    }
+
     /// Forward pass over the full profile plus optional holdout rows.
     /// Row layout: rows 0..h = holdouts, last row = full profile.
     /// `items` must have unique corpus indices with last-write-wins values already applied.
-    pub fn forward(&self, items: &[(u32, f32)], holdout: Option<&[HoldoutDelta]>) -> ForwardOut {
+    /// `abs_vals` parallels `items` (3-channel models only; ignored otherwise).
+    pub fn forward(&self, items: &[(u32, f32)], abs_vals: Option<&[f32]>, holdout: Option<&[HoldoutDelta]>) -> ForwardOut {
         let h = holdout.map_or(0, |d| d.len());
         let rows = h + 1;
+        let use_abs = self.in_ch == 3;
 
         let mut u_full = vec![0.0f32; HIDDEN];
         u_full.copy_from_slice(&self.enc_b);
-        for &(idx, val) in items {
+        for (i, &(idx, val)) in items.iter().enumerate() {
             let (rp, rv) = self.enc_row(idx as usize);
             unsafe { axpy2(&mut u_full, rp, rv, 1.0, val) };
+            if use_abs {
+                let a = abs_vals.expect("3-channel model requires abs_vals")[i];
+                if a != 0.0 {
+                    unsafe { axpy1(&mut u_full, self.enc_row_abs(idx as usize), a) };
+                }
+            }
         }
 
         let mut a_enc = AVec::zeroed(rows * HIDDEN);
@@ -182,6 +203,9 @@ impl Engine {
                         let (rp, rv) = self.enc_row(d.idx as usize);
                         let pc = if d.presence_removed { -1.0 } else { 0.0 };
                         unsafe { axpy2(dst, rp, rv, pc, -d.dval) };
+                        if use_abs && d.dabs != 0.0 {
+                            unsafe { axpy1(dst, self.enc_row_abs(d.idx as usize), -d.dabs) };
+                        }
                     }
                     swish_slice(dst);
                     r += nt;

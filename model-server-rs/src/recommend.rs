@@ -322,6 +322,7 @@ pub struct Prepped {
     pub stats: NormStats,
     pub enc_items: Vec<(u32, f32)>,
     pub enc_rated: Vec<bool>,
+    pub enc_abs: Vec<f32>,
     pub updated_at: Vec<i64>,
     pub deltas: Vec<HoldoutDelta>,
     pub rated_mask: Vec<bool>,
@@ -354,18 +355,26 @@ pub fn preprocess(md: &ModelData, profile: &[ProfileEntry]) -> Result<Prepped, S
         .collect();
     let (normalized, stats) = normalize_ratings(&original);
 
+    // Abs channel matches training: (raw - 5.5) / 2.5 for rated entries, 0 otherwise.
+    let absv: Vec<f32> = (0..valid.len())
+        .map(|i| if original[i] > 0.0 { stats.absolute[i] } else { 0.0 })
+        .collect();
+
     // Dense-input set semantics: presence set once per index; last write wins for values.
     let mut enc_items: Vec<(u32, f32)> = Vec::with_capacity(valid.len());
     let mut enc_rated: Vec<bool> = Vec::with_capacity(valid.len());
+    let mut enc_abs: Vec<f32> = Vec::with_capacity(valid.len());
     for (i, &idx) in corpus_indices.iter().enumerate() {
         match enc_items.last_mut() {
             Some(last) if last.0 == idx => {
                 last.1 = normalized[i];
                 *enc_rated.last_mut().unwrap() = original[i] > 0.0;
+                *enc_abs.last_mut().unwrap() = absv[i];
             }
             _ => {
                 enc_items.push((idx, normalized[i]));
                 enc_rated.push(original[i] > 0.0);
+                enc_abs.push(absv[i]);
             }
         }
     }
@@ -378,13 +387,15 @@ pub fn preprocess(md: &ModelData, profile: &[ProfileEntry]) -> Result<Prepped, S
             let idx = corpus_indices[i];
             let dup_before = (0..i).rev().take_while(|&j| corpus_indices[j] == idx).count();
             let dup_after = (i + 1..n).take_while(|&j| corpus_indices[j] == idx).count();
-            let full_val = enc_items.iter().find(|e| e.0 == idx).unwrap().1;
+            let pos = enc_items.iter().position(|e| e.0 == idx).unwrap();
+            let full_val = enc_items[pos].1;
+            let full_abs = enc_abs[pos];
             if dup_after > 0 {
-                HoldoutDelta { idx, presence_removed: false, dval: 0.0 }
+                HoldoutDelta { idx, presence_removed: false, dval: 0.0, dabs: 0.0 }
             } else if dup_before > 0 {
-                HoldoutDelta { idx, presence_removed: false, dval: full_val - normalized[i - 1] }
+                HoldoutDelta { idx, presence_removed: false, dval: full_val - normalized[i - 1], dabs: full_abs - absv[i - 1] }
             } else {
-                HoldoutDelta { idx, presence_removed: true, dval: full_val }
+                HoldoutDelta { idx, presence_removed: true, dval: full_val, dabs: full_abs }
             }
         })
         .collect();
@@ -394,7 +405,7 @@ pub fn preprocess(md: &ModelData, profile: &[ProfileEntry]) -> Result<Prepped, S
         rated_mask[idx as usize] = true;
     }
 
-    Ok(Prepped { anime_ids, corpus_indices, original, normalized, stats, enc_items, enc_rated, updated_at, deltas, rated_mask })
+    Ok(Prepped { anime_ids, corpus_indices, original, normalized, stats, enc_items, enc_rated, enc_abs, updated_at, deltas, rated_mask })
 }
 
 fn effective_boost(f: f32) -> f32 {
@@ -415,7 +426,7 @@ pub fn run_inference(
     let expanded_k = if boost_active { (req.top_k * 3).min(500) } else { req.top_k };
     let need_holdout = req.include_profile_holdout || req.include_contribution_analysis;
 
-    let out = md.engine.forward(&prep.enc_items, need_holdout.then_some(&prep.deltas[..]));
+    let out = md.engine.forward(&prep.enc_items, Some(&prep.enc_abs), need_holdout.then_some(&prep.deltas[..]));
     let base_row = out.rows - 1;
     let raw_logits = out.logits_row(base_row);
     let base_ratings = out.ratings_row(base_row);

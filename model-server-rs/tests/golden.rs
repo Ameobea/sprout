@@ -79,7 +79,7 @@ fn bf16_engine_close_to_golden() {
     let engine = Engine::new(&params, 4, KernCfg { nr: 32, mr: 8 }, None, Precision::Bf16);
     for c in &cases {
         let items: Vec<(u32, f32)> = c.idxs.iter().copied().zip(c.vals.iter().copied()).collect();
-        let out = engine.forward(&items, None);
+        let out = engine.forward(&items, None, None);
         let dl = max_abs_diff(out.logits_row(0), &c.logits);
         let dr = max_abs_diff(out.ratings_row(0), &c.ratings);
         println!("bf16 n={} max_diff logits={dl:.3} ratings={dr:.4}", items.len());
@@ -103,7 +103,7 @@ fn engine_matches_golden_and_ref_holdout() {
         let engine = Engine::new(&params, 4, cfg, None, Precision::F32);
         for c in &cases {
             let items: Vec<(u32, f32)> = c.idxs.iter().copied().zip(c.vals.iter().copied()).collect();
-            let out = engine.forward(&items, None);
+            let out = engine.forward(&items, None, None);
             let dl = max_abs_diff(out.logits_row(0), &c.logits);
             let dr = max_abs_diff(out.ratings_row(0), &c.ratings);
             println!("cfg={cfg:?} n={} max_diff logits={dl:.2e} ratings={dr:.2e}", items.len());
@@ -116,9 +116,9 @@ fn engine_matches_golden_and_ref_holdout() {
         let items: Vec<(u32, f32)> = c.idxs.iter().copied().zip(c.vals.iter().copied()).collect();
         let deltas: Vec<HoldoutDelta> = items
             .iter()
-            .map(|&(idx, val)| HoldoutDelta { idx, presence_removed: true, dval: val })
+            .map(|&(idx, val)| HoldoutDelta { idx, presence_removed: true, dval: val, dabs: 0.0 })
             .collect();
-        let out = engine.forward(&items, Some(&deltas));
+        let out = engine.forward(&items, None, Some(&deltas));
         assert_eq!(out.rows, items.len() + 1);
         for (i, _) in items.iter().enumerate() {
             let reduced: Vec<(u32, f32)> =
@@ -167,7 +167,7 @@ fn graft_engine_matches_numpy_f64() {
     let engine =
         Engine::new_with_ease(&params, Some(ease_b), 4, KernCfg { nr: 32, mr: 8 }, None, Precision::F32);
     let items: Vec<(u32, f32)> = c.idxs.iter().copied().zip(c.vals.iter().copied()).collect();
-    let out = engine.forward(&items, None);
+    let out = engine.forward(&items, None, None);
     let logits = out.logits_row(out.rows - 1);
     let ratings = out.ratings_row(out.rows - 1);
 
@@ -233,6 +233,7 @@ fn rating_stack_matches_numpy_f64() {
         stats,
         enc_items,
         enc_rated,
+        enc_abs: vec![0.0; c.idxs.len()],
         updated_at: c.updated_at.clone(),
         deltas: Vec::new(),
         rated_mask,
@@ -250,4 +251,69 @@ fn rating_stack_matches_numpy_f64() {
     assert!(max_abs_diff(&st.ratings[..16], &c.final_head) < 2e-3, "final ratings mismatch");
     let sum: f64 = st.ratings.iter().map(|&v| v as f64).sum();
     assert!((sum - c.final_sum).abs() < 0.05, "final sum {} vs {}", sum, c.final_sum);
+}
+
+#[derive(Deserialize)]
+struct RcCase {
+    idxs: Vec<u32>,
+    vals: Vec<f32>,
+    #[serde(rename = "abs")]
+    abs_vals: Vec<f32>,
+    logits_head: Vec<f32>,
+    ratings_head: Vec<f32>,
+    logits_sum: f64,
+    ratings_sum: f64,
+}
+
+#[test]
+fn rc_3ch_graft_engine_matches_numpy_f64() {
+    let model_path = std::env::var("RC_MODEL_PATH").unwrap_or("../data/aug2026/probe/probe_rc_composed.msgpack".into());
+    let b_path = std::env::var("EASE_B_PATH").unwrap_or("../data/aug2026/serve/ease_B6k_lam200.f32bin".into());
+    let golden = std::env::var("RC_GOLDEN_PATH").unwrap_or("../data/aug2026/serve/forward_golden_rc.json".into());
+    if !Path::new(&model_path).exists() || !Path::new(&golden).exists() {
+        eprintln!("skipping: RC checkpoint or golden not present");
+        return;
+    }
+    let params = Params::load(Path::new(&model_path));
+    assert_eq!(params.in_channels(), 3, "expected 3-channel RC checkpoint");
+    assert!(params.ease_proj.is_some(), "expected graft checkpoint");
+    let bytes = std::fs::read(&b_path).unwrap();
+    let ease_b: Vec<f32> = bytes.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
+    let cases: Vec<RcCase> = serde_json::from_str(&std::fs::read_to_string(&golden).unwrap()).unwrap();
+
+    let engine =
+        Engine::new_with_ease(&params, Some(ease_b), 4, KernCfg { nr: 32, mr: 8 }, None, Precision::F32);
+    for c in &cases {
+        let items: Vec<(u32, f32)> = c.idxs.iter().copied().zip(c.vals.iter().copied()).collect();
+        let out = engine.forward(&items, Some(&c.abs_vals), None);
+        let logits = out.logits_row(out.rows - 1);
+        let ratings = out.ratings_row(out.rows - 1);
+        let dl = max_abs_diff(&logits[..c.logits_head.len()], &c.logits_head);
+        let dr = max_abs_diff(&ratings[..c.ratings_head.len()], &c.ratings_head);
+        let sl: f64 = logits[..CORPUS].iter().map(|&v| v as f64).sum();
+        let sr: f64 = ratings[..CORPUS].iter().map(|&v| v as f64).sum();
+        println!("rc n={} dl={dl:.2e} dr={dr:.2e}", items.len());
+        assert!(dl < 0.02 && dr < 0.01, "RC head diverged: {dl} {dr}");
+        assert!((sl - c.logits_sum).abs() < 1.5, "logits sum {sl} vs {}", c.logits_sum);
+        assert!((sr - c.ratings_sum).abs() < 0.5, "ratings sum {sr} vs {}", c.ratings_sum);
+    }
+
+    // holdout rows: removing entry i must equal a fresh forward on the reduced profile
+    let c = &cases[3];
+    let items: Vec<(u32, f32)> = c.idxs.iter().copied().zip(c.vals.iter().copied()).collect();
+    let deltas: Vec<HoldoutDelta> = items
+        .iter()
+        .zip(&c.abs_vals)
+        .map(|(&(idx, val), &a)| HoldoutDelta { idx, presence_removed: true, dval: val, dabs: a })
+        .collect();
+    let out = engine.forward(&items, Some(&c.abs_vals), Some(&deltas));
+    for i in 0..items.len().min(8) {
+        let reduced: Vec<(u32, f32)> =
+            items.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, &it)| it).collect();
+        let red_abs: Vec<f32> = c.abs_vals.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, &a)| a).collect();
+        let fresh = engine.forward(&reduced, Some(&red_abs), None);
+        let dl = max_abs_diff(out.logits_row(i), fresh.logits_row(0));
+        let dr = max_abs_diff(out.ratings_row(i), fresh.ratings_row(0));
+        assert!(dl < 0.02 && dr < 0.01, "RC holdout row {i} diverged: {dl} {dr}");
+    }
 }
