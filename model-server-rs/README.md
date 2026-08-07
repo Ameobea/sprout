@@ -50,7 +50,9 @@ size and response size distributions, cache utilization, errors.
 cargo test --release                 # golden tests vs numpy f64 + holdout consistency
 cargo run --release --bin bench -- --threads 8 --nr 32 --mr 8 --pin [--bf16]
 cargo build --release --features bench-compare   # adds faer comparison to bench
-python3 gen_golden.py ../data/jax_model.msgpack testdata/   # regenerate goldens
+python3 scripts/gen_golden.py <weights.msgpack> <out.json>   # 2ch forward golden
+python3 scripts/gen_golden_rc.py <weights.msgpack> <out.json>  # 3ch + EASE-graft golden
+python3 scripts/gen_norm_golden.py testdata/norm_golden.json
 ```
 
 Deploy: `just deploy-model-server` (phost-managed; builds the Docker image,

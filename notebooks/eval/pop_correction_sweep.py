@@ -24,7 +24,7 @@ from eval_harness import build_aux, load_params, preprocess
 from temporal_eval import POP_TIERS, RECALL_KS, combined_score, tier_aggregate
 
 FIXTURES = Path(__file__).parent / "fixtures/temporal_v3.json"
-REPORTS_DIR = Path(__file__).parent / "reports"
+REPORTS_DIR = Path(__file__).resolve().parents[2] / "private/eval-reports"
 POPULARITY = Path(__file__).parent / "../../data/item_popularity_dec2025.npy"
 
 ALPHAS = [0.0, 0.25, 0.5, 0.75, 1.0]

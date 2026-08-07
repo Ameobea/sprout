@@ -2,8 +2,10 @@
   import { browser } from '$app/environment';
 
   import { onMount } from 'svelte';
+  import { ToastNotification } from 'carbon-components-svelte';
 
   import { getSurface, submitAnalyticsEvent } from 'src/analytics';
+  import type { CompatAnimeListEntry } from 'src/anilistAPI';
   import type { EmbeddingName } from 'src/types';
   import type { Embedding } from '../routes/embedding';
   import AnimeDetails from './AnimeDetails.svelte';
@@ -33,14 +35,36 @@
     viz?.setColorBy(colorBy);
   };
 
+  let profileError: string | null = null;
+  let profileErrorSeq = 0;
+  const showProfileError = (err: unknown) => {
+    profileError = err instanceof Error ? err.message : String(err);
+    profileErrorSeq += 1;
+  };
+
+  const parseErrorMessage = (body: string, status: number): string => {
+    try {
+      return JSON.parse(body).message || `Request failed with status ${status}`;
+    } catch {
+      return body.slice(0, 300) || `Request failed with status ${status}`;
+    }
+  };
+
+  const fetchProfile = async (username: string): Promise<CompatAnimeListEntry[]> => {
+    const res = await fetch(`/${profileSource}-profile?username=${encodeURIComponent(username)}`);
+    if (!res.ok) {
+      throw new Error(parseErrorMessage(await res.text(), res.status));
+    }
+    return res.json();
+  };
+
   const loadMALProfile = (username: string) => {
     if (!viz) {
       console.error('Tried to load MAL profile before Atlas viz was loaded.');
       return;
     }
     const startTime = performance.now();
-    fetch(`/${profileSource}-profile?username=${username}`)
-      .then((res) => res.json())
+    fetchProfile(username)
       .then((profile) => {
         const overlayStats = viz?.displayMALUser(profile);
         submitAnalyticsEvent({
@@ -58,6 +82,7 @@
       })
       .catch((err) => {
         console.error('Failed to load user profile for atlas', err);
+        showProfileError(err);
         submitAnalyticsEvent({
           category: 'atlas',
           subcategory: 'load_profile_result',
@@ -68,14 +93,13 @@
 
   onMount(() => {
     const usernameToLoad = username ?? new URLSearchParams(window.location.search).get('username');
-    const userProfilePromise =
-      usernameToLoad &&
-      fetch(`/${profileSource}-profile?username=${usernameToLoad}`)
-        .then((res) => res.json())
-        .catch((err) => {
+    const userProfilePromise = usernameToLoad
+      ? fetchProfile(usernameToLoad).catch((err) => {
           console.error('Failed to load user profile for atlas', err);
+          showProfileError(err);
           return null;
-        });
+        })
+      : null;
     const neighborsPromise: Promise<{ neighbors: number[][] }> = fetch(`/neighbors?embedding=${embeddingName}`).then(
       (res) => res.json()
     );
@@ -89,13 +113,11 @@
 
       neighborsPromise.then(({ neighbors }) => {
         viz?.setNeighbors(neighbors);
-        if (userProfilePromise) {
-          userProfilePromise.then((profile) => {
-            if (profile) {
-              viz?.displayMALUser(profile);
-            }
-          });
-        }
+        userProfilePromise?.then((profile) => {
+          if (profile) {
+            viz?.displayMALUser(profile);
+          }
+        });
       });
     });
 
@@ -128,6 +150,22 @@
 {#if selectedDatum !== null && viz}
   <AnimeDetails id={selectedDatum.metadata.id} datum={selectedDatum} />
 {/if}
+{#if profileError}
+  {#key profileErrorSeq}
+    <div class="profile-error-toast">
+      <ToastNotification
+        lowContrast
+        kind="error"
+        title="Failed to load profile"
+        subtitle={profileError}
+        timeout={10000}
+        on:close={() => {
+          profileError = null;
+        }}
+      />
+    </div>
+  {/key}
+{/if}
 
 <style lang="css">
   .root {
@@ -143,6 +181,33 @@
     right: 16px;
     z-index: 1;
     background-color: #11111188;
+  }
+
+  .profile-error-toast {
+    position: fixed;
+    z-index: 2;
+    bottom: 12px;
+    right: 12px;
+  }
+
+  .profile-error-toast :global(.bx--toast-notification) {
+    margin: 0;
+    width: min(360px, calc(100vw - 24px));
+  }
+
+  .profile-error-toast :global(.bx--toast-notification__subtitle) {
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 600px) {
+    .profile-error-toast {
+      left: 12px;
+      right: 12px;
+    }
+
+    .profile-error-toast :global(.bx--toast-notification) {
+      width: 100%;
+    }
   }
 
   @media (max-width: 800px) {

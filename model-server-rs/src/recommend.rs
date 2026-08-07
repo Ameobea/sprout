@@ -150,7 +150,7 @@ pub struct ModelData {
 }
 
 /// Niche slider t → (α, k): α piecewise-linear, k log-interpolated through the
-/// product anchors locked in logq-presence-prior.md. t=0 is clean-mainstream
+/// product anchors locked in private/archive/logq-presence-prior.md. t=0 is clean-mainstream
 /// (α=1 reproduces the unboosted model), t=1 is full niche (α floor 0.25).
 const PATH_ANCHORS: [(f32, f32, f32); 3] = [(0.0, 1.0, 10_000.0), (0.35, 0.7, 2_750.0), (1.0, 0.25, 2_250.0)];
 

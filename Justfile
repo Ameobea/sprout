@@ -41,7 +41,7 @@ launch-jax:
   docker run -it -d --network=host --device=/dev/kfd --device=/dev/dri --ipc=host --shm-size 32G --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -v $(pwd):/jax_dir --name rocm_jax rocm/jax:latest /bin/bash
 
 build-agent:
-  ./node_modules/.bin/esbuild fleet/agent/agent.ts --bundle --platform=node --target=node18 --outfile=fleet/agent/dist/agent.cjs --log-level=warning
+  ./node_modules/.bin/esbuild private/fleet/agent/agent.ts --bundle --platform=node --target=node18 --outfile=private/fleet/agent/dist/agent.cjs --log-level=warning
 
 model-server-rs-build:
   docker build -f Dockerfile.model_server_rs -t anime-model-server-rs:latest .

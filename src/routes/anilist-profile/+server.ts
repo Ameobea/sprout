@@ -1,4 +1,4 @@
-import { error, json, type RequestHandler } from '@sveltejs/kit';
+import { error, isHttpError, json, type RequestHandler } from '@sveltejs/kit';
 
 import { getAnilistUserAnimeList } from '../../anilistAPI';
 
@@ -11,11 +11,20 @@ export const GET: RequestHandler = async ({ url }) => {
   try {
     const res = await getAnilistUserAnimeList(username);
     if (res.type === 'error') {
-      error(res.status, res.message ?? 'Unable to fetch profile due to internal error');
+      const status = res.status >= 400 && res.status <= 599 ? res.status : 502;
+      error(
+        status,
+        status === 404
+          ? `No AniList user found with the username "${username}"`
+          : 'Unable to fetch profile from AniList right now; try again in a bit'
+      );
     }
-    const compatProfile = res.data;
-    return json(compatProfile);
+    return json(res.data);
   } catch (err) {
-    return error(500, 'Unable to fetch profile due to internal error');
+    if (isHttpError(err)) {
+      throw err;
+    }
+    console.error(`Error fetching AniList profile for ${username}: `, err);
+    error(500, 'Unable to fetch profile due to internal error');
   }
 };

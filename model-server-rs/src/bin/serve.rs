@@ -47,7 +47,10 @@ struct ModelCfg {
 fn load_f32bin(path: &str, expect: usize) -> Vec<f32> {
     let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}"));
     assert_eq!(bytes.len(), expect * 4, "{path}: expected {expect} f32s");
-    bytes.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect()
+    bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect()
 }
 
 fn load_popularity(path: &str, corpus_ids: &[i64]) -> Option<Vec<f32>> {
@@ -57,13 +60,17 @@ fn load_popularity(path: &str, corpus_ids: &[i64]) -> Option<Vec<f32>> {
     let count_col = headers.iter().position(|h| h == "rating_count")?;
     let mut counts: HashMap<i64, f32> = HashMap::new();
     for rec in rdr.records().flatten() {
-        if let (Some(Ok(id)), Some(Ok(count))) =
-            (rec.get(id_col).map(str::parse::<i64>), rec.get(count_col).map(str::parse::<f32>))
-        {
+        if let (Some(Ok(id)), Some(Ok(count))) = (
+            rec.get(id_col).map(str::parse::<i64>),
+            rec.get(count_col).map(str::parse::<f32>),
+        ) {
             counts.insert(id, count);
         }
     }
-    let mut pop: Vec<f32> = corpus_ids.iter().map(|id| counts.get(id).copied().unwrap_or(0.0)).collect();
+    let mut pop: Vec<f32> = corpus_ids
+        .iter()
+        .map(|id| counts.get(id).copied().unwrap_or(0.0))
+        .collect();
     let total: f32 = pop.iter().sum();
     if total <= 0.0 {
         return None;
@@ -73,9 +80,22 @@ fn load_popularity(path: &str, corpus_ids: &[i64]) -> Option<Vec<f32>> {
 }
 
 fn load_model(cfg: &ModelCfg, threads: usize, pin: bool, prec: Precision) -> Arc<ModelData> {
-    let corpus_ids: Vec<i64> = serde_json::from_str(&std::fs::read_to_string(&cfg.corpus).unwrap()).unwrap();
-    assert_eq!(corpus_ids.len(), CORPUS, "{}: corpus size mismatch", cfg.name);
-    let id_to_idx: HashMap<i64, u32> = corpus_ids.iter().enumerate().map(|(i, &id)| (id, i as u32)).collect();
+    let corpus_ids: Vec<i64> = serde_json::from_str(
+        &std::fs::read_to_string(&cfg.corpus)
+            .unwrap_or_else(|_| panic!("corpus not found at specified path {}", cfg.corpus)),
+    )
+    .unwrap();
+    assert_eq!(
+        corpus_ids.len(),
+        CORPUS,
+        "{}: corpus size mismatch",
+        cfg.name
+    );
+    let id_to_idx: HashMap<i64, u32> = corpus_ids
+        .iter()
+        .enumerate()
+        .map(|(i, &id)| (id, i as u32))
+        .collect();
 
     let serving = match cfg.serving.as_deref() {
         Some("logq") => ServingFamily::Logq,
@@ -85,17 +105,31 @@ fn load_model(cfg: &ModelCfg, threads: usize, pin: bool, prec: Precision) -> Arc
 
     let train_counts: Option<Vec<f32>> = cfg.train_counts.as_ref().map(|p| {
         let counts: Vec<f64> = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
-        assert_eq!(counts.len(), CORPUS, "{}: train_counts size mismatch", cfg.name);
+        assert_eq!(
+            counts.len(),
+            CORPUS,
+            "{}: train_counts size mismatch",
+            cfg.name
+        );
         counts.into_iter().map(|c| c as f32).collect()
     });
     if serving == ServingFamily::Logq {
-        assert!(train_counts.is_some(), "{}: logq serving requires train_counts", cfg.name);
+        assert!(
+            train_counts.is_some(),
+            "{}: logq serving requires train_counts",
+            cfg.name
+        );
     }
-    let log_pop = train_counts.as_ref().map(|cs| cs.iter().map(|&c| c.max(1.0).ln()).collect());
+    let log_pop = train_counts
+        .as_ref()
+        .map(|cs| cs.iter().map(|&c| c.max(1.0).ln()).collect());
 
     let popularity = load_popularity(&cfg.metadata, &corpus_ids);
     if serving == ServingFamily::Legacy && popularity.is_none() {
-        eprintln!("warning: {}: no popularity from {}; legacy niche boost disabled", cfg.name, cfg.metadata);
+        eprintln!(
+            "warning: {}: no popularity from {}; legacy niche boost disabled",
+            cfg.name, cfg.metadata
+        );
     }
 
     let t0 = std::time::Instant::now();
@@ -103,11 +137,26 @@ fn load_model(cfg: &ModelCfg, threads: usize, pin: bool, prec: Precision) -> Arc
     let ease_b = cfg.ease_b.as_ref().map(|p| load_f32bin(p, CORPUS * CORPUS));
     let ease_mu = cfg.ease_mu.as_ref().map(|p| load_f32bin(p, CORPUS));
     let graft = ease_b.is_some();
-    let rating_b = cfg.rating_b.as_ref().map(|p| load_f32bin(p, CORPUS * CORPUS));
+    let rating_b = cfg
+        .rating_b
+        .as_ref()
+        .map(|p| load_f32bin(p, CORPUS * CORPUS));
     let rating_imean = cfg.rating_imean.as_ref().map(|p| load_f32bin(p, CORPUS));
-    assert_eq!(rating_b.is_some(), rating_imean.is_some(), "{}: rating_b and rating_imean must come together", cfg.name);
+    assert_eq!(
+        rating_b.is_some(),
+        rating_imean.is_some(),
+        "{}: rating_b and rating_imean must come together",
+        cfg.name
+    );
     let pins: Vec<usize> = (0..threads).collect();
-    let engine = Engine::new_with_ease(&params, ease_b, threads, DEFAULT_CFG, pin.then_some(&pins[..]), prec);
+    let engine = Engine::new_with_ease(
+        &params,
+        ease_b,
+        threads,
+        DEFAULT_CFG,
+        pin.then_some(&pins[..]),
+        prec,
+    );
     drop(params);
     println!(
         "[{}] loaded + packed in {:.2}s ({serving:?}{})",
@@ -142,7 +191,10 @@ fn main() {
     };
 
     let cfgs: Vec<ModelCfg> = match std::env::var("MODELS_CONFIG") {
-        Ok(path) => serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap(),
+        Ok(path) => serde_json::from_str(
+            &std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("{path} not found")),
+        )
+        .unwrap(),
         Err(_) => vec![ModelCfg {
             name: "default".into(),
             weights: envv("MODEL_PATH", "/opt/model/jax_model.msgpack"),
@@ -157,12 +209,21 @@ fn main() {
             default: true,
         }],
     };
-    assert!(!cfgs.is_empty(), "MODELS_CONFIG must list at least one model");
+    assert!(
+        !cfgs.is_empty(),
+        "MODELS_CONFIG must list at least one model"
+    );
 
-    let default_name: String =
-        cfgs.iter().find(|c| c.default).map(|c| c.name.clone()).unwrap_or_else(|| cfgs[0].name.clone());
-    let models: HashMap<&'static str, Arc<ModelData>> =
-        cfgs.iter().map(|c| load_model(c, threads, pin, prec)).map(|m| (m.name, m)).collect();
+    let default_name: String = cfgs
+        .iter()
+        .find(|c| c.default)
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| cfgs[0].name.clone());
+    let models: HashMap<&'static str, Arc<ModelData>> = cfgs
+        .iter()
+        .map(|c| load_model(c, threads, pin, prec))
+        .map(|m| (m.name, m))
+        .collect();
     let default_model = models
         .get(default_name.as_str())
         .unwrap_or_else(|| panic!("default model {default_name} not in config"))
@@ -193,7 +254,9 @@ fn main() {
         recommend_metrics::models_loaded().set(n_models as u64);
 
         let app = build_router(models, default_model);
-        let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
+            .await
+            .unwrap();
         println!("listening on 0.0.0.0:{port}");
         axum::serve(listener, app).await.unwrap();
     });

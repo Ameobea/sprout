@@ -41,7 +41,7 @@ export const DEFAULT_MODEL_NAME = ModelName.Model_2026_logq;
 // (effective ~0.19) after the Aug 2026 lw investigation: rating signal is the weaker head.
 export const DEFAULT_LOGIT_WEIGHT = 0.6;
 
-// The 2026 knob path deliberately doesn't default to 0; see logq-presence-prior.md
+// The 2026 knob path deliberately doesn't default to 0; see private/archive/logq-presence-prior.md
 export const getDefaultNicheBoostFactor = (modelName: ModelName): number =>
   modelName === ModelName.Model_2026_logq || modelName === ModelName.Model_2026_rc ? 0.35 : 0;
 

@@ -26,7 +26,7 @@ from eval_harness import FIXTURES_DIR, build_aux, load_params, preprocess
 from temporal_eval import POP_TIERS, combined_score
 
 FIXTURES = Path(__file__).parent / "fixtures/temporal_v3.json"
-REPORTS_DIR = Path(__file__).parent / "reports"
+REPORTS_DIR = Path(__file__).resolve().parents[2] / "private/eval-reports"
 POPULARITY = Path(__file__).parent / "../../data/item_popularity_dec2025.npy"
 METADATA = Path(__file__).parent / "../../data/processed-metadata.csv"
 

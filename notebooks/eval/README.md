@@ -4,9 +4,9 @@ Two frozen-fixture evals for comparing model versions, data pulls, filtering sch
 normalization, and input layouts. Preprocessing is shared with the python model server
 via `notebooks/profile_preprocessing.py` (the Rust server mirrors it — keep in sync).
 
-**Read `WORKSTREAMS.md` §0 before optimizing against these.** The product goal is
-surfacing hidden gems; both evals reward predicting what a user *did* engage with, so
-they undervalue that goal. Use them as guardrails, not as the objective.
+**Read `private/MODEL_NOTES.md` §0–1 before optimizing against these.** The product
+goal is surfacing hidden gems; both evals reward predicting what a user *did* engage
+with, so they undervalue that goal. Use them as guardrails, not as the objective.
 
 - `eval_harness.py` — deterministic leave-one-out over every in-corpus item of every
   fixture profile (zero RNG). Reports rating MAE, recall@{10,50,100}, median rank, per
@@ -26,8 +26,8 @@ they undervalue that goal. Use them as guardrails, not as the objective.
   All three read `data/item_popularity_dec2025.npy`.
 - All take `--input-channels {2,3,5}`, which **must match how the model was trained**.
 - `fixtures/` — frozen, never regenerate; comparability across all reports depends on it.
-  `reports/` — one JSON per run, flat; the dec2025-era reports live in
-  `reports/archive-dec2025/` with a map in `reports/INDEX.md`.
+  Reports are written to `private/eval-reports/` (submodule) — one JSON per run, flat;
+  the dec2025-era set lives in `archive-dec2025/` with a map in `INDEX.md`.
 
 ## Fixtures
 
@@ -53,6 +53,16 @@ pooled targets) show ~±0.008 cross-model spread. Within-model rerank comparison
 a second training run.**
 
 ## Baselines (LOO, v1+v2 combined, n=454)
+
+Current era (aug2026 data, serve-prior; these are what a new model must beat):
+
+| model | MAE | recall@50 | median rank |
+|---|---|---|---|
+| 2026-rc, seeds 0/2 (`rc-full-seed{0,2}-serveprior-aug2026`) | 0.4215 / 0.4219 | 0.6310 / 0.6341 | 39.6 / 40.2 |
+| 2026-hybrid beta (`hybrid-concat-serveprior-aug2026`) | 0.4361 | 0.6202 | 45.0 |
+| 2026-logq, prod default (`fresh-logq-serveprior-aug2026`) | 0.4357 | 0.598 | 55.1 |
+
+Dec2025 era (different corpus + data pull — cross-era rows need `--restrict-corpus`):
 
 | model | MAE | recall@50 | median rank |
 |---|---|---|---|

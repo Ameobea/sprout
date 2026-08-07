@@ -2,8 +2,10 @@
 
 B = argmin ||X - XB||^2 + lam||B||^2 s.t. diag(B)=0, via P=(X^T X + lam I)^-1,
 B = -P/diag(P). Scores from kept items only; NLL via softmax(tau*s + beta*log_pop)
-with (tau, beta) fit on a calibration user set. Directly comparable to the NN
-model's dropped-item NLL from loss_decomposition.py (same eval protocol).
+with (tau, beta) fit on a calibration user set.
+
+Also builds/caches the gram matrix that `export_ease_serve.py` derives the serving
+B from.
 """
 
 import argparse

@@ -15,7 +15,18 @@ A = Path("../data/aug2026")
 OUT = A / "serve"
 OUT.mkdir(exist_ok=True)
 
-B = np.load(A / "ease_B6k_lam200.npy").astype(np.float32)
+LAM = 200.0
+b_path = A / "ease_B6k_lam200.npy"
+if b_path.exists():
+    B = np.load(b_path).astype(np.float32)
+else:
+    G = np.load(A / "gram6k_aug2026.npz")["G"].astype(np.float64)
+    G[np.diag_indices(6000)] += LAM
+    P = np.linalg.inv(G)
+    B = (-P / np.diag(P)[None, :]).astype(np.float32)
+    np.fill_diagonal(B, 0.0)
+    np.save(b_path, B)
+    del G, P
 assert B.shape == (6000, 6000)
 B.tofile(OUT / "ease_B6k_lam200.f32bin")
 

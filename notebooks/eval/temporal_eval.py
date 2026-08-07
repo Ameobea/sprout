@@ -25,7 +25,7 @@ from model import CONF, infer_outputs, make_dense_profile
 from eval_harness import build_aux, load_params, preprocess
 
 FIXTURES = Path(__file__).parent / "fixtures/temporal_v3.json"
-REPORTS_DIR = Path(__file__).parent / "reports"
+REPORTS_DIR = Path(__file__).resolve().parents[2] / "private/eval-reports"
 POPULARITY = Path(__file__).parent / "../../data/item_popularity_dec2025.npy"
 RECALL_KS = [10, 50, 100]
 POP_TIERS = [(0, 50, "top50"), (50, 250, "50-250"), (250, 1000, "250-1k"),

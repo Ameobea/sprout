@@ -39,7 +39,7 @@ from model import (
 from profile_preprocessing import filter_profile_entries, vectorize_entries
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-REPORTS_DIR = Path(__file__).parent / "reports"
+REPORTS_DIR = Path(__file__).resolve().parents[2] / "private/eval-reports"
 SENTINELS = ["ameo___", "snapsauce"]
 RECALL_KS = [10, 50, 100]
 

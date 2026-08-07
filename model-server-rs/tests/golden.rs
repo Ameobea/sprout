@@ -267,7 +267,7 @@ struct RcCase {
 
 #[test]
 fn rc_3ch_graft_engine_matches_numpy_f64() {
-    let model_path = std::env::var("RC_MODEL_PATH").unwrap_or("../data/aug2026/probe/probe_rc_composed.msgpack".into());
+    let model_path = std::env::var("RC_MODEL_PATH").unwrap_or("../data/aug2026/rc_full_seed0.msgpack".into());
     let b_path = std::env::var("EASE_B_PATH").unwrap_or("../data/aug2026/serve/ease_B6k_lam200.f32bin".into());
     let golden = std::env::var("RC_GOLDEN_PATH").unwrap_or("../data/aug2026/serve/forward_golden_rc.json".into());
     if !Path::new(&model_path).exists() || !Path::new(&golden).exists() {

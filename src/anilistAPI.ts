@@ -122,7 +122,10 @@ const getAniListUserAnimeListInner = async (username: string): Promise<GetAniLis
     return { type: 'ok' as const, data: converted };
   } catch (err) {
     console.error(`Error getting Anilist user profile for ${username}: `, err);
-    return { type: 'error' as const, message: err instanceof Error ? err.message : '', status: 500 };
+    const message = err instanceof Error ? err.message : '';
+    // anilist-node rejects with a preformatted string rather than a structured error
+    const status = Number(/returned with a (\d{3}) error code/.exec(message)?.[1]) || 500;
+    return { type: 'error' as const, message, status };
   }
 };
 
