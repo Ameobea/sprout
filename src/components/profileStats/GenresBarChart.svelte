@@ -1,6 +1,6 @@
 <script context="module" lang="ts">
   const buildGenresBarChartData = (
-    profile: PartialStatsMALUserAnimeListItem[],
+    profile: PartialStatsUserAnimeListItem[],
     animeData: { [animeID: number]: PartialStatsAnimeMetadatum }
   ) => {
     const genreAppearanceCounts = profile.reduce((acc, item) => {
@@ -35,10 +35,10 @@
   import { BarChartSimple } from '@carbon/charts-svelte';
   import type {
     PartialStatsAnimeMetadatum,
-    PartialStatsMALUserAnimeListItem,
+    PartialStatsUserAnimeListItem,
   } from 'src/routes/user/[username]/stats/+page.server';
 
-  export let profile: PartialStatsMALUserAnimeListItem[];
+  export let profile: PartialStatsUserAnimeListItem[];
   export let animeData: { [animeID: number]: PartialStatsAnimeMetadatum };
 
   $: genresBarChartData = buildGenresBarChartData(profile, animeData);
