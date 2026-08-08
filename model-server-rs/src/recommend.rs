@@ -67,6 +67,17 @@ pub struct Contributor {
     pub anime_id: i64,
     pub corpus_idx: u32,
     pub score_contribution: f32,
+    /// Log-space channel split: presence + rating = Δln(score) exactly
+    /// (score = p^w · rb^(1-w)). None under alt ranking.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_contribution: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rating_contribution: Option<f32>,
+    /// Rec's presence probability / normalized predicted rating with this item held out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub probability_without: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub predicted_rating_without: Option<f32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -78,6 +89,11 @@ pub struct Recommendation {
     pub predicted_rating: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_logit: Option<f32>,
+    /// Serve-logit decomposition (logq only): λ·lift vs α·log_pop.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lift_component: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pop_component: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_contributors: Option<Vec<Contributor>>,
 }
@@ -120,6 +136,10 @@ pub struct RecommendResponse {
     pub normalization_stats: NormStatsOut,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rating_stack: Option<RatingStackOut>,
+    /// Median positive score drop across all rec×profile-item pairs; a
+    /// profile-level significance scale for contribution strengths.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contribution_baseline: Option<f32>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -417,7 +437,7 @@ pub fn run_inference(
     md: &ModelData,
     prep: &Prepped,
     req: &RecommendRequest,
-) -> (Vec<Recommendation>, Option<ProfileHoldout>, Option<RatingStackOut>) {
+) -> (Vec<Recommendation>, Option<ProfileHoldout>, Option<RatingStackOut>, Option<f32>) {
     let w = req.logit_weight.unwrap_or(DEFAULT_LOGIT_WEIGHT);
     let alt = req.use_alt_ranking;
     let logq = md.serving == ServingFamily::Logq && md.train_counts.is_some();
@@ -479,16 +499,26 @@ pub fn run_inference(
     }
 
     let topk = topk_excluding(&base_scores, &prep.rated_mask, expanded_k.min(CORPUS));
+    let split_components = logq && req.include_contribution_analysis;
     let mut recommendations: Vec<Recommendation> = topk
         .iter()
-        .map(|&ci| Recommendation {
-            anime_id: md.corpus_ids[ci as usize],
-            corpus_idx: ci,
-            score: base_scores[ci as usize],
-            probability: base_probs[ci as usize],
-            predicted_rating: base_ratings[ci as usize],
-            raw_logit: req.include_raw_logits.then(|| raw_logits[ci as usize]),
-            top_contributors: None,
+        .map(|&ci| {
+            let i = ci as usize;
+            let lam_lift = split_components.then(|| {
+                let c = md.train_counts.as_ref().unwrap()[i];
+                c / (c + lq_k) * lift[i]
+            });
+            Recommendation {
+                anime_id: md.corpus_ids[i],
+                corpus_idx: ci,
+                score: base_scores[i],
+                probability: base_probs[i],
+                predicted_rating: base_ratings[i],
+                raw_logit: req.include_raw_logits.then(|| raw_logits[i]),
+                lift_component: lam_lift,
+                pop_component: split_components.then(|| lq_alpha * md.log_pop.as_ref().unwrap()[i]),
+                top_contributors: None,
+            }
         })
         .collect();
 
@@ -504,6 +534,7 @@ pub fn run_inference(
     recommendations.truncate(req.top_k);
 
     let mut profile_holdout = None;
+    let mut contribution_baseline = None;
     if need_holdout {
         let n = prep.deltas.len();
         let rec_idxs: Vec<u32> = recommendations.iter().map(|r| r.corpus_idx).collect();
@@ -525,9 +556,14 @@ pub fn run_inference(
             rec_score: f32,
             impact: f32,
             contrib_scores: Vec<f32>,
+            contrib_p: Vec<f32>,
+            contrib_r: Vec<f32>,
         }
         let impact_baseline: Vec<f32> = recommendations[..num_impact].iter().map(|r| r.score).collect();
         let raw_baseline_at_recs: Vec<f32> = rec_idxs.iter().map(|&ci| base_scores[ci as usize]).collect();
+        let base_lnp_at_recs: Vec<f32> = rec_idxs.iter().map(|&ci| base_probs[ci as usize].max(1e-30).ln()).collect();
+        let base_lnrb_at_recs: Vec<f32> =
+            rec_idxs.iter().map(|&ci| (base_ratings[ci as usize] + 1.0).max(0.001).ln()).collect();
 
         // Held entry's blend residual to remove per row; B diag 0 keeps the held
         // position itself exact either way. Duplicate-index rows keep the full blend.
@@ -602,6 +638,14 @@ pub fn run_inference(
                     } else {
                         Vec::new()
                     };
+                    let (contrib_p, contrib_r) = if req.include_contribution_analysis && !alt {
+                        (
+                            probs[contrib_base..].to_vec(),
+                            g[contrib_base..].iter().map(|&ci| ratings[ci as usize]).collect(),
+                        )
+                    } else {
+                        (Vec::new(), Vec::new())
+                    };
                     let impact = (0..num_impact)
                         .map(|j| (impact_baseline[j] - scores[impact_base + j]).abs())
                         .sum();
@@ -618,6 +662,8 @@ pub fn run_inference(
                         rec_score: scores[0],
                         impact,
                         contrib_scores,
+                        contrib_p,
+                        contrib_r,
                     });
                     r += nt;
                 }
@@ -626,10 +672,12 @@ pub fn run_inference(
         let rows: Vec<RowRes> = rows.into_iter().map(Option::unwrap).collect();
 
         if req.include_contribution_analysis {
+            let mut all_positive_drops: Vec<f32> = Vec::with_capacity(n * recommendations.len());
             for (j, rec) in recommendations.iter_mut().enumerate() {
                 let mut drops: Vec<(f32, usize)> = (0..n)
                     .map(|i| (raw_baseline_at_recs[j] - rows[i].contrib_scores[j], i))
                     .collect();
+                all_positive_drops.extend(drops.iter().map(|&(d, _)| d).filter(|&d| d > 0.0));
                 drops.sort_by(|a, b| b.0.total_cmp(&a.0));
                 rec.top_contributors = Some(
                     drops
@@ -640,9 +688,21 @@ pub fn run_inference(
                             anime_id: prep.anime_ids[i],
                             corpus_idx: prep.corpus_indices[i],
                             score_contribution: d,
+                            presence_contribution: (!alt)
+                                .then(|| w * (base_lnp_at_recs[j] - rows[i].contrib_p[j].max(1e-30).ln())),
+                            rating_contribution: (!alt).then(|| {
+                                (1.0 - w) * (base_lnrb_at_recs[j] - (rows[i].contrib_r[j] + 1.0).max(0.001).ln())
+                            }),
+                            probability_without: (!alt).then(|| rows[i].contrib_p[j]),
+                            predicted_rating_without: (!alt).then(|| rows[i].contrib_r[j]),
                         })
                         .collect(),
                 );
+            }
+            if !all_positive_drops.is_empty() {
+                let mid = all_positive_drops.len() / 2;
+                let (_, med, _) = all_positive_drops.select_nth_unstable_by(mid, |a, b| a.total_cmp(b));
+                contribution_baseline = Some(*med);
             }
         }
 
@@ -680,7 +740,7 @@ pub fn run_inference(
         }
     }
 
-    (recommendations, profile_holdout, rstack.map(|s| s.out))
+    (recommendations, profile_holdout, rstack.map(|s| s.out), contribution_baseline)
 }
 
 pub fn norm_stats_out(stats: &NormStats) -> NormStatsOut {

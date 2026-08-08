@@ -87,14 +87,14 @@ export const POST: RequestHandler = async ({ request }) => {
   if (isLeft(recommendationsRes)) {
     return error(recommendationsRes.left.status, recommendationsRes.left.body);
   }
-  const { recommendations: recommendationsList, userRatingStats } = recommendationsRes.right;
+  const { recommendations: recommendationsList, userRatingStats, contributionBaseline } = recommendationsRes.right;
 
   const alreadyFetchedAnimeIDs = new Set(req.availableAnimeMetadataIDs);
   const idsToFetch = [
     ...new Set(
       recommendationsList
-        .flatMap(({ id, topRatingContributorsIds }) =>
-          topRatingContributorsIds ? [id, ...topRatingContributorsIds.map(Math.abs)] : id
+        .flatMap(({ id, topContributors }) =>
+          topContributors ? [id, ...topContributors.map((c) => c.animeId)] : id
         )
         .filter((id) => !alreadyFetchedAnimeIDs.has(id))
     ),
@@ -115,5 +115,6 @@ export const POST: RequestHandler = async ({ request }) => {
     recommendations: typify(recommendationsList),
     animeData: typify(animeData),
     userRatingStats: typify(userRatingStats),
+    contributionBaseline,
   });
 };

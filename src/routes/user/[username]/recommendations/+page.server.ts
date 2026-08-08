@@ -29,6 +29,7 @@ export type RecommendationsResponse =
       recommendations: Recommendation[];
       animeData: { [id: number]: AnimeDetails };
       userRatingStats: UserRatingStats | null;
+      contributionBaseline?: number;
     }
   | { type: 'error'; error: string; kind?: ProfileFetchErrorKind };
 
@@ -135,9 +136,9 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
   const { recommendations: recommendationsList, userRatingStats } = recommendationsRes.right;
 
   const animeIdsNeedingMetadata = new Set(
-    recommendationsList.flatMap(({ id, topRatingContributorsIds }) => [
+    recommendationsList.flatMap(({ id, topContributors }) => [
       id,
-      ...(topRatingContributorsIds ?? []).map(Math.abs),
+      ...(topContributors ?? []).map((c) => c.animeId),
     ])
   );
   for (const animeID of excludedRankingAnimeIDs) {
@@ -156,6 +157,7 @@ export const load: PageServerLoad = async ({ params, url, request }) => {
 
   const recommendations: RecommendationsResponse = {
     type: 'ok',
+    contributionBaseline: recommendationsRes.right.contributionBaseline,
     recommendations: recommendationsList.filter((reco) => !!animeData[reco.id]),
     animeData,
     userRatingStats,

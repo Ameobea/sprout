@@ -12,18 +12,33 @@ import { LEGACY_APP_URL, MODEL_SERVER_URL } from 'src/conf';
 import { computeProfileRatingStats } from 'src/util/profileStats';
 import { denormalizeRating } from 'src/util/ratingNormalization';
 
+export interface RecommendationContributor {
+  animeId: number;
+  /** Raw leave-one-out score drop */
+  strength: number;
+  /** Log-space channel split; presence + rating = Δln(score) */
+  presence?: number;
+  rating?: number;
+  /** Rec's presence probability with this item held out */
+  probabilityWithout?: number;
+  /** How much higher the denormalized (1-10) predicted rating is because of this item */
+  ratingDelta?: number;
+  /** The user's own 1-10 rating of this item; absent if unrated */
+  userRating?: number;
+}
+
 export interface Recommendation {
   id: number;
   score: number;
+  probability?: number;
   /**
    * Predicted rating on the 1-10 scale (denormalized).  Absent for the legacy model.
    */
   predictedRating?: number;
-  /**
-   * These IDs will be negative to indicate a negative rating contributing to a positive recommendation.  Absolute
-   * value should be used to get IDs to look up.
-   */
-  topRatingContributorsIds?: number[];
+  topContributors?: RecommendationContributor[];
+  /** Serve-logit decomposition (logq models): λ·lift vs α·log_pop */
+  liftComponent?: number;
+  popComponent?: number;
   planToWatch?: boolean;
 }
 
@@ -37,6 +52,8 @@ export interface UserRatingStats {
 export interface GetRecommendationsOutput {
   recommendations: Recommendation[];
   userRatingStats: UserRatingStats | null;
+  /** Median positive contribution across all rec×profile-item pairs; significance scale */
+  contributionBaseline?: number;
 }
 
 interface GetRecommendationsArgs {
@@ -276,6 +293,7 @@ export interface ModelServerOutput {
   recommendations: ModelServerRecommendation[];
   profile_holdout?: ProfileHoldout;
   normalization_stats: NormalizationStats;
+  contribution_baseline?: number;
 }
 
 export interface ModelServerRecommendation {
@@ -284,6 +302,8 @@ export interface ModelServerRecommendation {
   score: number;
   probability: number;
   predicted_rating: number;
+  lift_component?: number;
+  pop_component?: number;
   top_contributors?: TopContributor[];
 }
 
@@ -291,6 +311,10 @@ export interface TopContributor {
   anime_id: number;
   corpus_idx: number;
   score_contribution: number;
+  presence_contribution?: number;
+  rating_contribution?: number;
+  probability_without?: number;
+  predicted_rating_without?: number;
 }
 
 export interface ProfileHoldout {
@@ -583,23 +607,32 @@ export const getRecommendations = async (
     return true;
   });
 
-  // Build a map of profile entries by anime ID for contributor sign determination
-  const profileAnimeByID = new Map(profile.map((entry) => [entry.node.id, entry]));
+  const profileRatingByID = new Map(profile.map((entry) => [entry.node.id, entry.list_status.score]));
 
   const recommendations = filteredRecommendations.slice(0, count).map((rec) => {
+    const predictedRating = denormalizeRating(rec.predicted_rating, output.normalization_stats);
     const reco: Recommendation = {
       id: rec.anime_id,
       score: rec.score,
-      predictedRating: denormalizeRating(rec.predicted_rating, output.normalization_stats),
+      probability: rec.probability,
+      predictedRating,
+      liftComponent: rec.lift_component,
+      popComponent: rec.pop_component,
     };
 
     if (rec.top_contributors) {
-      reco.topRatingContributorsIds = rec.top_contributors.map((contrib) => {
-        const rating = profileAnimeByID.get(contrib.anime_id);
-        // Positive contribution if score >= 6, or if user is a non-rater
-        const isPositive = (rating?.list_status.score ?? 10) >= 6;
-        return isPositive || ratingStats.isNonRater ? contrib.anime_id : -contrib.anime_id;
-      });
+      reco.topContributors = rec.top_contributors.map((contrib) => ({
+        animeId: contrib.anime_id,
+        strength: contrib.score_contribution,
+        presence: contrib.presence_contribution,
+        rating: contrib.rating_contribution,
+        probabilityWithout: contrib.probability_without,
+        ratingDelta:
+          contrib.predicted_rating_without !== undefined
+            ? predictedRating - denormalizeRating(contrib.predicted_rating_without, output.normalization_stats)
+            : undefined,
+        userRating: profileRatingByID.get(contrib.anime_id) || undefined,
+      }));
     }
 
     if (planToWatchAnimeIDs.has(rec.anime_id)) {
@@ -617,6 +650,7 @@ export const getRecommendations = async (
       ratedCount: ratingStats.ratedCount,
       isNonRater: ratingStats.isNonRater,
     },
+    contributionBaseline: output.contribution_baseline,
   });
 };
 

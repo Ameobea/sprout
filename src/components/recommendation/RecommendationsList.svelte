@@ -15,6 +15,21 @@
   export let addRanking: ((animeID: number) => void) | undefined = undefined;
   export let contributorsLoading: boolean;
   export let userRatingStats: UserRatingStats | null = null;
+  export let contributionBaseline: number | undefined = undefined;
+
+  // Drop contributors dwarfed by the rec's top one or below the profile-wide
+  // significance scale; always keep at least the top contributor.
+  const REL_CUTOFF = 0.15;
+  const SIG_MULT = 3;
+  const visibleContributors = (contributors: Recommendation['topContributors']) => {
+    if (!contributors?.length) {
+      return contributors;
+    }
+    const sigFloor = contributionBaseline !== undefined ? SIG_MULT * contributionBaseline : 0;
+    const cutoff = Math.max(REL_CUTOFF * contributors[0].strength, sigFloor);
+    const kept = contributors.filter((c) => c.strength >= cutoff);
+    return kept.length > 0 ? kept : contributors.slice(0, 1);
+  };
 
   let displayRecommendations: (Recommendation & {
     shownPredictedRating: number | null;
@@ -36,7 +51,7 @@
 </script>
 
 <div class="recommendations">
-  {#each displayRecommendations as { id, topRatingContributorsIds, planToWatch, shownPredictedRating, ratingTier }, rank (id)}
+  {#each displayRecommendations as { id, topContributors, planToWatch, shownPredictedRating, ratingTier }, rank (id)}
     {@const animeMetadata = animeMetadataDatabase[id]}
     <div in:fade animate:flip={{ duration: (d) => 39 * Math.sqrt(d) }}>
       <RecommendationListItem
@@ -52,10 +67,11 @@
           });
           expandedAnimeID = expanded ? animeMetadata.id : null;
         }}
-        topRatingContributors={topRatingContributorsIds?.map((id) => ({
-          datum: animeMetadataDatabase[Math.abs(id)],
-          positiveRating: id > 0,
+        topContributors={visibleContributors(topContributors)?.map((c) => ({
+          ...c,
+          datum: animeMetadataDatabase[c.animeId],
         }))}
+        {contributionBaseline}
         planToWatch={planToWatch ?? false}
         predictedRating={shownPredictedRating}
         {ratingTier}

@@ -1,0 +1,4 @@
+# Local dev: full prod model roster from ../data. METRICS_PORT must differ from
+# PORT or foundations telemetry binds 5709 first and the main listener panics.
+run:
+  MODELS_CONFIG=deploy/models-local.json PORT=5709 METRICS_PORT=5719 PRECISION=bf16 PIN_CORES=0 cargo run --release --bin serve

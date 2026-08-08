@@ -16,7 +16,36 @@
   export let excludeRanking: ((animeID: number) => void) | undefined;
   export let excludeGenre: ((genreID: number, genreName: string) => void) | undefined;
   export let addRanking: ((animeID: number) => void) | undefined;
-  export let topRatingContributors: { datum: AnimeDetails; positiveRating: boolean }[] | undefined;
+  export let topContributors:
+    | {
+        animeId: number;
+        datum: AnimeDetails | undefined;
+        strength: number;
+        presence?: number;
+        rating?: number;
+        probabilityWithout?: number;
+        ratingDelta?: number;
+        userRating?: number;
+      }[]
+    | undefined;
+  export let contributionBaseline: number | undefined = undefined;
+
+  // Color ramp by contribution magnitude relative to the profile-wide baseline
+  // (log scale, saturating ~50x baseline); falls back to within-rec share.
+  const contribColorT = (strength: number, fill: number): number => {
+    if (contributionBaseline === undefined || contributionBaseline <= 0) {
+      return fill;
+    }
+    return Math.max(0, Math.min(1, Math.log10(strength / (3 * contributionBaseline)) / 1.2));
+  };
+  const barColor = (t: number): string => `hsl(${145 - 35 * t}, ${35 + 55 * t}%, ${38 + 14 * t}%)`;
+
+  const formatRel = (x: number): string => {
+    const pct = Math.abs(x) * 100;
+    return `${pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)}%`;
+  };
+
+  const userRatingColor = (rating: number): string => `hsl(${((rating - 1) / 9) * 120}, 72%, 58%)`;
   export let planToWatch: boolean;
   export let contributorsLoading: boolean;
   export let predictedRating: number | null = null;
@@ -169,22 +198,64 @@
   {#if expanded}
     <div class="details">
       <div class="top-influences">
-        <h3>Recommended Because:</h3>
-        {#if topRatingContributors && topRatingContributors.length > 0}
-          {#each topRatingContributors as { datum } (datum.id)}
-            <Tag
-              style="color: white;"
-              filter={!contributorsLoading && !!excludeRanking}
-              skeleton={contributorsLoading}
-              on:close={() => excludeRanking?.(datum.id)}
-              type="outline"
-            >
-              You watched:
-              {datum.alternative_titles.en || datum.title}
-            </Tag>
+        <h3>Recommended because you watched:</h3>
+        {#if topContributors && topContributors.length > 0}
+          {@const maxStrength = Math.max(...topContributors.map((c) => c.strength))}
+          {@const maxFill = 0.25 + 0.75 * contribColorT(maxStrength, 1)}
+          <div class="influence-pills">
+          {#each topContributors as { animeId, datum, strength, presence, rating, userRating } (animeId)}
+            {#if datum}
+              {@const fill = (strength / maxStrength) * maxFill}
+              {@const color = barColor(contribColorT(strength, fill))}
+              <span class="contributor">
+                <Tag
+                  style="color: white;"
+                  filter={!contributorsLoading && !!excludeRanking}
+                  skeleton={contributorsLoading}
+                  on:close={() => excludeRanking?.(animeId)}
+                  type="outline"
+                >
+                  <span class="tag-label">{datum.alternative_titles.en || datum.title}</span>
+                </Tag>
+                <span class="strength-track">
+                  <span class="strength-fill" style="width: {Math.round(fill * 100)}%; background: {color};" />
+                </span>
+                {#if presence !== undefined && rating !== undefined}
+                  {@const relScore = Math.exp(presence + rating) - 1}
+                  {@const relPresence = Math.exp(presence) - 1}
+                  {@const relRating = Math.exp(rating) - 1}
+                  <div class="contrib-popover">
+                    <div class="popover-context">
+                      Because you {userRating ? 'rated' : 'watched'}
+                      <b>{datum.alternative_titles.en || datum.title}</b>{#if userRating}
+                        <b class="user-rating" style="color: {userRatingColor(userRating)};">{userRating}★</b>{/if}:
+                    </div>
+                    <div>
+                      Recommendation score:
+                      <span class="rel-delta" class:negative={relScore < 0} class:big={relScore >= 1}>
+                        {relScore >= 0 ? '+' : '−'}{formatRel(relScore)}
+                      </span>
+                    </div>
+                    <div class="popover-breakdown">
+                      Presence
+                      <span class="rel-delta" class:negative={relPresence < 0} class:big={relPresence >= 1}>
+                        {relPresence >= 0 ? '+' : '−'}{formatRel(relPresence)}
+                      </span>
+                    </div>
+                    <div class="popover-breakdown">
+                      Rating
+                      <span class="rel-delta" class:negative={relRating < 0} class:big={relRating >= 1}>
+                        {relRating >= 0 ? '+' : '−'}{formatRel(relRating)}
+                      </span>
+                    </div>
+                  </div>
+                {/if}
+              </span>
+            {/if}
           {/each}
+          </div>
         {:else}
-          <Tag skeleton /><Tag skeleton /><Tag skeleton />
+          <div class="influence-pills"><Tag skeleton /><Tag skeleton /><Tag skeleton /></div>
         {/if}
       </div>
     </div>
@@ -523,15 +594,144 @@
   .top-influences {
     display: flex;
     flex-direction: row;
+    flex: 1;
+    min-width: 0;
     min-height: 30px;
     align-items: center;
-    flex-wrap: wrap;
   }
 
   .top-influences h3 {
-    display: inline-flex;
-    font-size: 18px;
+    flex: 0 0 auto;
+    font-size: 13.5px;
     font-weight: 500;
-    margin-right: 6px;
+    color: #ddd;
+    margin-right: 8px;
+  }
+
+  .influence-pills {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .contributor {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+
+  .contributor :global(.bx--tag) {
+    width: calc(100% - 8px);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .tag-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  .strength-track {
+    height: 5px;
+    width: calc(100% - 8px);
+    margin: 1px 4px 4px;
+    background: #ffffff17;
+    border-radius: 2.5px;
+  }
+
+  .strength-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+  }
+
+  .contrib-popover {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 5px;
+    padding: 7px 10px;
+    background: #161616;
+    border: 1px solid #444;
+    border-radius: 4px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    width: max-content;
+    max-width: min(340px, 84vw);
+    z-index: 20;
+    pointer-events: none;
+    box-shadow: 0 3px 10px #000000aa;
+  }
+
+  .popover-context {
+    color: #ddd;
+    margin-bottom: 4px;
+  }
+
+  .user-rating {
+    margin-left: 4px;
+  }
+
+  .contributor:hover .contrib-popover {
+    display: block;
+  }
+
+  /* Anchor per grid column so the card's overflow:hidden can't clip the popover */
+  .contributor:nth-child(3n + 2) .contrib-popover {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .contributor:nth-child(3n) .contrib-popover {
+    left: auto;
+    right: 0;
+  }
+
+  .popover-breakdown {
+    color: #ccc;
+    font-size: 12px;
+  }
+
+  .rel-delta {
+    color: #55d95f;
+    font-weight: 600;
+  }
+
+  .rel-delta.big {
+    color: #3aff5b;
+    font-weight: 700;
+  }
+
+  .rel-delta.negative {
+    color: #ff6b6b;
+  }
+
+  @media (max-width: 768px) {
+    .top-influences {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .top-influences h3 {
+      margin: 0 0 4px;
+    }
+
+    .influence-pills {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .contributor .contrib-popover {
+      left: 0;
+      right: auto;
+      transform: none;
+    }
   }
 </style>

@@ -8,6 +8,7 @@
     recommendations: Recommendation[];
     animeData: { [animeID: number]: AnimeDetails };
     userRatingStats: UserRatingStats | null;
+    contributionBaseline?: number;
   }> =>
     fetch('/recommendation/recommendation', {
       method: 'POST',
@@ -84,6 +85,7 @@
           [animeID: number]: AnimeDetails;
         };
         userRatingStats?: UserRatingStats | null;
+        contributionBaseline?: number;
       }
     | undefined = undefined;
   $: recosRes = createQuery<
@@ -91,6 +93,7 @@
         recommendations: Recommendation[];
         animeData: { [animeID: number]: AnimeDetails };
         userRatingStats?: UserRatingStats | null;
+        contributionBaseline?: number;
       }
     | undefined
   >(
@@ -224,6 +227,7 @@
     />
     <RecommendationsList
       recommendations={recommendations?.recommendations ?? []}
+      contributionBaseline={recommendations?.contributionBaseline}
       animeMetadataDatabase={$animeMetadataDatabase}
       {userRatingStats}
       excludeRanking={excludedRankingAnimeIDs}

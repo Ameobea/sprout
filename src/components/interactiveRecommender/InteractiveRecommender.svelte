@@ -10,6 +10,7 @@
     recommendations: Recommendation[];
     animeData: { [animeID: number]: AnimeDetails };
     userRatingStats?: UserRatingStats | null;
+    contributionBaseline?: number;
   }> => {
     if (profile.length === 0) {
       return { recommendations: [], animeData: {}, userRatingStats: null };
@@ -64,6 +65,7 @@
           [animeID: number]: AnimeDetails;
         };
         userRatingStats?: UserRatingStats | null;
+        contributionBaseline?: number;
       }
     | undefined = undefined;
   $: recosRes = createQuery(
@@ -134,6 +136,7 @@
     />
     <RecommendationsList
       recommendations={recommendations?.recommendations ?? []}
+      contributionBaseline={recommendations?.contributionBaseline}
       animeMetadataDatabase={$animeMetadataDatabase}
       userRatingStats={recommendations?.userRatingStats ?? null}
       {addRanking}

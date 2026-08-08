@@ -170,13 +170,15 @@ async fn recommend_handler(State(state): State<Arc<AppState>>, Json(req): Json<R
         let _guard = lock.blocking_lock();
         recommend_metrics::queue_wait_seconds().observe(t0.elapsed().as_nanos() as u64);
         let timer = recommend_metrics::inference_time_seconds(md.name).start_timer();
-        let (recommendations, profile_holdout, rating_stack) = recommend::run_inference(&md, &prep, &req);
+        let (recommendations, profile_holdout, rating_stack, contribution_baseline) =
+            recommend::run_inference(&md, &prep, &req);
         timer.stop_and_record();
         recommend::RecommendResponse {
             recommendations,
             profile_holdout,
             normalization_stats: recommend::norm_stats_out(&prep.stats),
             rating_stack,
+            contribution_baseline,
         }
     })
     .await;
