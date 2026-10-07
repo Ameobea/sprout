@@ -10,7 +10,7 @@ export const ANALYTICS_ENDPOINT = 'https://osu-api-bridge.ameo.dev/a/z';
 export const ANALYTICS_SALT = '4rW9XKHcEKa6bolWry8k0LGW';
 export const ANALYTICS_PROJECT = 'sprout';
 
-const analyticsEnabled = () => browser && !window.location.href.includes('localhost');
+const analyticsEnabled = () => browser && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
 
 const computeVerificationHash = async (events: AnalyticsEvent[]): Promise<string> => {
   const encoder = new TextEncoder();
@@ -40,7 +40,7 @@ const getSessionID = (): string => {
       sessionID = gen();
       sessionStorage.setItem('analyticsSessionID', sessionID);
     }
-  } catch (_err) {
+  } catch {
     sessionID = gen();
   }
   return sessionID;
@@ -67,7 +67,7 @@ const flush = async () => {
       }),
       keepalive: true,
     });
-  } catch (_err) {
+  } catch {
     // analytics must never break the app
   }
 };

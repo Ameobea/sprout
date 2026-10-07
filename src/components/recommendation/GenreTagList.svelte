@@ -3,9 +3,9 @@
   import { Tag } from 'carbon-components-svelte';
 
   import type { Genre } from 'src/malAPI';
+  import GenreIcon from './GenreIcon.svelte';
 
   export let genres: Genre[];
-  export let excludeGenre: ((genreID: number, genreName: string) => void) | undefined;
 
   const TAG_GAP = 4;
 
@@ -26,13 +26,14 @@
     }
 
     const availHeight = containerElem.clientHeight;
+    const measureRect = measureElem.getBoundingClientRect();
     const children = Array.from(measureElem.children) as HTMLElement[];
     const chipCopy = children[children.length - 1];
     const tagEls = children.slice(0, -1);
 
     let fits = 0;
     for (const el of tagEls) {
-      if (el.offsetTop + el.offsetHeight > availHeight) {
+      if (el.getBoundingClientRect().bottom - measureRect.top > availHeight) {
         break;
       }
       fits += 1;
@@ -47,10 +48,16 @@
       return;
     }
 
-    const lastVisible = tagEls[fits - 1];
-    const chipFitsOnRow =
-      lastVisible.offsetLeft + lastVisible.offsetWidth + TAG_GAP + chipCopy.offsetWidth <= measureElem.clientWidth;
-    visibleCount = chipFitsOnRow ? fits : fits - 1;
+    // Preserve fractional pixels: rounded offset sizes can put the +N chip on a
+    // clipped second row even when the calculation says it fits.
+    const chipWidth = chipCopy.getBoundingClientRect().width;
+    while (
+      fits > 0 &&
+      tagEls[fits - 1].getBoundingClientRect().right - measureRect.left + TAG_GAP + chipWidth > measureRect.width
+    ) {
+      fits -= 1;
+    }
+    visibleCount = fits;
   };
 
   onMount(() => {
@@ -94,8 +101,8 @@
 <div class="genre-tags" bind:this={containerElem}>
   <div class="tags-flow">
     {#each genres.slice(0, visibleCount) as genre (genre.id)}
-      <Tag size="sm" type="cool-gray" filter={!!excludeGenre} on:close={() => excludeGenre?.(genre.id, genre.name)}>
-        {genre.name}
+      <Tag size="sm" type="cool-gray">
+        <span class="genre-label"><GenreIcon name={genre.name} />{genre.name}</span>
       </Tag>
     {/each}
     {#if hiddenCount > 0}
@@ -112,7 +119,7 @@
   </div>
   <div class="tags-flow measure" bind:this={measureElem} aria-hidden="true">
     {#each genres as genre (genre.id)}
-      <Tag size="sm" type="cool-gray" filter={!!excludeGenre}>{genre.name}</Tag>
+      <Tag size="sm" type="cool-gray"><span class="genre-label"><GenreIcon name={genre.name} />{genre.name}</span></Tag>
     {/each}
     <button class="overflow-chip" tabindex="-1">+{genres.length}</button>
   </div>
@@ -123,8 +130,8 @@
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="popover" style={popoverStyle} on:click|stopPropagation>
     {#each genres as genre (genre.id)}
-      <Tag size="sm" type="cool-gray" filter={!!excludeGenre} on:close={() => excludeGenre?.(genre.id, genre.name)}>
-        {genre.name}
+      <Tag size="sm" type="cool-gray">
+        <span class="genre-label"><GenreIcon name={genre.name} />{genre.name}</span>
       </Tag>
     {/each}
   </div>
@@ -142,7 +149,7 @@
     flex-wrap: wrap;
     gap: 4px;
     align-content: flex-start;
-    padding: 4px;
+    padding: 0;
     height: 100%;
     overflow: hidden;
     box-sizing: border-box;
@@ -150,6 +157,19 @@
 
   .tags-flow :global(.bx--tag) {
     margin: 0;
+  }
+
+  .genre-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .genre-tags :global(.bx--tag),
+  .popover :global(.bx--tag) {
+    background: #29302d;
+    border: 1px solid #ffffff12;
+    color: #d5ded8;
   }
 
   .tags-flow.measure {
@@ -171,7 +191,7 @@
     height: 18px;
     padding: 0 8px;
     cursor: pointer;
-    align-self: center;
+    align-self: flex-start;
   }
 
   .overflow-chip:hover {

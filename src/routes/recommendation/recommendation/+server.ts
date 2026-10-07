@@ -9,36 +9,41 @@ import { validateModelName } from 'src/components/recommendation/conf';
 import { getAnimesByID, type AnimeDetails } from 'src/malAPI';
 import { AnimeID, boundedArray, MAX_EXCLUDED_IDS, MAX_PROFILE_ENTRIES } from 'src/validation';
 
-const RecommendationRequest = t.type({
-  availableAnimeMetadataIDs: boundedArray(AnimeID, MAX_PROFILE_ENTRIES, 'AvailableAnimeMetadataIDs'),
-  dataSource: t.union([
-    t.type({
-      type: t.literal('username'),
-      username: t.string,
-    }),
-    t.type({
-      type: t.literal('rawProfile'),
-      profile: boundedArray(
-        t.type({ animeID: AnimeID, score: t.number }),
-        MAX_PROFILE_ENTRIES,
-        'RawProfile'
-      ),
-    }),
-  ]),
-  excludedRankingAnimeIDs: boundedArray(AnimeID, MAX_EXCLUDED_IDS, 'ExcludedRankingAnimeIDs'),
-  excludedGenreIDs: boundedArray(AnimeID, MAX_EXCLUDED_IDS, 'ExcludedGenreIDs'),
-  modelName: t.string,
-  includeContributors: t.boolean,
-  includeExtraSeasons: t.boolean,
-  includeONAsOVAsSpecials: t.boolean,
-  includeMovies: t.boolean,
-  includeMusic: t.boolean,
-  profileSource: ProfileSourceValidator,
-  filterPlanToWatch: t.boolean,
-  logitWeight: t.number,
-  nicheBoostFactor: t.number,
-  popularityAttenuationFactor: t.number,
-});
+const RecommendationRequest = t.intersection([
+  t.type({
+    availableAnimeMetadataIDs: boundedArray(AnimeID, MAX_PROFILE_ENTRIES, 'AvailableAnimeMetadataIDs'),
+    dataSource: t.union([
+      t.type({
+        type: t.literal('username'),
+        username: t.string,
+      }),
+      t.type({
+        type: t.literal('rawProfile'),
+        profile: boundedArray(
+          t.type({ animeID: AnimeID, score: t.number }),
+          MAX_PROFILE_ENTRIES,
+          'RawProfile'
+        ),
+      }),
+    ]),
+    excludedRankingAnimeIDs: boundedArray(AnimeID, MAX_EXCLUDED_IDS, 'ExcludedRankingAnimeIDs'),
+    excludedGenreIDs: boundedArray(AnimeID, MAX_EXCLUDED_IDS, 'ExcludedGenreIDs'),
+    modelName: t.string,
+    includeContributors: t.boolean,
+    includeExtraSeasons: t.boolean,
+    includeONAsOVAsSpecials: t.boolean,
+    includeMovies: t.boolean,
+    includeMusic: t.boolean,
+    profileSource: ProfileSourceValidator,
+    filterPlanToWatch: t.boolean,
+    logitWeight: t.number,
+    nicheBoostFactor: t.number,
+    popularityAttenuationFactor: t.number,
+  }),
+  t.partial({
+    forceProfileRefresh: t.boolean,
+  }),
+]);
 
 export const POST: RequestHandler = async ({ request }) => {
   const body = await request.json().catch(() => {
@@ -83,6 +88,7 @@ export const POST: RequestHandler = async ({ request }) => {
     logitWeight: Math.max(0, Math.min(1, logitWeight)),
     nicheBoostFactor: Math.max(0, Math.min(1, nicheBoostFactor)),
     popularityAttenuationFactor: Math.max(0, Math.min(0.01, req.popularityAttenuationFactor)),
+    forceProfileRefresh: req.forceProfileRefresh ?? false,
   });
   if (isLeft(recommendationsRes)) {
     return error(recommendationsRes.left.status, recommendationsRes.left.body);

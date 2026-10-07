@@ -471,7 +471,7 @@ export class AtlasViz {
 
       if (this.selectedNode?.id !== newSelectedAnimeID) {
         const sprites = this.renderSelectedNodeObjects(newSelectedAnimeID);
-        this.selectedNode = sprites ? { id: newSelectedAnimeID, ...sprites } : null;
+        this.selectedNode = sprites && newSelectedAnimeID !== null ? { id: newSelectedAnimeID, ...sprites } : null;
       }
     };
     this.PIXI = pixi;
@@ -814,7 +814,7 @@ export class AtlasViz {
 
   private renderSelectedNodeObjects(selectedAnimeID: number | null) {
     if (this.selectedNode) {
-      this.selectedNode.node.destroy({ texture: null });
+      this.selectedNode.node.destroy({ texture: false });
       this.selectedNodeContainer.removeChild(this.selectedNode.node);
       this.decorationsContainer.removeChild(this.selectedNode.background);
       if (this.selectedNode.connections) {

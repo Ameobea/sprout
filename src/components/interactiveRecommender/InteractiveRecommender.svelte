@@ -131,7 +131,6 @@
       {params}
       animeMetadataDatabase={$animeMetadataDatabase}
       isLoading={$recosRes.isLoading || $recosRes.isRefetching}
-      {genresDB}
       forceHideTopBar
     />
     <RecommendationsList
@@ -140,6 +139,15 @@
       animeMetadataDatabase={$animeMetadataDatabase}
       userRatingStats={recommendations?.userRatingStats ?? null}
       {addRanking}
+      excludeGenre={(id, name) => {
+        genresDB.update((db) => db.set(id, name));
+        $params.excludedGenreIDs = [...new Set([...$params.excludedGenreIDs, id])];
+      }}
+      includeGenre={(id) => {
+        $params.excludedGenreIDs = $params.excludedGenreIDs.filter((genreID) => genreID !== id);
+      }}
+      excludedGenreIDs={$params.excludedGenreIDs}
+      genreNames={$genresDB}
       contributorsLoading={$recosRes.isLoading ||
         $recosRes.isRefetching ||
         $recoContributorsRes.isLoading ||

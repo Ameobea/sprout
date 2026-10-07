@@ -1,5 +1,5 @@
 <script lang="ts" context="module">
-  import { getDefaultNicheBoostFactor, ModelName, PopularityAttenuationFactor } from './conf';
+  import { getDefaultNicheBoostFactor, ModelName, PopularityAttenuationFactor, ProfileSource } from './conf';
 
   const ALL_MODEL_OPTIONS: { id: ModelName; text: string }[] = [
     { id: ModelName.Model_2026_logq, text: 'Aug. 2026' },
@@ -19,21 +19,24 @@
 </script>
 
 <script lang="ts">
-  import { Dropdown, InlineLoading, Tag, Toggle, ExpandableTile, Slider } from 'carbon-components-svelte';
+  import { Dropdown, InlineLoading, Tag, Toggle, Slider } from 'carbon-components-svelte';
+  import SettingsAdjust from 'carbon-icons-svelte/lib/SettingsAdjust.svelte';
+  import Renew from 'carbon-icons-svelte/lib/Renew.svelte';
+  import Layers from 'carbon-icons-svelte/lib/Layers.svelte';
+  import Video from 'carbon-icons-svelte/lib/Video.svelte';
+  import Playlist from 'carbon-icons-svelte/lib/Playlist.svelte';
+  import Music from 'carbon-icons-svelte/lib/Music.svelte';
+  import ChevronDown from 'carbon-icons-svelte/lib/ChevronDown.svelte';
+  import HelpTip from './HelpTip.svelte';
   import type { Writable } from 'svelte/store';
 
   import type { AnimeDetails } from 'src/malAPI';
-  import { browser } from '$app/environment';
   import { getSurface, submitAnalyticsEvent } from 'src/analytics';
   import type { RecommendationControlParams } from './utils';
-
-  let innerWidth = browser ? window.innerWidth : 0;
-  $: isMobile = innerWidth < 768;
 
   export let params: Writable<RecommendationControlParams>;
   export let animeMetadataDatabase: { [animeID: number]: AnimeDetails };
   export let isLoading: boolean;
-  export let genresDB: Writable<Map<number, string>>;
   export let forceHideTopBar: boolean | undefined = false;
   /**
    * Hides the presence/rating weight slider entirely for non-rater profiles, where rating
@@ -41,6 +44,9 @@
    * profiles presence-only regardless of the param.
    */
   export let hideLogitWeight = false;
+  export let onForceProfileRefresh: (() => void) | undefined = undefined;
+  export let isProfileRefreshing = false;
+  export let profileRefreshError = '';
 
   // Local state for sliders to prevent updates while dragging
   let localLogitWeight = $params.logitWeight;
@@ -52,330 +58,573 @@
       subcategory: 'filter_toggle',
       payload: { filter, enabled, surface: getSurface() },
     });
-
-  // Sync local state with params store when params change from outside
-  // $: localLogitWeight = $params.logitWeight;
-  // $: localNicheBoostFactor = $params.nicheBoostFactor;
 </script>
 
-<svelte:window bind:innerWidth />
-
-<div class="root">
-  <div class="toggles">
-    <div>
-      <Toggle
-        labelText="Extra Seasons"
-        bind:toggled={$params.includeExtraSeasons}
-        on:toggle={(evt) => submitFilterToggle('extra_seasons', evt.detail.toggled)}
-      />
-    </div>
-    <div>
-      <Toggle
-        labelText="Movies"
-        bind:toggled={$params.includeMovies}
-        on:toggle={(evt) => submitFilterToggle('movies', evt.detail.toggled)}
-      />
-    </div>
-    <div>
-      <Toggle
-        labelText="ONAs / OVAs / Specials"
-        bind:toggled={$params.includeONAsOVAsSpecials}
-        on:toggle={(evt) => submitFilterToggle('onas_ovas_specials', evt.detail.toggled)}
-      />
-    </div>
-    <div style="position: relative">
-      <Toggle
-        labelText="Music"
-        bind:toggled={$params.includeMusic}
-        on:toggle={(evt) => submitFilterToggle('music', evt.detail.toggled)}
-      />
-      {#if isLoading && isMobile}
-        <div style="position: absolute; right: -4px; bottom: -4px; flex: 0;">
-          <InlineLoading />
-        </div>
-      {/if}
-    </div>
-    {#if !isMobile && isLoading}
-      <InlineLoading style="flex: 0; margin-left: 10px;" />
+<details class="root">
+  <summary class="panel-summary">
+    <h2 class="section-title">
+      <span class="heading-icon"><SettingsAdjust size={20} aria-hidden="true" /></span>
+      <span>
+        <span>Recommendation settings</span>
+        <span class="section-description">Choose what to include</span>
+      </span>
+    </h2>
+    <ChevronDown size={20} aria-hidden="true" />
+  </summary>
+  <div class="panel-body">
+    {#if $params.profileSource === ProfileSource.MyAnimeList && onForceProfileRefresh}
+      <div class="profile-refresh">
+        <button
+          type="button"
+          disabled={isProfileRefreshing || isLoading || $params.modelName === ModelName.Legacy_2023}
+          on:click={() => onForceProfileRefresh?.()}
+        >
+          <Renew size={16} aria-hidden="true" />
+          {isProfileRefreshing ? 'Refreshing…' : 'Refresh MyAnimeList'}
+        </button>
+        <HelpTip
+          label="MyAnimeList refresh"
+          text={$params.modelName === ModelName.Legacy_2023
+            ? 'Force refresh is unavailable for Legacy (2023), which is served by a separate legacy deployment.'
+            : 'Sprout caches MyAnimeList lists for 60 seconds after fetching them; an open page does not update automatically. Refresh bypasses Sprout’s cache and updates recommendations using the list currently returned by MAL. Changes still depend on MAL making them available through its API.'}
+        />
+      </div>
     {/if}
-  </div>
-  {#if !isMobile && !forceHideTopBar}
-    <ExpandableTile
-      style="min-height: 10px"
-      on:click={() =>
-        submitAnalyticsEvent({
-          category: 'recommendations',
-          subcategory: 'advanced_options_toggle',
-          payload: { surface: getSurface() },
-        })}
-    >
-      <div slot="above">Advanced Options</div>
-      <div class="top" slot="below">
-        <div class="top-row">
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div on:click={(e) => e.stopPropagation()}>
-            <Dropdown
-              style="width: 100%;"
-              titleText="Model"
-              selectedId={$params.modelName}
-              on:select={(selected) => {
-                const model = selected.detail.selectedItem.id;
-                if (model !== $params.modelName) {
-                  submitAnalyticsEvent({
-                    category: 'recommendations',
-                    subcategory: 'model_select',
-                    payload: { model, surface: getSurface() },
-                  });
-                  if ($params.nicheBoostFactor === getDefaultNicheBoostFactor($params.modelName)) {
-                    $params.nicheBoostFactor = getDefaultNicheBoostFactor(model);
-                    localNicheBoostFactor = getDefaultNicheBoostFactor(model);
-                  }
-                }
-                $params.modelName = model;
-              }}
-              items={ALL_MODEL_OPTIONS}
-              helperText="Each model was trained slightly differently, which impacts the generated recommendations"
-            />
-          </div>
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div on:click={(e) => e.stopPropagation()}>
-            <Toggle
-              labelText="Filter Plan to Watch"
-              bind:toggled={$params.filterPlanToWatch}
-              on:toggle={(evt) => submitFilterToggle('plan_to_watch', evt.detail.toggled)}
-            />
-            <span class="helper-text">Hide shows that are already marked plan to watch</span>
-          </div>
+    {#if profileRefreshError}<p class="refresh-error" role="alert">{profileRefreshError}</p>{/if}
+    <div class="toggles">
+      <div class:enabled={$params.includeExtraSeasons}>
+        <div class="toggle-heading">
+          <Layers size={20} aria-hidden="true" /><span>Extra Seasons</span><HelpTip
+            label="Extra Seasons"
+            text="Off hides TV/unknown recommendations connected through sequel, prequel, parent-story, or side-story relationships to anime you already watched. Other formats have their own switches. On allows these extra seasons/stories."
+          />
         </div>
-        <div class="bottom-row">
-          {#if $params.modelName === ModelName.Legacy_2023}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div on:click={(e) => e.stopPropagation()}>
+        <Toggle
+          labelText="Extra Seasons"
+          size="sm"
+          hideLabel
+          bind:toggled={$params.includeExtraSeasons}
+          on:toggle={(evt) => submitFilterToggle('extra_seasons', evt.detail.toggled)}
+        />
+      </div>
+      <div class:enabled={$params.includeMovies}>
+        <div class="toggle-heading">
+          <Video size={20} aria-hidden="true" /><span>Movies</span><HelpTip
+            label="Movies"
+            text="Off excludes MAL entries whose format is Movie. On allows movies."
+          />
+        </div>
+        <Toggle
+          labelText="Movies"
+          size="sm"
+          hideLabel
+          bind:toggled={$params.includeMovies}
+          on:toggle={(evt) => submitFilterToggle('movies', evt.detail.toggled)}
+        />
+      </div>
+      <div class:enabled={$params.includeONAsOVAsSpecials}>
+        <div class="toggle-heading">
+          <Playlist size={20} aria-hidden="true" /><span>ONAs / OVAs / Specials</span><HelpTip
+            label="ONAs / OVAs / Specials"
+            text="Off excludes ONA, OVA, Special, and TV Special entries. On allows these formats."
+          />
+        </div>
+        <Toggle
+          labelText="ONAs / OVAs / Specials"
+          size="sm"
+          hideLabel
+          bind:toggled={$params.includeONAsOVAsSpecials}
+          on:toggle={(evt) => submitFilterToggle('onas_ovas_specials', evt.detail.toggled)}
+        />
+      </div>
+      <div class:enabled={$params.includeMusic}>
+        <div class="toggle-heading">
+          <Music size={20} aria-hidden="true" /><span>Music</span><HelpTip
+            label="Music"
+            text="Off excludes Music, commercials (CM), and promotional videos (PV). On allows them."
+          />
+        </div>
+        <Toggle
+          labelText="Music"
+          size="sm"
+          hideLabel
+          bind:toggled={$params.includeMusic}
+          on:toggle={(evt) => submitFilterToggle('music', evt.detail.toggled)}
+        />
+      </div>
+    </div>
+    {#if isLoading}<div class="loading-status"><InlineLoading description="Updating recommendations…" /></div>{/if}
+    {#if !forceHideTopBar}
+      <details
+        class="advanced-options"
+        on:toggle={() =>
+          submitAnalyticsEvent({
+            category: 'recommendations',
+            subcategory: 'advanced_options_toggle',
+            payload: { surface: getSurface() },
+          })}
+      >
+        <summary
+          ><span>Advanced Options</span><span class="model-caption"
+            >{ALL_MODEL_OPTIONS.find((model) => model.id === $params.modelName)?.text}</span
+          ><ChevronDown size={16} aria-hidden="true" /></summary
+        >
+        <div class="top">
+          <div class="top-row">
+            <div>
+              <div class="field-heading">
+                <span>Model</span><HelpTip
+                  label="Model"
+                  text="Chooses the trained recommendation version. Aug. 2026 is the default, v2 is experimental, Dec. 2025 is the previous model, and Legacy uses the older 2023 serving path. Changing model can change scores and ranking order."
+                />
+              </div>
               <Dropdown
                 style="width: 100%;"
-                titleText="Popularity Attenuation Factor"
-                selectedId={$params.popularityAttenuationFactor}
+                titleText="Model"
+                hideLabel
+                selectedId={$params.modelName}
                 on:select={(selected) => {
-                  const value = selected.detail.selectedItem.id;
-                  if (value !== $params.popularityAttenuationFactor) {
+                  const model = selected.detail.selectedItem.id;
+                  if (model !== $params.modelName) {
                     submitAnalyticsEvent({
                       category: 'recommendations',
-                      subcategory: 'attenuation_change',
-                      payload: { value, surface: getSurface() },
+                      subcategory: 'model_select',
+                      payload: { model, surface: getSurface() },
                     });
+                    if ($params.nicheBoostFactor === getDefaultNicheBoostFactor($params.modelName)) {
+                      $params.nicheBoostFactor = getDefaultNicheBoostFactor(model);
+                      localNicheBoostFactor = getDefaultNicheBoostFactor(model);
+                    }
                   }
-                  $params.popularityAttenuationFactor = value;
+                  $params.modelName = model;
                 }}
-                items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
-                helperText="Higher popularity attenuation factors result in less-popular anime being weighted higher in recommendations"
+                items={ALL_MODEL_OPTIONS}
               />
             </div>
-          {:else}
-            {#if !hideLogitWeight}
-              <!-- svelte-ignore a11y-click-events-have-key-events -->
-              <!-- svelte-ignore a11y-no-static-element-interactions -->
-              <div on:click={(e) => e.stopPropagation()}>
+            <div>
+              <div class="field-heading">
+                <span>Filter Plan to Watch</span><HelpTip
+                  label="Filter Plan to Watch"
+                  text="On removes anime already marked Plan to Watch in your profile. Off keeps them eligible and labels them in the results."
+                />
+              </div>
+              <Toggle
+                labelText="Filter Plan to Watch"
+                hideLabel
+                size="sm"
+                bind:toggled={$params.filterPlanToWatch}
+                on:toggle={(evt) => submitFilterToggle('plan_to_watch', evt.detail.toggled)}
+              />
+            </div>
+          </div>
+          <div class="bottom-row">
+            {#if $params.modelName === ModelName.Legacy_2023}
+              <div>
+                <div class="field-heading">
+                  <span>Popularity attenuation</span><HelpTip
+                    label="Popularity attenuation"
+                    text="Legacy model only. Higher values increasingly favor less-popular anime; None preserves the legacy ranking without this adjustment."
+                  />
+                </div>
+                <Dropdown
+                  style="width: 100%;"
+                  titleText="Popularity Attenuation Factor"
+                  hideLabel
+                  selectedId={$params.popularityAttenuationFactor}
+                  on:select={(selected) => {
+                    const value = selected.detail.selectedItem.id;
+                    if (value !== $params.popularityAttenuationFactor) {
+                      submitAnalyticsEvent({
+                        category: 'recommendations',
+                        subcategory: 'attenuation_change',
+                        payload: { value, surface: getSurface() },
+                      });
+                    }
+                    $params.popularityAttenuationFactor = value;
+                  }}
+                  items={ALL_POPULARITY_ATTENUATION_FACTOR_OPTIONS}
+                />
+              </div>
+            {:else}
+              {#if !hideLogitWeight}
+                <div>
+                  <div class="field-heading">
+                    <span>Presence / Rating Weight</span><HelpTip
+                      label="Presence / Rating Weight"
+                      text="0 prioritizes your predicted 1–10 rating; 1 prioritizes how strongly the model expects the anime to belong in your profile. Intermediate values blend both signals."
+                    />
+                  </div>
+                  <Slider
+                    labelText="Presence/Rating Weight"
+                    hideLabel
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    bind:value={localLogitWeight}
+                    on:change={(evt) => {
+                      if ($params.logitWeight !== evt.detail) {
+                        submitAnalyticsEvent({
+                          category: 'recommendations',
+                          subcategory: 'logit_weight_change',
+                          payload: { value: evt.detail, surface: getSurface() },
+                        });
+                      }
+                      $params.logitWeight = evt.detail;
+                    }}
+                  />
+                  <div class="slider-captions"><span>Predicted rating</span><span>Profile match</span></div>
+                </div>
+              {/if}
+              <div>
+                <div class="field-heading">
+                  <span>Niche Boost Factor</span><HelpTip
+                    label="Niche Boost Factor"
+                    text="0 adds no niche boost. Higher values increasingly favor anime the model predicts for you more strongly than their overall popularity would suggest."
+                  />
+                </div>
                 <Slider
-                  labelText="Presence/Rating Weight"
+                  labelText="Niche Boost Factor"
+                  hideLabel
                   min={0}
                   max={1}
                   step={0.1}
-                  bind:value={localLogitWeight}
-                  on:change={() => {
-                    if ($params.logitWeight !== localLogitWeight) {
+                  bind:value={localNicheBoostFactor}
+                  on:change={(evt) => {
+                    if ($params.nicheBoostFactor !== evt.detail) {
                       submitAnalyticsEvent({
                         category: 'recommendations',
-                        subcategory: 'logit_weight_change',
-                        payload: { value: localLogitWeight, surface: getSurface() },
+                        subcategory: 'niche_boost_change',
+                        payload: { value: evt.detail, surface: getSurface() },
                       });
                     }
-                    $params.logitWeight = localLogitWeight;
+                    $params.nicheBoostFactor = evt.detail;
                   }}
                 />
-                <span class="helper-text">
-                  Balance between predicted rating (0) and presence probability (1) when scoring recommendations
-                </span>
+                <div class="slider-captions"><span>No boost</span><span>More discovery</span></div>
               </div>
             {/if}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div on:click={(e) => e.stopPropagation()}>
-              <Slider
-                labelText="Niche Boost Factor"
-                min={0}
-                max={1}
-                step={0.1}
-                bind:value={localNicheBoostFactor}
-                on:change={() => {
-                  if ($params.nicheBoostFactor !== localNicheBoostFactor) {
-                    submitAnalyticsEvent({
-                      category: 'recommendations',
-                      subcategory: 'niche_boost_change',
-                      payload: { value: localNicheBoostFactor, surface: getSurface() },
-                    });
-                  }
-                  $params.nicheBoostFactor = localNicheBoostFactor;
-                }}
-              />
-              <span class="helper-text">
-                Boosts shows that the model thinks you'll like more than their popularity suggests. Higher = more boost.
-              </span>
-            </div>
-          {/if}
+          </div>
+        </div>
+      </details>
+    {/if}
+    {#if $params.excludedRankingAnimeIDs.length > 0}
+      <div>
+        <label for="excluded-rankings" class="bx--label">Excluded Rankings</label>
+        <div class="tags-container" id="excluded-rankings">
+          {#each [...new Set($params.excludedRankingAnimeIDs)] as animeID (animeID)}
+            {@const datum = animeMetadataDatabase[animeID]}
+            {@const title = datum?.alternative_titles.en || datum?.title || ''}
+            <Tag
+              filter
+              on:close={() => {
+                submitAnalyticsEvent({
+                  category: 'recommendations',
+                  subcategory: 'exclude_ranking_remove',
+                  payload: { anime_id: animeID, surface: getSurface() },
+                });
+                params.update((state) => {
+                  state.excludedRankingAnimeIDs = state.excludedRankingAnimeIDs.filter(
+                    (oAnimeID) => oAnimeID !== animeID
+                  );
+                  return state;
+                });
+              }}
+            >
+              {title}
+            </Tag>
+          {/each}
         </div>
       </div>
-    </ExpandableTile>
-  {/if}
-  {#if $params.excludedRankingAnimeIDs.length > 0}
-    <div>
-      <label for="tags-container" class="bx--label">Excluded Rankings</label>
-      <div class="tags-container" id="tags-container">
-        {#each [...new Set($params.excludedRankingAnimeIDs)] as animeID (animeID)}
-          {@const datum = animeMetadataDatabase[animeID]}
-          {@const title = datum?.alternative_titles.en || datum?.title || ''}
-          <Tag
-            filter
-            on:close={() => {
-              submitAnalyticsEvent({
-                category: 'recommendations',
-                subcategory: 'exclude_ranking_remove',
-                payload: { anime_id: animeID, surface: getSurface() },
-              });
-              params.update((state) => {
-                state.excludedRankingAnimeIDs = state.excludedRankingAnimeIDs.filter(
-                  (oAnimeID) => oAnimeID !== animeID
-                );
-                return state;
-              });
-            }}
-          >
-            {title}
-          </Tag>
-        {/each}
-      </div>
-    </div>
-  {/if}
-  {#if $params.excludedGenreIDs.length > 0}
-    <div>
-      <label for="tags-container" class="bx--label">Excluded Genres</label>
-      <div class="tags-container" id="tags-container">
-        {#each [...new Set($params.excludedGenreIDs)] as genreID (genreID)}
-          {@const genreName = $genresDB.get(genreID) ?? genreID.toString()}
-          <Tag
-            filter
-            on:close={() => {
-              submitAnalyticsEvent({
-                category: 'recommendations',
-                subcategory: 'exclude_genre_remove',
-                payload: { genre_id: genreID, surface: getSurface() },
-              });
-              params.update((state) => {
-                state.excludedGenreIDs = state.excludedGenreIDs.filter((oGenreID) => oGenreID !== genreID);
-                return state;
-              });
-            }}
-          >
-            {genreName}
-          </Tag>
-        {/each}
-      </div>
-    </div>
-  {/if}
-</div>
+    {/if}
+  </div>
+</details>
 
 <style lang="css">
   .root {
+    padding: 20px;
+    border: 1px solid #ffffff18;
+    border-radius: 12px;
+    background: #171c19;
+  }
+  .panel-summary,
+  .section-title,
+  .profile-refresh {
+    display: flex;
+    align-items: center;
+  }
+  .panel-summary {
+    justify-content: space-between;
+    gap: 16px;
+    cursor: pointer;
+    list-style: none;
+  }
+  .panel-summary::-webkit-details-marker {
+    display: none;
+  }
+  .panel-summary > :global(svg) {
+    flex: none;
+    color: #9caca2;
+  }
+  .root[open] > .panel-summary > :global(svg) {
+    transform: rotate(180deg);
+  }
+  .panel-body {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    padding: 5px 0px 10px 0px;
-    border-bottom: 1px solid #cccccc22;
-  }
-
-  .top {
-    display: flex;
-    flex-direction: row;
-    min-width: 100%;
     gap: 16px;
-    padding: 4px;
+    margin-top: 16px;
   }
-
+  .section-title {
+    gap: 12px;
+  }
+  .heading-icon {
+    display: flex;
+    padding: 10px;
+    border-radius: 10px;
+    background: #77d58512;
+    color: #88da95;
+  }
+  h2 {
+    color: #edf3ef;
+    font-size: 16px;
+    line-height: 1.4;
+    font-weight: 600;
+    margin: 0;
+  }
+  .section-description {
+    display: block;
+    margin: 3px 0 0;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: #99a69f;
+  }
+  .toggles {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .toggles > div {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #ffffff15;
+    border-radius: 8px;
+    background: #202622;
+    min-width: 0;
+  }
+  .toggles > div.enabled {
+    border-color: #77d58550;
+    background: #233429;
+  }
+  .toggle-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 30px;
+    color: #c8d5cd;
+  }
+  .toggle-heading > span {
+    flex: 1;
+    padding-top: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+  .toggle-heading > :global(svg) {
+    flex: none;
+    margin-top: 5px;
+    color: #8fa69a;
+  }
+  .toggles :global(.bx--toggle-input__label) {
+    font-size: 12px;
+    color: #c8d5cd;
+  }
+  .toggles :global(.bx--form-item) {
+    flex: none;
+    margin-top: auto;
+  }
+  .profile-refresh {
+    gap: 2px;
+    align-self: flex-end;
+  }
+  .profile-refresh button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #ffffff26;
+    border-radius: 7px;
+    background: #252e28;
+    color: #e0eae3;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .profile-refresh button:hover:not(:disabled) {
+    border-color: #77d58570;
+    background: #2c3930;
+  }
+  .profile-refresh button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .profile-refresh button:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid #75dc82;
+    outline-offset: 3px;
+  }
+  .refresh-error {
+    padding: 10px 12px;
+    margin: 0;
+    color: #ffb2b6;
+    background: #ff83890c;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .loading-status {
+    min-width: 0;
+  }
+  .advanced-options {
+    border-top: 1px solid #ffffff14;
+  }
+  .advanced-options > summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    list-style: none;
+    padding: 16px 0 0;
+    color: #c8d5cd;
+    font-size: 13px;
+  }
+  .advanced-options > summary::-webkit-details-marker {
+    display: none;
+  }
+  .advanced-options > summary > span:first-child {
+    flex: 1;
+  }
+  .model-caption {
+    font-size: 11px;
+    color: #9caca2;
+    background: #ffffff08;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .advanced-options[open] > summary :global(svg) {
+    transform: rotate(180deg);
+  }
+  .top {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding-top: 16px;
+  }
   .top-row,
   .bottom-row {
-    display: flex;
-    flex-direction: row;
-    gap: 16px;
+    display: contents;
   }
-
   .top-row > div,
   .bottom-row > div {
     display: flex;
-    flex: 1;
     flex-direction: column;
     min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid #ffffff10;
+    border-radius: 8px;
+    background: #1d2420;
+    gap: 10px;
   }
-
-  .top > div {
+  .field-heading {
     display: flex;
-    flex: 1;
-    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+    color: #c8d5cd;
+    font-size: 13px;
+    line-height: 1.4;
   }
-
-  .toggles {
+  .top :global(.bx--slider-container) {
+    min-width: 0;
+    width: 100%;
+  }
+  .top :global(.bx--slider) {
+    min-width: 0;
+    flex: 1;
+  }
+  .top :global(.bx--slider-text-input) {
+    min-width: 52px;
+    width: 52px;
+    padding: 0 5px;
+    border-radius: 4px;
+  }
+  .top :global(.bx--dropdown) {
+    border: 1px solid #ffffff25;
+    border-radius: 5px;
+    background: #262e29;
+  }
+  .top :global(.bx--label.bx--visually-hidden) {
+    margin: 0;
+  }
+  .top :global(.bx--toggle-input__label) {
+    min-height: 42px;
     display: flex;
-    flex-direction: row;
-    flex: 1;
+    align-items: center;
   }
-
-  .toggles > div {
-    padding: 8px;
-    box-sizing: border-box;
-    border-right: 1px solid #cccccc22;
-    border-top: 1px solid #cccccc22;
-    border-bottom: 1px solid #cccccc22;
-    width: 150px;
+  .slider-captions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #93a399;
   }
-
-  @media (max-width: 768px) {
-    .toggles > div {
-      display: flex;
-      flex: 1;
-      width: unset;
-    }
-  }
-
-  .toggles > div:first-child {
-    border-left: 1px solid #cccccc22;
-  }
-
   .tags-container {
     display: flex;
-    flex-direction: row;
     flex-wrap: wrap;
   }
-
-  .helper-text {
-    font-size: 0.75rem;
-    color: #a8a8a8;
-    margin-top: 4px;
+  @media (max-width: 1000px) {
+    .toggles {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
-
-  :global(.bx--tile--expandable) {
-    background: #242424 !important;
+  @media (max-width: 560px) {
+    .root {
+      padding: 16px;
+    }
+    .panel-body {
+      gap: 12px;
+    }
+    .top {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .toggle-heading {
+      gap: 5px;
+    }
+    .toggle-heading > :global(svg) {
+      display: none;
+    }
+    .toggles > div {
+      padding: 9px 10px;
+    }
+    .profile-refresh {
+      width: 100%;
+    }
+    .profile-refresh button {
+      flex: 1;
+      justify-content: center;
+    }
   }
-
-  :global(.bx--tile--expandable:focus) {
-    outline: none !important;
-  }
-
-  :global(.bx--tile--expandable:hover[aria-expanded='false']) {
-    background: #2b2b2b !important;
-  }
-
-  :global(.bx--tile--is-expanded.bx--tile--expandable) {
-    background: #202020 !important;
+  @media (max-width: 360px) {
+    .toggles {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .toggle-heading > :global(svg) {
+      display: block;
+    }
   }
 </style>

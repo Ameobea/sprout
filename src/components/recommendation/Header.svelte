@@ -10,7 +10,7 @@
 
 <div class="root">
   <h1>
-    <a sveltekit:prefetch href="/">
+    <a data-sveltekit-preload-data="hover" href="/">
       <SproutLogo
         style={`
         width: 24px;

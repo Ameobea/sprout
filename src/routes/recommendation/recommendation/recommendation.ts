@@ -71,6 +71,8 @@ interface GetRecommendationsArgs {
   includeMusic: boolean;
   profileSource: ProfileSource;
   filterPlanToWatch: boolean;
+  /** Bypass the short-lived MAL profile cache for this request. Ignored for AniList and legacy serving. */
+  forceProfileRefresh?: boolean;
   /**
    * Controls how the recommendation score is computed from both the presence probability
    * and the predicted rating (0.0 = only ratings, 1.0 = only presence probability, default = 0.6).
@@ -500,7 +502,7 @@ export const getRecommendations = async (
     username: string;
   };
   if (dataSource.type === 'username') {
-    const rankingsRes = await fetchUserRankings(dataSource.username, profileSource)();
+    const rankingsRes = await fetchUserRankings(dataSource.username, profileSource, args.forceProfileRefresh ?? false)();
     if (isLeft(rankingsRes)) {
       return rankingsRes;
     }

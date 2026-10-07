@@ -3,7 +3,8 @@
     username: string,
     params: RecommendationControlParams,
     availableAnimeMetadataIDs: number[],
-    includeContributors: boolean
+    includeContributors: boolean,
+    forceProfileRefresh = false
   ): Promise<{
     recommendations: Recommendation[];
     animeData: { [animeID: number]: AnimeDetails };
@@ -16,6 +17,7 @@
         dataSource: { type: 'username', username },
         availableAnimeMetadataIDs,
         includeContributors,
+        forceProfileRefresh,
         ...params,
       }),
     }).then(async (res) => {
@@ -77,6 +79,55 @@
   const initialData = initialRecommendations.type === 'ok' ? initialRecommendations : undefined;
 
   const queryClient = new QueryClient({});
+  let isProfileRefreshing = false;
+  let profileRefreshError = '';
+
+  const forceProfileRefresh = async () => {
+    if (isProfileRefreshing) {
+      return;
+    }
+
+    isProfileRefreshing = true;
+    profileRefreshError = '';
+    try {
+      // Controls can change while MAL is loading. Keep the response associated
+      // with the exact settings that requested it, and cancel older cache work.
+      const refreshParams = structuredClone($params);
+      const recommendationsKey = ['recommendations', username, refreshParams];
+      const contributorsKey = ['recommendations_contributors', username, refreshParams];
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: recommendationsKey, exact: true }),
+        queryClient.cancelQueries({ queryKey: contributorsKey, exact: true }),
+      ]);
+      const availableAnimeMetadataIDs = Object.keys($animeMetadataDatabase).map((x) => +x);
+      // A single contributor-enabled request returns the complete recommendation payload while
+      // forcing the MAL profile fetch. Reuse that result for both query caches so the refresh is
+      // atomic and cannot race a second request that still has the old profile cached.
+      const freshRecommendations = await fetchRecommendations(
+        username,
+        refreshParams,
+        availableAnimeMetadataIDs,
+        true,
+        true
+      );
+      updateAnimeDB(freshRecommendations.animeData);
+      queryClient.setQueryData(recommendationsKey, freshRecommendations);
+      queryClient.setQueryData(contributorsKey, freshRecommendations);
+
+      submitAnalyticsEvent({
+        category: 'recommendations',
+        subcategory: 'profile_force_refresh',
+        payload: { source: refreshParams.profileSource, model: refreshParams.modelName, surface: getSurface() },
+      });
+    } catch (err) {
+      profileRefreshError = typeof err === 'string' ? err : err instanceof Error ? err.message : 'Refresh failed';
+      getSentry()?.captureException('Error force-refreshing recommendation profile', {
+        extra: { params: $params, username },
+      });
+    } finally {
+      isProfileRefreshing = false;
+    }
+  };
 
   let lastRecosRes:
     | {
@@ -212,6 +263,11 @@
       return state;
     });
   };
+
+  const includeGenreID = (genreID: number) => {
+    submitAnalyticsEvent({ category: 'recommendations', subcategory: 'exclude_genre_remove', payload: { genre_id: genreID, surface: getSurface() } });
+    $params.excludedGenreIDs = $params.excludedGenreIDs.filter((id) => id !== genreID);
+  };
 </script>
 
 <div class="root">
@@ -222,8 +278,10 @@
       {params}
       animeMetadataDatabase={$animeMetadataDatabase}
       isLoading={$recosRes.isLoading || $recosRes.isRefetching}
-      {genresDB}
       hideLogitWeight={userRatingStats?.isNonRater ?? false}
+      onForceProfileRefresh={forceProfileRefresh}
+      {isProfileRefreshing}
+      {profileRefreshError}
     />
     <RecommendationsList
       recommendations={recommendations?.recommendations ?? []}
@@ -232,6 +290,9 @@
       {userRatingStats}
       excludeRanking={excludedRankingAnimeIDs}
       excludeGenre={excludeGenreID}
+      includeGenre={includeGenreID}
+      excludedGenreIDs={$params.excludedGenreIDs}
+      genreNames={$genresDB}
       contributorsLoading={$recosRes.isLoading ||
         $recosRes.isRefetching ||
         $recoContributorsRes.isLoading ||

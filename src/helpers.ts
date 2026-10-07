@@ -13,11 +13,15 @@ export interface ProfileFetchError {
 }
 
 export const fetchUserRankings = tryCatchK(
-  async (username: string, profileSource: ProfileSource): Promise<{ profile: CompatAnimeListEntry[] }> => {
+  async (
+    username: string,
+    profileSource: ProfileSource,
+    forceProfileRefresh = false
+  ): Promise<{ profile: CompatAnimeListEntry[] }> => {
     let profile: CompatAnimeListEntry[] = [];
     switch (profileSource) {
       case ProfileSource.MyAnimeList:
-        profile = await getUserMALAnimeList(username);
+        profile = await getUserMALAnimeList(username, forceProfileRefresh === true);
         break;
       case ProfileSource.AniList: {
         const res = await getAnilistUserAnimeList(username);

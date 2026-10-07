@@ -1,4 +1,6 @@
 import * as fs from 'fs';
+import { AnimeMediaType } from './animeMediaType';
+export { AnimeMediaType } from './animeMediaType';
 
 import { DATA_DIR, MAL_API_BASE_URL, MAL_CLIENT_ID } from './conf';
 import { delay } from './util';
@@ -81,19 +83,6 @@ export interface MALUserAnimeListResponse {
   paging: { next?: string | null };
 }
 
-export enum AnimeMediaType {
-  Unknown = 'unknown',
-  TV = 'tv',
-  TVSpecial = 'tv_special',
-  OVA = 'ova',
-  Movie = 'movie',
-  Special = 'special',
-  ONA = 'ona',
-  Music = 'music',
-  CM = 'cm',
-  PV = 'pv',
-}
-
 const KnownMediaTypes: Set<string> = new Set(Object.values(AnimeMediaType));
 const UnrecognizedMediaTypeCounts = new Map<string, number>();
 
@@ -149,15 +138,23 @@ export interface MALUserMangaListResponse {
   paging: { next?: string | null };
 }
 
-// Cache for 5 minutes
+// Cache profile lists for 60 seconds to reduce upstream MAL API traffic.
 const UserAnimeListCache = new NodeCache({ stdTTL: 60 });
 const UserMangaListCache = new NodeCache({ stdTTL: 60 });
 
-export const getUserAnimeList = async (username: string): Promise<MALUserAnimeListItem[]> => {
-  const cached: MALUserAnimeListItem[] | undefined = UserAnimeListCache.get(username);
-  if (cached) {
-    console.log('Found cached user anime list for ' + username);
-    return cached;
+export const getUserAnimeList = async (
+  username: string,
+  forceRefresh = false
+): Promise<MALUserAnimeListItem[]> => {
+  if (forceRefresh) {
+    console.log('Force-refreshing cached user anime list for ' + username);
+    UserAnimeListCache.del(username);
+  } else {
+    const cached: MALUserAnimeListItem[] | undefined = UserAnimeListCache.get(username);
+    if (cached) {
+      console.log('Found cached user anime list for ' + username);
+      return cached;
+    }
   }
 
   const data: MALUserAnimeListItem[] = [];
@@ -415,7 +412,7 @@ const loadLocalMetadataDump = (): Map<number, AnimeDetails> | null => {
       }
       try {
         map.set(+row[0], JSON.parse(row[1]));
-      } catch (_err) {
+      } catch {
         // skip malformed rows
       }
     }

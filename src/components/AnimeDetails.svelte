@@ -41,7 +41,7 @@
 <div class="root">
   {#await details.details}
     <div class="details">
-      <div class="placeholder-image" width={225} height={332} />
+      <div class="placeholder-image" />
       <div class="info">
         <h2>
           <a target="_blank" href={buildMALLink(id)} on:click={() => submitMALLinkClick('loading')}>
@@ -71,7 +71,7 @@
       </div>
     </div>
     <p class="synopsis">{details.synopsis}</p>
-  {:catch error}
+  {:catch _error}
     <p style="color: red">Error loading anime info</p>
   {/await}
 </div>

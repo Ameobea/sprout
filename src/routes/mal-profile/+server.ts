@@ -11,7 +11,8 @@ export const GET: RequestHandler = async ({ url }) => {
   }
 
   try {
-    const profile = await getUserAnimeList(username);
+    const forceRefresh = url.searchParams.get('refresh') === 'true';
+    const profile = await getUserAnimeList(username, forceRefresh);
     const compatProfile: CompatAnimeListEntry[] = profile.map((entry) => ({
       node: { id: entry.node.id },
       list_status: {
